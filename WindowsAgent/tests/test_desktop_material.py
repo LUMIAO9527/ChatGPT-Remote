@@ -16,16 +16,19 @@ class Function:
         return self.effect(*args) if self.effect else self.result
 
 class MaterialTests(unittest.TestCase):
-    def test_system_acrylic_uses_native_capability_without_loading_a_visual_host(self):
+    def test_win11_auto_material_uses_the_same_rounded_clip(self):
         self.version.return_value.build=26200
-        self.assertEqual(self.host.apply(self.form,self.hwnd),'acrylic')
-        self.host._create_clip.assert_not_called()
-        self.assertIn((38,3),[(c[1],c[2]._obj.value) for c in self.dwm.DwmSetWindowAttribute.calls])
-
-    def test_unsupported_system_material_uses_the_clipped_host(self):
-        self.dwm.DwmSetWindowAttribute.effect=lambda hwnd,attribute,*_:-1 if attribute==38 else 0
         self.assertEqual(self.host.apply(self.form,self.hwnd),'blur')
         self.host._create_clip.assert_called_once()
+        attributes=[(c[1],c[2]._obj.value) for c in self.dwm.DwmSetWindowAttribute.calls]
+        self.assertIn((38,1),attributes);self.assertNotIn((38,3),attributes)
+        self.clip.Resize.assert_called_once_with(312,458,16)
+
+    def test_unsupported_host_uses_an_opaque_surface(self):
+        self.version.return_value.build=26200
+        self.dwm.DwmSetWindowAttribute.effect=lambda hwnd,attribute,*_:-1 if attribute==17 else 0
+        self.assertEqual(self.host.apply(self.form,self.hwnd),'solid')
+        self.host._create_clip.assert_not_called()
 
     def setUp(self):
         self.addCleanup(patch.stopall)

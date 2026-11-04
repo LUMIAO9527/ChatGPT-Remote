@@ -4,7 +4,7 @@
 
 通过手机浏览器连接电脑上的 ChatGPT，继续查看对话、发送消息和操作窗口。Windows 端常驻 **Rm** 托盘。
 
-当前版本：**v0.16.0**。
+当前版本：**v0.16.1**。
 
 - 紧凑主面板直接显示二维码、配对码、连接地址、窗口与设备。
 - 点击托盘图标展开，再次点击收起；每次展开回到首页，展开时置顶。
@@ -20,7 +20,7 @@
 
 ## 运行
 
-需要 Windows 10/11、Python 3.10 或更新版本、PowerShell 7、Microsoft Edge WebView2，以及已打开的 ChatGPT 桌面应用。
+需要 64 位 Windows 10/11、64 位 Python 3.10 或更新版本、PowerShell 7、Microsoft Edge WebView2，以及已打开的 ChatGPT 桌面应用。
 
 在项目文件夹打开 PowerShell 7：
 
@@ -43,7 +43,7 @@ node --test tests/test_web.mjs tests/test_desktop_web.mjs
 python -B build_desktop.py --preview
 ```
 
-界面检查需要 Node.js，运行程序不需要。重建兼容玻璃宿主使用 `python -B build_desktop.py`，需要 Windows SDK。
+界面检查需要 Node.js，运行程序不需要。重建玻璃宿主使用 `python -B build_desktop.py`，需要 MSVC C++ Build Tools 和 Windows SDK；发布包已包含宿主。
 
 [界面规范](docs/DESIGN.md) · [接口说明](docs/API.md)
 

@@ -3,7 +3,6 @@
 """Minimal native Win32 tray icon and intentionally small system menu."""
 from __future__ import annotations
 import ctypes
-import struct
 import threading
 from ctypes import wintypes as wt
 
@@ -51,23 +50,26 @@ class WNDCLASSW(ctypes.Structure):
 
 
 def _load_hicon(path, target):
-    data = open(path, 'rb').read()
-    _, _, count = struct.unpack_from('<HHH', data, 0)
-    best = None
-    for index in range(count):
-        width, _, _, _, _, _, size, offset = struct.unpack_from('<BBBBHHII', data, 6 + index * 16)
-        width = 256 if width == 0 else width
-        if best is None or abs(width - target) < abs(best[0] - target):
-            best = (width, offset, size)
-    if not best:
-        return None
-    _, offset, size = best
     user32 = ctypes.windll.user32
-    user32.CreateIconFromResourceEx.restype = ctypes.c_void_p
-    user32.CreateIconFromResourceEx.argtypes = [ctypes.c_void_p, wt.DWORD, wt.BOOL, wt.DWORD,
-                                                ctypes.c_int, ctypes.c_int, wt.UINT]
-    return user32.CreateIconFromResourceEx(ctypes.c_char_p(data[offset:offset + size]), size,
-                                           True, 0x00030000, target, target, 0)
+    user32.LoadImageW.argtypes = [wt.HINSTANCE, wt.LPCWSTR, wt.UINT, ctypes.c_int, ctypes.c_int, wt.UINT]
+    user32.LoadImageW.restype = wt.HANDLE
+    return user32.LoadImageW(None,str(path),1,target,target,0x10)
+
+
+def tray_rect(hwnd, uid=1):
+    """Read Explorer's current coordinates from the stable notification identity."""
+    if not hwnd:return None
+    identifier=NOTIFYICONIDENTIFIER()
+    identifier.cbSize=ctypes.sizeof(identifier);identifier.hWnd=hwnd;identifier.uID=uid
+    rect=wt.RECT()
+    try:
+        fn=ctypes.windll.shell32.Shell_NotifyIconGetRect
+        fn.restype=ctypes.c_long
+        fn.argtypes=[ctypes.POINTER(NOTIFYICONIDENTIFIER),ctypes.POINTER(wt.RECT)]
+        if fn(ctypes.byref(identifier),ctypes.byref(rect))==0 and rect.right>rect.left and rect.bottom>rect.top:
+            return rect.left,rect.top,rect.right,rect.bottom
+    except (AttributeError,OSError):pass
+    return None
 
 
 class TrayIcon:
@@ -126,20 +128,10 @@ class TrayIcon:
                 self._thread.join(1.5)
 
     def rect(self):
-        if not self._hwnd:
-            return None
-        identifier = NOTIFYICONIDENTIFIER()
-        identifier.cbSize, identifier.hWnd, identifier.uID = ctypes.sizeof(identifier), self._hwnd, self._uID
-        rect = wt.RECT()
-        try:
-            fn = self._shell.Shell_NotifyIconGetRect
-            fn.restype = ctypes.c_long
-            fn.argtypes = [ctypes.POINTER(NOTIFYICONIDENTIFIER), ctypes.POINTER(wt.RECT)]
-            if fn(ctypes.byref(identifier), ctypes.byref(rect)) == 0:
-                return rect.left, rect.top, rect.right, rect.bottom
-        except (AttributeError, OSError):
-            pass
-        return None
+        return tray_rect(self._hwnd,self._uID)
+
+    def identity(self):
+        return (self._hwnd,self._uID) if self._hwnd else None
 
     def _base_nid(self):
         if not self._hwnd:

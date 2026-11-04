@@ -35,12 +35,13 @@ class MonitorInfo(ctypes.Structure):
 
 
 class NativePanel:
-    def __init__(self, window, manager, signals, anchor=None, log=None):
+    def __init__(self, window, manager, signals, anchor=None, log=None, *, tray_identity=None):
         self.window,self.manager,self.signals,self.anchor,self.log=window,manager,signals,anchor,log
+        self.tray_identity=tray_identity
         self.page='home';self.visible=False;self.busy=False;self.modal=False
         self.generation=0;self.focus_generation=0;self.bound=False;self.ready=False
         self.show_requested=False;self.closed=False
-        self.material=None;self.corners=None;self.appearance=None;self.material_choice=None
+        self.material=None;self.appearance=None;self.material_choice=None
         self.user=ctypes.WinDLL('user32',use_last_error=True)
         self.user.MonitorFromRect.argtypes=[ctypes.POINTER(wt.RECT),wt.DWORD]
         self.user.MonitorFromRect.restype=wt.HMONITOR
@@ -72,13 +73,24 @@ class NativePanel:
 
     def place(self, form):
         hwnd=int(form.Handle.ToInt64());point=wt.POINT()
-        icon=self.anchor
+        if self.tray_identity:
+            from desktop_tray import tray_rect
+            icon=tray_rect(*self.tray_identity)
+        else:icon=self.anchor
         if not icon:
             self.user.GetCursorPos(ctypes.byref(point));icon=(point.x-8,point.y-8,point.x+8,point.y+8)
+        self.anchor=icon
         box=wt.RECT(*icon);monitor=self.user.MonitorFromRect(ctypes.byref(box),2)
         info=MonitorInfo();info.cbSize=ctypes.sizeof(info)
         if not monitor or not self.user.GetMonitorInfoW(monitor,ctypes.byref(info)):return
         dpi=self.user.GetDpiForWindow(hwnd) or 96
+        try:
+            shcore=ctypes.WinDLL('shcore')
+            shcore.GetDpiForMonitor.argtypes=[wt.HMONITOR,ctypes.c_int,ctypes.POINTER(wt.UINT),ctypes.POINTER(wt.UINT)]
+            shcore.GetDpiForMonitor.restype=ctypes.c_long
+            dx,dy=wt.UINT(),wt.UINT()
+            if shcore.GetDpiForMonitor(monitor,0,ctypes.byref(dx),ctypes.byref(dy))==0 and dx.value:dpi=dx.value
+        except (AttributeError,OSError):pass
         width,height=(round(n*dpi/96) for n in PANEL_SIZE)
         work=info.rcWork;screen=info.rcMonitor
         width=min(width,work.right-work.left-16);height=min(height,work.bottom-work.top-16)
@@ -86,7 +98,7 @@ class NativePanel:
                             (screen.left,screen.top,screen.right,screen.bottom),(width,height))
         if not self.user.SetWindowPos(hwnd,None,x,y,width,height,0x0004|0x0010):
             raise ctypes.WinError(ctypes.get_last_error())
-        if self.material is None:self.round_window(hwnd,width,height,dpi)
+        self.round_window(hwnd,width,height,dpi)
 
     def appearance_changed(self,appearance=None,material=None):
         if appearance in ('light','dark'):self.appearance=appearance
@@ -94,8 +106,7 @@ class NativePanel:
         if self.ready:self.dispatch(self.apply_material)
 
     def apply_material(self,form):
-        from desktop_material import WindowMaterial,edge_color
-        from desktop_corners import WindowCorners
+        from desktop_material import WindowMaterial
         from pathlib import Path
         hwnd=int(form.Handle.ToInt64())
         pref=self.manager.preferences()
@@ -105,15 +116,11 @@ class NativePanel:
             self.material.bind_policy_changes(form,lambda:self.dispatch(self.apply_material))
         mode=self.material.apply(form,hwnd,dark=dark,requested=(self.material_choice or pref.get('material','glass'))=='glass')
         self.post(form,'window.remoteBackdrop && window.remoteBackdrop("'+mode+'")')
-        if self.corners is None:
-            self.corners=WindowCorners()
-            def move(*_):self.corners.move(visible=bool(form.Visible))
-            def close(*_):self.corners.close()
-            form.LocationChanged+=move;form.VisibleChanged+=move;form.HandleDestroyed+=close
-            self.corner_callbacks=(move,close)
         dpi=self.user.GetDpiForWindow(hwnd) or 96
-        self.corners.apply(hwnd,round(16*dpi/96),edge_color(dark) if mode!='solid' else ((29,29,29) if dark else (255,255,255)))
-        if self.log:self.log.info('panel_material mode=%s',mode)
+        box=wt.RECT()
+        if not self.user.GetWindowRect(hwnd,ctypes.byref(box)):raise ctypes.WinError(ctypes.get_last_error())
+        self.round_window(hwnd,box.right-box.left,box.bottom-box.top,dpi)
+        if self.log:self.log.info('panel_material mode=%s radius=%s',mode,round(16*dpi/96))
 
     def topmost(self,form,value):
         form.TopMost=value
@@ -144,7 +151,10 @@ class NativePanel:
         self.user.SetWindowRgn.argtypes=[wt.HWND,wt.HRGN,wt.BOOL]
         radius=round(16*dpi/96)
         region=gdi.CreateRoundRectRgn(0,0,width+1,height+1,2*radius,2*radius)
-        if region and not self.user.SetWindowRgn(hwnd,region,True):gdi.DeleteObject(region)
+        if not region:raise ctypes.WinError(ctypes.get_last_error())
+        if not self.user.SetWindowRgn(hwnd,region,True):
+            gdi.DeleteObject(region)
+            raise ctypes.WinError(ctypes.get_last_error())
 
     def bind(self):
         def apply(form):

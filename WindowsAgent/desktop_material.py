@@ -44,6 +44,33 @@ class PowerStatus(ctypes.Structure):
                 ('saving', wt.BYTE), ('remaining', wt.DWORD), ('full', wt.DWORD)]
 
 
+class NativeBackdrop:
+    """Small C ABI for the clipped Windows composition brush."""
+    def __init__(self,path,hwnd):
+        self.library=ctypes.WinDLL(str(path));self.handle=ctypes.c_void_p()
+        signatures={
+            'RemoteBackdropApi':([],ctypes.c_uint),
+            'RemoteBackdropCreate':([wt.HWND,ctypes.POINTER(ctypes.c_void_p)],ctypes.c_long),
+            'RemoteBackdropResize':([ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int],ctypes.c_long),
+            'RemoteBackdropVisible':([ctypes.c_void_p,wt.BOOL],ctypes.c_long),
+            'RemoteBackdropDestroy':([ctypes.c_void_p],None)}
+        for name,(args,result) in signatures.items():
+            fn=getattr(self.library,name);fn.argtypes=args;fn.restype=result
+        if self.library.RemoteBackdropApi()!=1:raise OSError('Unsupported backdrop ABI')
+        self.check(self.library.RemoteBackdropCreate(hwnd,ctypes.byref(self.handle)))
+
+    @staticmethod
+    def check(result):
+        if result<0:raise OSError('Composition failed: '+hex(result&0xffffffff))
+    def Resize(self,width,height,radius):
+        self.check(self.library.RemoteBackdropResize(self.handle,width,height,radius))
+    def SetVisible(self,visible):
+        self.check(self.library.RemoteBackdropVisible(self.handle,visible))
+    def Dispose(self):
+        if self.handle.value:
+            self.library.RemoteBackdropDestroy(self.handle);self.handle=ctypes.c_void_p()
+
+
 def edge_color(dark):
     """Premultiplied corner coverage adds the same subtle lip as the glass skin."""
     return (226,237,255,59) if dark else (255,255,255,196)
@@ -131,11 +158,7 @@ class WindowMaterial:
         return rect.right,rect.bottom,max(1,round(PANEL_CONFIG['radius']*window_dpi(hwnd)/96))
 
     def _create_clip(self, hwnd):
-        import clr
-        clr.AddReference(str(self.resources/'ChatGPTRemote.Backdrop.dll'))
-        from ChatGPTRemote.Native import ClippedBackdrop
-        from System import IntPtr
-        return ClippedBackdrop(IntPtr(hwnd))
+        return NativeBackdrop(self.resources/'ChatGPTRemote.Backdrop.dll',hwnd)
 
     def _register_host(self, hwnd, build):
         try:
@@ -206,15 +229,6 @@ class WindowMaterial:
             self._surface(form, True, dark)
             if not self._extend(hwnd, True):
                 raise OSError('Frame extension failed')
-            if backend == 'auto':
-                # Windows owns the transient Desktop Acrylic surface on Windows 11.
-                self._dwm(hwnd,20,int(dark))
-                self._dwm(hwnd,33,1)
-                self._dwm(hwnd,34,-2)
-                if self._dwm(hwnd,38,3):
-                    self.mode='acrylic'
-                    self._key=key
-                    return self.mode
             if not self._register_host(hwnd,build):
                 raise OSError('Host backdrop is unavailable')
             if self._clip_owner!=hwnd:

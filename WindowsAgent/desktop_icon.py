@@ -15,8 +15,8 @@ def vector() -> str:
     paths = ''.join('<path d="' + ' '.join(command + ' ' + ' '.join(map(str, values))
                     for command, values in glyph) + '"/>' for glyph in GLYPHS)
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">'
-            '<rect x=".5" y=".5" width="63" height="63" rx="18" fill="#181818" stroke="#484848"/>'
-            '<g stroke="#fff" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round">'
+            '<rect x="1.25" y="1.25" width="61.5" height="61.5" rx="20" fill="#171717" stroke="#737373" stroke-width="2.5"/>'
+            '<g stroke="#fff" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round">'
             + paths + '</g></svg>')
 
 
@@ -29,8 +29,8 @@ def build():
     scale = 8
     image = Image.new('RGBA', (64*scale, 64*scale))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((.5*scale,.5*scale,63.5*scale,63.5*scale), radius=18*scale,
-                           fill='#181818', outline='#484848', width=scale)
+    draw.rounded_rectangle((1.25*scale,1.25*scale,62.75*scale,62.75*scale), radius=20*scale,
+                           fill='#171717', outline='#737373', width=round(2.5*scale))
     for glyph in GLYPHS:
         points = []
         current = (0, 0)
@@ -47,7 +47,7 @@ def build():
                                         + 3*(1-t)*t*t*b[i] + t**3*end[i] for i in (0,1)))
                 current = end
         points = [(x*scale,y*scale) for x,y in points]
-        width = round(4.6*scale)
+        width = round(5.6*scale)
         left=[];right=[]
         for index,(x,y) in enumerate(points):
             before=points[max(0,index-1)];after=points[min(len(points)-1,index+1)]

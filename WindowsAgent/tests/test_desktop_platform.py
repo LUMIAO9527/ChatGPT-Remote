@@ -24,6 +24,42 @@ class GeometryTests(unittest.TestCase):
             panel.round_window(11,546,802,168)
         gdi.CreateRoundRectRgn.assert_called_once_with(0,0,547,803,56,56)
 
+    def test_reopening_queries_the_moved_icon_and_the_destination_dpi(self):
+        panel=NativePanel.__new__(NativePanel);panel.user=Mock();panel.anchor=(1800,1040,1824,1080)
+        panel.tray_identity=(0x123456789,1);panel.user.GetDpiForWindow.return_value=96
+        panel.user.MonitorFromRect.return_value=1;panel.round_window=Mock()
+        def monitor(_,p):
+            p._obj.rcWork=ctypes.wintypes.RECT(0,0,1920,1040)
+            p._obj.rcMonitor=ctypes.wintypes.RECT(0,0,1920,1080);return 1
+        panel.user.GetMonitorInfoW.side_effect=monitor
+        shcore=Mock()
+        def dpi(_,kind,x,y):x._obj.value=y._obj.value=168;return 0
+        shcore.GetDpiForMonitor.side_effect=dpi
+        form=Mock();form.Handle.ToInt64.return_value=0x987654321
+        with patch('desktop_tray.tray_rect',side_effect=[(1800,1040,1824,1080),(1300,1040,1324,1080)]) as locate, \
+             patch('desktop_platform.ctypes.WinDLL',return_value=shcore):
+            panel.place(form);first=panel.user.SetWindowPos.call_args.args[2:6]
+            panel.place(form);second=panel.user.SetWindowPos.call_args.args[2:6]
+        self.assertNotEqual(first[0],second[0]);self.assertEqual(second[2:],(546,802))
+        self.assertEqual(panel.anchor,(1300,1040,1324,1080));self.assertEqual(locate.call_count,2)
+
+    @unittest.skipUnless(os.name=='nt','Windows GDI regions')
+    def test_native_region_excludes_the_square_corner_and_keeps_the_center(self):
+        gdi=ctypes.WinDLL('gdi32');gdi.PtInRegion.argtypes=[ctypes.wintypes.HRGN,ctypes.c_int,ctypes.c_int]
+        gdi.PtInRegion.restype=ctypes.wintypes.BOOL
+        panel=NativePanel.__new__(NativePanel);panel.user=Mock()
+        for dpi in (96,120,168,192):
+            regions=[];panel.user.SetWindowRgn.side_effect=lambda hwnd,rgn,redraw:regions.append(rgn) or 1
+            width,height=round(312*dpi/96),round(458*dpi/96)
+            with patch('desktop_platform.ctypes.WinDLL',side_effect=lambda name:gdi if name=='gdi32' else Mock()):
+                panel.round_window(1,width,height,dpi)
+            region=regions[0]
+            try:
+                self.assertFalse(gdi.PtInRegion(region,0,0))
+                self.assertFalse(gdi.PtInRegion(region,width-1,height-1))
+                self.assertTrue(gdi.PtInRegion(region,width//2,height//2))
+            finally:gdi.DeleteObject(region)
+
     def test_all_taskbar_edges_and_secondary_monitors_stay_in_work_area(self):
         fixtures=[((1800,1040,1824,1080),(0,0,1920,1040),(0,0,1920,1080)),
                   ((1800,0,1824,40),(0,40,1920,1080),(0,0,1920,1080)),
@@ -130,6 +166,12 @@ class PanelHostTests(unittest.TestCase):
         args=self.launcher.call_args.args[0]
         self.assertIn('--window',args);self.assertNotIn('--show',args)
         self.assertIsNone(self.host.pending);self.foreground.assert_not_called()
+
+    def test_warm_process_receives_the_stable_tray_identity(self):
+        self.host.identity=lambda:(0x123456789,7)
+        self.host.prepare();args=self.launcher.call_args.args[0]
+        self.assertEqual(args[args.index('--tray-window')+1],str(0x123456789))
+        self.assertEqual(args[args.index('--tray-id')+1],'7')
 
     def test_open_and_hide_during_startup_deliver_only_the_latest_intent(self):
         self.host.prepare();self.host.request(True);self.host.request(False)

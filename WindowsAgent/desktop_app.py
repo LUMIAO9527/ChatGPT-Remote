@@ -121,7 +121,8 @@ def window_main(args):
                                     hidden=True,shadow=True,text_select=True,on_top=False,
                                     background_color='#1d1d1d' if theme=='dark' else '#ffffff')
         manager.window=window
-        panel=NativePanel(window,manager,signals,args.anchor,log);manager.panel=panel
+        identity=(args.tray_window,args.tray_id) if args.tray_window else None
+        panel=NativePanel(window,manager,signals,args.anchor,log,tray_identity=identity);manager.panel=panel
         panel.show_requested=args.show
         closed=threading.Event();window.events.closed+=closed.set
         def events():
@@ -139,8 +140,9 @@ def window_main(args):
 
 class PanelHost:
     """Warm once; deliver each visibility request once, including during startup."""
-    def __init__(self,anchor,notify):
+    def __init__(self,anchor,notify,identity=lambda:None):
         self.anchor,self.notify=anchor,notify
+        self.identity=identity
         self.child=None;self.pending=None;self.opened=False;self.lock=threading.RLock()
 
     def prepare(self):
@@ -151,6 +153,8 @@ class PanelHost:
             arguments=[str(Path(sys.executable).with_name('pythonw.exe')),'-B',str(HERE/'desktop_app.py'),'--window']
             rect=self.anchor()
             if rect:arguments+=['--anchor',*[str(value) for value in rect]]
+            identity=self.identity()
+            if identity:arguments+=['--tray-window',str(identity[0]),'--tray-id',str(identity[1])]
             self.child=subprocess.Popen(arguments,cwd=HERE,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
                                         stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
 
@@ -215,7 +219,8 @@ def tray_main(args):
         return [{'label':'打开连接面板','action':open_window},
                 {'label':'退出管理程序','action':stop}]
     panel_host=PanelHost(lambda:icon.rect() if icon else None,
-                         lambda:icon.notify('连接面板启动失败，点击重新打开。','ChatGPT Remote',action=open_window))
+                         lambda:icon.notify('连接面板启动失败，点击重新打开。','ChatGPT Remote',action=open_window),
+                         identity=lambda:icon.identity() if icon else None)
     icon=TrayIcon(str(HERE/'desktop.ico'),'ChatGPT Remote · Rm',panel_host.toggle,menu,log=log)
     icon.run_detached();log.info('tray_ready pid=%s',os.getpid())
     panel_host.prepare()
@@ -232,7 +237,9 @@ def tray_main(args):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--window',action='store_true')
     parser.add_argument('--background',action='store_true');parser.add_argument('--show',action='store_true')
-    parser.add_argument('--anchor',nargs=4,type=int);args=parser.parse_args()
+    parser.add_argument('--anchor',nargs=4,type=int)
+    parser.add_argument('--tray-window',type=int);parser.add_argument('--tray-id',type=int,default=1)
+    args=parser.parse_args()
     (RUNTIME/'temp').mkdir(parents=True,exist_ok=True)
     os.environ['TEMP']=os.environ['TMP']=str(RUNTIME/'temp')
     os.environ['WEBVIEW2_USER_DATA_FOLDER']=str(RUNTIME/'webview');os.environ['PYTHONDONTWRITEBYTECODE']='1'

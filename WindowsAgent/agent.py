@@ -36,7 +36,7 @@ from attachments import UploadStore, UploadError, MAX_FILE
 from delivery import DeliveryStore
 
 HERE = Path(__file__).resolve().parent
-VERSION = "0.16.0"
+VERSION = "0.16.1"
 DEFAULT_MAX_WIDTH = 1280
 DEFAULT_JPEG_QUALITY = 65
 DEFAULT_FPS = 8
