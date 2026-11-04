@@ -1,0 +1,3379 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light">
+<title>ChatGPT Remote · 手机控制台</title>
+<style>
+:root{
+  --bg:#f5f6f7;
+  --card:#ffffff;
+  --ink:#13211d;
+  --muted:#5f726c;
+  --line:#d9e4e0;
+  --accent:#243d34;
+  --accent-ink:#172b23;
+  --accent-soft:#e3f1ec;
+  --warn:#8a5a0c;
+  --warn-bg:#fbf1dd;
+  --warn-line:#ecd7a8;
+  --danger:#a13340;
+  --danger-bg:#fbeaec;
+  --danger-line:#efc9cd;
+  --screen:#0b1417;
+  --radius:16px;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --safe-left:env(safe-area-inset-left,0px);
+  --safe-right:env(safe-area-inset-right,0px);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--ink);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI","Noto Sans SC","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  -webkit-text-size-adjust:100%;
+  overscroll-behavior-y:contain;
+}
+body.immersive-open{overflow:hidden}
+[hidden]{display:none!important}
+h1,h2,p{margin:0}
+img{max-width:100%}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+.topbar{
+  max-width:1220px;
+  margin:0 auto;
+  padding:calc(12px + var(--safe-top)) max(14px,var(--safe-right)) 10px max(14px,var(--safe-left));
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.brand{min-width:0}
+.title-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+h1{font-size:17px;line-height:1.3;letter-spacing:-.2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.meta{margin-top:3px;font-size:12px;color:var(--muted)}
+.top-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:28px}
+.chip{font-size:11px;font-weight:600;padding:5px 9px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip[data-tone="accent"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;
+  background:#e6ebe9;color:#42524e;border:1px solid #d7dfdc;white-space:nowrap;
+}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.8}
+.badge[data-tone="good"]{background:var(--accent-soft);color:var(--accent-ink);border-color:#c4e0d7}
+.badge[data-tone="warn"]{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.badge[data-tone="bad"]{background:var(--danger-bg);color:var(--danger);border-color:var(--danger-line)}
+
+main{
+  max-width:1220px;
+  margin:0 auto;
+  padding:0 max(14px,var(--safe-right)) calc(26px + var(--safe-bottom)) max(14px,var(--safe-left));
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:16px;
+  box-shadow:0 1px 2px #0f2b2310,0 12px 26px -24px #0f2b2355;
+}
+.card h2{font-size:15px;line-height:1.35;font-weight:700}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sub{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px}
+.tip{font-size:12px;color:var(--muted);line-height:1.6}
+label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px}
+input,select,textarea{
+  width:100%;font-family:inherit;font-size:16px;line-height:1.5;color:var(--ink);
+  background:#fff;border:1px solid #cddad5;border-radius:11px;padding:11px 12px;
+}
+textarea{resize:vertical;min-height:78px}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid #6fb3a3;outline-offset:2px}
+select{min-height:44px}
+::placeholder{color:#93a39e}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:44px;padding:0 15px;
+  border:1px solid #cddad5;border-radius:11px;background:#fff;color:var(--ink);
+  font-family:inherit;font-size:14px;font-weight:600;line-height:1.2;
+  cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+  transition:background .12s ease,border-color .12s ease,opacity .12s ease;
+}
+.btn:not(:disabled):hover{background:#f4f8f6}
+.btn:not(:disabled):active{background:#e9f1ee}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:not(:disabled):hover{background:var(--accent-ink)}
+.btn.primary:not(:disabled):active{background:#08463d}
+.btn.ghost{color:var(--muted);background:#fff}
+.btn.small{min-height:42px;padding:0 11px;font-size:12.5px;border-radius:10px}
+.btn.block{width:100%;margin-top:10px}
+.btn.danger-ghost{color:var(--danger);border-color:var(--danger-line);background:#fff}
+.btn.danger-ghost:not(:disabled):hover{background:var(--danger-bg)}
+.btn:disabled{opacity:.48;cursor:not-allowed;background:#f1f4f3;border-color:#e0e7e4;color:#7d8b87}
+.btn.primary:disabled{background:#9dbfb7;border-color:#9dbfb7;color:#f2fbf8}
+.btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn-row .btn{flex:1 1 0;min-width:0}
+
+.pair-view{display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:min(7vh,58px)}
+.pair-card{width:100%;max-width:420px}
+.pair-card{padding:28px 24px;border-radius:22px;box-shadow:0 12px 40px #17261c08}
+.pair-card h2{font-size:25px;letter-spacing:-.5px}
+.pair-card .sub{margin:8px 0 22px;font-size:14px}
+#pairForm{margin-top:6px}
+#pairForm label{font-size:13px;margin-top:16px}
+#pairForm .btn{min-height:48px;border-radius:12px;font-size:15px}
+#pin{
+  font-size:23px;font-weight:600;letter-spacing:.32em;text-align:center;
+  padding:12px 10px 12px 18px;font-variant-numeric:tabular-nums;
+}
+#pin::placeholder{letter-spacing:.3em;font-weight:500}
+.error-text{min-height:19px;margin:9px 0 2px;font-size:12.5px;color:var(--danger);line-height:1.5;white-space:pre-wrap}
+.footnote{font-size:11.5px;color:var(--muted);text-align:center;max-width:420px;line-height:1.6}
+
+.remote-view{display:block}
+.banner{
+  position:sticky;top:calc(4px + var(--safe-top));z-index:30;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:11px 14px;margin-bottom:12px;border-radius:13px;border:1px solid;
+  box-shadow:0 10px 24px -18px #00000066;
+}
+.banner-warn{background:var(--warn-bg);border-color:var(--warn-line);color:#6b4708}
+.banner strong{font-size:13px;white-space:nowrap}
+.banner span{font-size:12.5px;flex:1 1 180px;line-height:1.5}
+.banner .btn{min-height:40px;background:#fff;border-color:var(--warn-line);color:#6b4708}
+
+.layout{display:block}
+.screen-card{padding:14px}
+.screen-stats{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.stat{
+  font-size:11.5px;font-weight:600;color:var(--muted);background:#f1f5f3;
+  border:1px solid #e0e8e4;border-radius:999px;padding:5px 9px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.stat[data-tone="good"]{background:var(--accent-soft);border-color:#c4e0d7;color:var(--accent-ink)}
+.stat[data-tone="warn"]{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn)}
+.stat[data-tone="bad"]{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger)}
+
+.screen-shell{
+  position:relative;margin-top:10px;width:100%;
+  aspect-ratio:var(--ar,16/9);
+  max-height:58vh;
+  background:var(--screen);border-radius:12px;overflow:hidden;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+}
+.screen-shell canvas{
+  position:absolute;inset:0;display:block;width:100%;height:100%;
+  object-fit:contain;background:var(--screen);
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none;
+}
+.screen-shell.is-blocked canvas{cursor:not-allowed}
+.screen-hint{
+  position:absolute;inset:0;z-index:1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  padding:22px;text-align:center;color:#c9d9d5;
+  background:linear-gradient(#0b1417e6,#0b1417f2);
+  pointer-events:none;
+}
+.screen-hint strong{font-size:14px;font-weight:600;color:#e8f1ef}
+.screen-hint span{font-size:12px;line-height:1.6;color:#9fb4af;max-width:36ch}
+.ribbon-stack{
+  position:absolute;left:8px;right:8px;top:8px;z-index:2;
+  display:flex;flex-direction:column;gap:6px;pointer-events:none;
+}
+.ribbon{
+  padding:7px 10px;border-radius:9px;text-align:center;
+  font-size:12px;font-weight:600;line-height:1.4;
+  background:#10252a;color:#d6e9e4;border:1px solid #2c474d;
+}
+.ribbon-warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.immersive-stats{
+  display:none;position:absolute;left:8px;right:8px;bottom:calc(8px + var(--safe-bottom));
+  z-index:3;justify-content:center;gap:6px;pointer-events:none;
+}
+.immersive-stats span{
+  font-size:11px;font-weight:600;color:#dfeeea;background:#0b1417cc;
+  border:1px solid #2c474d;border-radius:999px;padding:4px 9px;
+  font-variant-numeric:tabular-nums;
+}
+.screen-fullscreen-exit{
+  display:none;position:absolute;right:calc(10px + var(--safe-right));top:calc(10px + var(--safe-top));
+  z-index:5;min-height:46px;padding:0 16px;border-radius:999px;
+  background:#ffffffeb;border-color:#ffffff66;color:#16302a;
+  box-shadow:0 8px 20px -12px #00000088;
+}
+.screen-shell.immersive{
+  position:fixed;inset:0;z-index:90;width:100vw;height:100vh;margin-top:0;
+  max-height:none;aspect-ratio:auto;border-radius:0;background:#000;
+}
+.screen-shell.immersive canvas{width:100%;height:100%;object-fit:contain;background:#000}
+.screen-shell.immersive .screen-fullscreen-exit{display:inline-flex}
+.screen-shell.immersive .immersive-stats{display:flex}
+.screen-shell.immersive .ribbon-stack{top:auto;bottom:calc(42px + var(--safe-bottom))}
+
+.screen-foot{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.status-line{font-size:13px;font-weight:600;color:#2a3d37;line-height:1.5;min-height:20px}
+.status-line::before{
+  content:"";display:inline-block;width:8px;height:8px;border-radius:50%;
+  background:#8fa39d;margin-right:7px;vertical-align:1px;
+}
+.status-line[data-tone="good"]::before{background:var(--accent)}
+.status-line[data-tone="warn"]::before{background:var(--warn)}
+.status-line[data-tone="bad"]::before{background:var(--danger)}
+.gate-line{font-size:12.5px;color:var(--warn);line-height:1.5}
+.error-line{font-size:12.5px;color:var(--danger);line-height:1.5;white-space:pre-wrap}
+.tip-row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+.side{display:flex;flex-direction:column;gap:12px;min-width:0;margin-top:12px}
+.side .card h2{font-size:14px}
+.state-line{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:4px}
+#windowSelect{margin-top:2px}
+.key-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.key{flex-direction:column;gap:1px;min-height:50px;padding:5px 4px;border-radius:10px}
+.key .k-label{font-size:13px;font-weight:600;line-height:1.2}
+.key .k-code{font-size:9px;font-weight:600;letter-spacing:.04em;color:#85958f;line-height:1.2;text-transform:uppercase}
+.key:disabled .k-code{color:#a8b4b0}
+.scroll-row{margin-top:8px}
+.account-card{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.account-card>div{min-width:0;flex:1 1 180px}
+.account-card .btn{flex:0 0 auto}
+
+.toast{
+  position:fixed;left:50%;bottom:calc(20px + var(--safe-bottom));z-index:120;
+  transform:translate(-50%,8px);
+  max-width:min(92vw,480px);padding:10px 14px;border-radius:11px;
+  background:#112220;color:#eaf4f1;font-size:13px;line-height:1.45;text-align:center;
+  box-shadow:0 16px 36px -14px #00000099;
+  opacity:0;transition:opacity .15s ease,transform .15s ease;pointer-events:none;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media(max-width:640px){
+  .topbar{padding-top:calc(10px + var(--safe-top))}
+  h1{font-size:16px;white-space:normal}
+  .screen-card{padding:11px}
+  .screen-shell{max-height:52vh;border-radius:10px}
+  .card{padding:14px}
+  .btn-row .btn{flex:1 1 calc(50% - 4px)}
+  .account-card .btn{width:100%}
+  .banner{top:calc(2px + var(--safe-top))}
+}
+@media(min-width:980px){
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 348px;gap:14px;align-items:start}
+  .side{margin-top:0}
+  .screen-shell{max-height:70vh}
+  .screen-card{padding:16px}
+  .pair-view{padding-top:9vh}
+}
+@media(orientation:landscape) and (max-height:540px){
+  .screen-shell{max-height:calc(100vh - 210px);min-height:150px}
+  .pair-view{padding-top:8px}
+}
+@media(prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+.view-switch{display:flex;gap:4px;margin:0 0 12px;padding:4px;background:#e8ecea;border-radius:12px}
+.view-switch .btn{flex:1;min-height:36px;background:transparent;border-color:transparent;color:#61706a}
+.view-switch .btn[aria-pressed="true"]{background:#fff;color:#18231f;box-shadow:0 1px 4px #17282015}
+.conversation-card{min-width:0}
+.conversation-card .card-head>div{min-width:0;flex:1}
+#conversationTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-messages{height:58vh;min-height:240px;overflow-y:auto;overscroll-behavior:contain;padding:18px 4px;scrollbar-gutter:stable;user-select:text;overflow-anchor:none}
+.chat-message{margin:0 auto 16px;max-width:740px}
+.chat-message-foot{display:flex;align-items:center;gap:6px;margin-top:3px;color:#929b95;min-height:28px}
+.chat-timestamp{font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chat-duration{font-size:11px;color:#92979c;line-height:1.5}
+.chat-copy{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border:0;background:transparent;color:#8b9091;padding:6px;min-width:28px;min-height:28px;cursor:pointer;border-radius:6px}
+.chat-copy:hover{background:#f0f1f2;color:#202526}
+.chat-copy:focus-visible{outline:2px solid #60877a;outline-offset:1px}
+.chat-copy-icon{position:relative;display:block;width:14px;height:14px}
+.chat-copy-icon::before,.chat-copy-icon::after{content:'';position:absolute;width:8px;height:9px;border:1.3px solid currentColor;border-radius:2px}
+.chat-copy-icon::before{left:1px;top:1px;border-right:0;border-bottom:0}
+.chat-copy-icon::after{left:4px;top:4px;background:inherit}
+.chat-message[data-role="user"]{width:fit-content;max-width:min(88%,650px);margin-left:auto;margin-right:0}
+.chat-message[data-role="user"] .chat-message-foot{justify-content:flex-end;padding-right:4px}
+.chat-message[data-role="user"] .chat-message-body{padding:12px 16px;border-radius:20px 20px 6px 20px;background:#f1f2f3}
+.chat-message-body{overflow-wrap:anywhere;font-size:16px;line-height:1.7;color:#232729}
+.chat-message-body p{white-space:pre-wrap;margin:0 0 10px}
+.chat-message-body p:last-child,.chat-message-body ul:last-child,.chat-message-body pre:last-child{margin-bottom:0}
+.chat-message-body ul{padding-left:23px;margin:6px 0 10px}
+.chat-message-body li{white-space:pre-wrap;padding-left:3px;margin:4px 0}
+.chat-message-body h3{font-size:17px;line-height:1.6;margin:16px 0 8px;font-weight:650;white-space:pre-wrap}
+.chat-message-body h3:first-child{margin-top:0}
+.chat-message-body pre{white-space:pre;overflow:auto;max-width:100%;margin:10px 0 12px;padding:15px;border:1px solid #e5e7e9;border-radius:12px;background:#f6f7f8;font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4}
+.chat-attachments{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 9px}
+.chat-attachment{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 9px;border:1px solid #e3e5e8;border-radius:9px;background:#f6f7f8;color:#777e85;font-size:12px;line-height:1.5}
+.chat-attachment .icon{width:16px;height:16px}
+.chat-attachment span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-message-body:has(>.chat-attachments:only-child) .chat-attachments{margin-bottom:0}
+.chat-message[data-phase="activity"]{margin-bottom:12px}
+.chat-message[data-phase="activity"] .chat-message-body{font-size:13px;line-height:1.6;color:#72777c;padding-left:12px;border-left:2px solid #e8e9eb}
+.chat-message[data-phase="activity"] .chat-message-body p{margin-bottom:5px}
+.chat-message[data-phase="activity"] .chat-message-foot{min-height:16px;margin-top:2px}
+.chat-message[data-phase="activity"] .chat-copy{display:none}
+.chat-process{margin:9px 0 12px;color:#747980;font-size:13px;line-height:1.6}
+.chat-process summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;min-height:30px}
+.chat-process summary::-webkit-details-marker{display:none}
+.chat-process summary::before{content:'';width:6px;height:6px;border-right:1.4px solid currentColor;border-bottom:1.4px solid currentColor;transform:rotate(-45deg);flex-shrink:0;margin-right:2px}
+.chat-process[open] summary::before{transform:rotate(45deg)}
+.chat-process-content{border-left:2px solid #e8e9eb;padding:5px 0 3px 12px;margin-top:4px}
+.chat-process-content h3{font-size:14px}
+.chat-process-content pre{font-size:12px}
+.chat-process-content p{margin-bottom:6px}
+.queued-strip{margin:0 0 6px;padding:0 2px 6px;border-bottom:1px solid #e7e8ea}
+.queued-toggle{display:flex;align-items:center;gap:7px;width:100%;min-height:30px;padding:3px 0;border:0;background:transparent;color:#777d83;text-align:left;font:inherit;font-size:12px;cursor:pointer}
+.queued-toggle .icon{width:15px;height:15px}
+.queued-preview{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queued-count{white-space:nowrap;font-size:11px;color:#9a9fa4}
+.queued-list{max-height:24vh;overflow:auto;overscroll-behavior:contain;padding:4px 0}
+.queued-item{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;color:#72777c;padding:7px 9px;background:#f0f1f3;border-radius:9px;margin-bottom:5px}
+.phone-files{display:flex;gap:7px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:thin}
+.phone-file{display:flex;align-items:center;gap:7px;min-width:130px;max-width:220px;flex-shrink:0;padding:8px 10px;border:1px solid #e1e4e7;border-radius:11px;background:#fff;color:#535c66;font-size:12px}
+.phone-file-name{display:block;max-width:170px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.phone-file-status{display:block;color:#999fa6;font-size:11px;margin-top:2px}
+.phone-file[data-state="unknown"],.phone-file[data-state="error"]{border-color:#e6b7b7}
+.phone-file-action{border:0;background:transparent;color:#8a919a;font:inherit;font-size:11px;padding:4px;cursor:pointer}
+.chat-empty{padding:50px 20px;text-align:center;color:#737b77;line-height:1.8}
+.chat-error{color:#a13340;margin:8px 16px;line-height:1.6;padding:10px 12px;background:#fff1f2;border-radius:10px;max-height:110px;overflow:auto;font-size:13px}
+.chat-status{font-size:11.5px;line-height:1.6;color:#8a908c;margin-top:3px}
+.settings-backdrop{position:fixed;inset:0;z-index:60;background:#14211b55;border:0;width:100%;height:100%;backdrop-filter:blur(3px)}
+.mobile-panel{position:fixed;inset:calc(12px + var(--safe-top)) auto calc(12px + var(--safe-bottom)) 50%;transform:translateX(-50%);z-index:66;width:min(520px,calc(100% - 24px));display:flex;flex-direction:column;min-height:0;border:1px solid #e8ece9;border-radius:20px;background:#fff;box-shadow:0 18px 70px #0003;overflow:hidden}
+.panel-head{display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:62px;padding:8px 14px 8px 22px;border-bottom:1px solid #f0f2f1}
+.panel-head h2{flex:1;min-width:0;margin:0;font-size:18px;font-weight:650;color:#26382f}
+.panel-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:40px;height:40px;min-height:40px;padding:9px;border:0;border-radius:12px;background:transparent;color:#6d7871;cursor:pointer}
+.panel-icon:hover{background:#f0f3f1}
+.panel-icon:focus-visible{outline:2px solid #60877a;outline-offset:-2px}
+.panel-icon .icon{width:20px;height:20px}
+.panel-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 20px 24px}
+.settings-body{background:#f7f8f7;padding:6px 16px 24px}
+.settings-group{margin-top:18px}
+.settings-group>h3{margin:0 8px 8px;color:#7a857e;font-size:12px;font-weight:500}
+.settings-surface{padding:4px 14px;border:1px solid #e8ece9;border-radius:15px;background:#fff}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:58px;font-size:14px}
+.setting-row+.setting-row{border-top:1px solid #f0f2f0}
+.setting-row label{margin:0;font:inherit;color:#34453a}
+.setting-row select{max-width:58%;width:auto;min-width:140px;margin:0;padding:8px 28px 8px 10px;min-height:38px;font-size:12px;background-color:#f6f8f6;border-color:#e8ece9}
+.settings-surface .btn{min-height:36px;padding:7px 11px;font-size:12px;border-radius:9px}
+.settings-surface .screen-stats{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 12px}
+.settings-surface .stat{font-size:11px;background:#f5f7f5;border:0}
+.settings-window{padding:6px 0 12px}
+.settings-window select{margin:10px 0;font-size:13px;min-height:42px}
+.settings-window .state-line{margin:0;color:#7b877f;font-size:12px;line-height:1.5}
+.settings-shortcuts summary{padding:16px 0;cursor:pointer;font-size:14px;color:#34453a}
+.settings-shortcuts .key-grid{padding-bottom:10px}
+.settings-shortcuts .scroll-row{padding-bottom:12px}
+.settings-version{margin:20px 0 0;text-align:center;font-size:11px;color:#9aa39d}
+.navigation-panel{padding:0}
+.navigation-content{display:flex;flex:1;min-height:0;flex-direction:column;padding:4px 16px 16px}
+.navigation-panel h2{font-size:16px;font-weight:650}
+.navigation-panel .navigation-search{flex-shrink:0;margin:0 0 8px;background:#f5f5f6;border-color:transparent;border-radius:11px;font-size:14px;min-height:44px;padding:10px 12px}
+.navigation-filters{display:flex;gap:4px;flex-shrink:0;padding:0 0 4px}
+.navigation-filter{min-height:32px;border:0;border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;background:transparent;color:#777e86;cursor:pointer}
+.navigation-filter[aria-pressed="true"]{background:#eceef0;color:#333940;font-weight:600}
+.navigation-panel .error-text{margin:4px 0;min-height:0;flex-shrink:0}
+.navigation-panel .error-text:empty{display:none}
+.navigation-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0}
+.navigation-empty{margin:20px 8px;color:#858b92;text-align:center;font-size:13px}
+.navigation-group{margin:0 0 4px;padding:0;background:transparent;border:0}
+.navigation-item{display:flex;align-items:center;gap:8px;border:0;border-radius:10px;background:transparent;width:100%;min-height:44px;padding:10px;text-align:left;color:#545b63;font:inherit;font-size:13px;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+.navigation-item:hover{background:#f5f5f6}
+.navigation-item:disabled{opacity:.5;cursor:wait}
+.navigation-item[data-kind="project"]{font-weight:600;font-size:14px;color:#282e34}
+.navigation-item[data-kind="thread"]{padding-left:30px;color:#68717b}
+.navigation-item[data-kind="more"]{padding-left:30px;color:#858b92;font-size:12px}
+.navigation-item[data-active="true"]{background:#eff0f2;color:#252a30}
+.navigation-item .navigation-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.navigation-icon,.navigation-chevron{display:flex;align-items:center;flex-shrink:0;color:#92979d}
+.navigation-icon{width:18px}
+.navigation-icon .icon,.navigation-chevron .icon{width:17px;height:17px}
+.navigation-project-head{display:flex;align-items:center;gap:0}
+.navigation-project-head>.navigation-item{flex:1;min-width:0}
+.navigation-project-new{flex-shrink:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:transparent;color:#727981;cursor:pointer}
+.navigation-project-new:hover{background:#f1f2f4;color:#30363c}
+.navigation-project-new:focus-visible{outline:2px solid #60877a;outline-offset:-2px}
+.navigation-project-new .icon{width:20px;height:20px}
+.navigation-new{width:44px;height:44px}
+.navigation-item[aria-busy="true"] .navigation-icon,.navigation-project-new[aria-busy="true"] .icon{display:none}
+.send-progress{display:flex;align-items:center;gap:7px;padding:0 14px 6px;color:#7a827e;font-size:12px;line-height:1.5}
+.send-progress .control-spinner{display:inline-block}
+.options-panel{inset:auto auto calc(12px + var(--safe-bottom)) 50%;max-height:76vh}
+.options-list{display:grid;gap:3px}
+.option-row{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:12px;border:0;border-radius:11px;text-align:left;background:transparent;font:inherit;font-size:14px;color:#33483a;cursor:pointer}
+.option-row:hover,.option-row[data-selected="true"]{background:#eef4ef}
+.option-row:disabled{opacity:.45;cursor:default}
+.option-row .option-title{flex:1;min-width:0;overflow-wrap:anywhere}
+.option-caption{display:block;color:#8b988f;font-size:11px;line-height:1.5;margin-top:3px}
+.option-mark{width:20px;flex-shrink:0;color:#7e9585;text-align:center}
+.option-error{margin:6px 0 12px;font-size:12px;line-height:1.6;color:#a13340}
+.option-empty{margin:16px 8px;color:#849087;font-size:13px;line-height:1.6}
+.option-screen{width:100%;margin-top:12px;border:1px solid #e6ebe7;border-radius:12px;background:#f8faf8;color:#687e6d;min-height:42px;font:inherit;font-size:12px;cursor:pointer}
+.option-surface{display:block;width:100%;height:auto;border-radius:14px;touch-action:none;cursor:pointer;margin:6px 0 10px}
+.remote-mode #composerOptionsBtn{flex-shrink:0;width:32px;min-width:32px;min-height:38px;padding:6px 2px;border:0;background:transparent;color:#7b8a80;border-radius:10px}
+.remote-mode #composerOptionsBtn .icon{width:21px;height:21px}
+@media(max-width:600px){.mobile-panel{inset:0 0 auto;transform:none;width:100%;height:var(--app-height,100dvh);border:0;border-radius:0;padding-top:var(--safe-top);padding-bottom:var(--safe-bottom)}.panel-head{padding-left:20px;min-height:58px}.options-panel{inset:auto 0 0;height:auto;max-height:78vh;border-radius:22px 22px 0 0;padding-top:0}.draft-panel{inset:0;transform:none;width:100%;max-height:none}}
+.setting-choice{width:100%;display:flex;align-items:center;gap:12px;min-height:56px;padding:12px 0;border:0;background:transparent;color:#292d32;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.setting-choice>span:first-child{flex-shrink:0}
+.setting-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:13px;color:#858a90}
+.setting-choice .icon{width:16px;height:16px;color:#a2a6ab;transition:transform .15s}
+.setting-choice[aria-expanded="true"] .icon{transform:rotate(90deg)}
+.setting-choices{padding:0 0 8px;border-top:1px solid #f0f1f3}
+.setting-option{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 8px;border:0;border-radius:9px;background:transparent;font:inherit;font-size:13px;color:#656b72;text-align:left;cursor:pointer}
+.setting-option>span{flex:1;overflow-wrap:anywhere}
+.setting-option[aria-checked="true"]{color:#20242a;background:#f0f1f3}
+.setting-option:hover,.setting-choice:hover{background:#f7f7f8}
+.setting-switch{position:relative;flex-shrink:0;width:40px;height:24px;min-height:24px;border:0;padding:0;border-radius:20px;background:#dadddf;cursor:pointer}
+.setting-switch .switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .15s}
+.setting-switch[aria-checked="true"]{background:#272b31}
+.setting-switch[aria-checked="true"] .switch-thumb{transform:translateX(16px)}
+.settings-surface{border-color:#e9eaec;border-radius:14px}
+.settings-body{background:#f7f7f8}
+.settings-surface .setting-switch{padding:0;min-height:24px}
+.panel-head h2{color:#24282d}
+.option-row{color:#30363c;min-height:54px}
+.option-row:hover,.option-row[data-selected="true"]{background:#f1f2f4}
+.option-mark{display:flex;align-items:center;justify-content:center;color:#8c939a}
+.option-mark .icon{width:19px;height:19px}
+.option-caption{color:#9399a0;font-size:12px}
+.option-row[data-pending="true"]{opacity:1;background:#f3f4f6}
+.control-spinner{display:inline-block;width:15px;height:15px;border:1.7px solid #cbd0d5;border-top-color:#535c65;border-radius:50%;animation:control-spin .65s linear infinite}
+@keyframes control-spin{to{transform:rotate(360deg)}}
+button:focus-visible,summary:focus-visible{outline:2px solid #747c86;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.setting-switch .switch-thumb,.setting-choice .icon{transition:none}}
+.remote-toolbar{display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:54px;padding:calc(7px + var(--safe-top)) 14px 7px;border-bottom:1px solid #f0f2f1}
+.context-picker{display:flex;align-items:center;gap:7px;flex:1;min-width:0;min-height:38px;padding:4px 2px;border:0;background:transparent;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+#currentContextTitle{font-size:14px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.context-arrow{color:#8a958f;font-size:14px;flex-shrink:0}
+.icon-compose{fill:currentColor!important;stroke:none!important}
+.icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.composer-tools{display:flex;align-items:center;gap:8px;font-size:11px;color:#8a958f}
+.composer-tools .btn{min-height:28px;padding:0 6px;border:0;background:transparent;font-size:11px;font-weight:500;color:#74837a}
+.composer-tools:has(>button:not([hidden])){margin-bottom:3px}
+.composer-tools .btn[data-has-draft="true"]{color:#946019}
+#recoveredUndoBtn{margin-left:auto}
+.draft-panel{inset:calc(30px + var(--safe-top)) auto auto 50%;transform:translateX(-50%);width:min(520px,calc(100% - 28px));max-height:calc(var(--app-height,100dvh) - 60px - var(--safe-top) - var(--safe-bottom));overflow:auto;overscroll-behavior:contain}
+.draft-panel .card-head{gap:8px}
+.draft-panel .draft-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 0 0}
+.draft-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:25vh;overflow:auto;margin:8px 0 12px;padding:13px;border:1px solid #e4e9e6;border-radius:12px;background:#f7f9f7;color:#34463a;font:inherit;font-size:13px;line-height:1.7}
+.draft-label{font-size:11px;color:#829087}
+.draft-actions{display:grid;gap:8px;margin-top:12px}
+.draft-actions .btn{min-height:42px;font-size:13px}
+.draft-actions .danger{color:#a13340;border-color:#efc9cd}
+.draft-panel .navigation-footer{margin-top:12px}
+.draft-panel .error-text{margin:8px 0 0;font-size:12px}
+body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;background:#fff;display:flex;flex-direction:column}
+.remote-mode .topbar{display:none}
+.remote-mode .badge{position:absolute;right:3px;top:3px;width:7px;height:7px;min-width:7px;padding:0;border:0;border-radius:50%;font-size:0;overflow:hidden;background:#aab4af;color:#aab4af}
+.remote-mode .badge::before{display:none}
+.remote-mode .badge[data-tone="good"]{background:#44956a}
+.remote-mode .badge[data-tone="warn"]{background:#d89b39}
+.remote-mode .badge[data-tone="bad"]{background:#c85b64}
+.remote-mode #settingsToggleBtn{position:relative;border:0;background:transparent;min-height:36px;width:34px;padding:0;border-radius:10px;color:#6f7b75;flex-shrink:0}
+.remote-mode #remoteView{width:100%;max-width:860px;padding:0 0 var(--safe-bottom);flex:1;min-height:0;display:flex;flex-direction:column}
+.remote-mode .view-switch{flex-shrink:0;width:106px;margin:0;padding:3px;background:#f1f3f2;border-radius:10px}
+.remote-mode .view-switch .btn{min-height:30px;padding:0 8px;font-size:12px;border-radius:8px}
+.remote-mode .layout{display:flex;flex-direction:column;flex:1;min-height:0;gap:0}
+.remote-mode .conversation-card{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none}
+.remote-mode #conversationTitle{font-size:13px;font-weight:550;color:#636b67}
+.remote-mode #chatLatestBtn{position:absolute;right:20px;bottom:12px;min-height:34px;width:34px;font-size:19px;padding:0;border:1px solid #e7eae8;border-radius:50%;background:#fff;color:#78817c;box-shadow:0 2px 8px #173d2010}
+.remote-mode .chat-messages{height:auto;min-height:0;flex:1;padding:20px 20px 6px}
+.remote-mode .chat-empty{flex:1;display:grid;place-content:center;min-height:0}
+.remote-mode .conversation-card>.tip{display:none}
+.remote-mode .side{display:contents}
+.remote-mode .composer-card{flex:0 0 auto;width:calc(100% - 28px);max-width:760px;align-self:center;margin:6px 14px 10px;padding:8px 10px 8px 14px;border:1px solid #e2e5e4;border-radius:23px;background:#f9faf9;box-shadow:0 3px 14px #17282006}
+.remote-mode .composer-card h2{display:none}
+.composer-input{display:flex;align-items:flex-end;gap:10px}
+.remote-mode #message{flex:1;min-width:0;display:block;resize:none;min-height:40px;max-height:150px;padding:7px 0;border:0;border-radius:0;background:transparent;line-height:1.6}
+.remote-mode #message:focus-visible{outline:none}
+.remote-mode .composer-card:focus-within{border-color:#bfc4ca;box-shadow:0 0 0 2px #e9ebee80}
+.remote-mode #sendEnterBtn{flex-shrink:0;width:38px;min-width:38px;min-height:38px;padding:0;margin:0 0 1px;border-radius:50%;background:#252a30;border-color:#252a30;color:#fff}
+.remote-mode #sendEnterBtn:disabled{background:#dadde1;border-color:#dadde1}
+.remote-mode .banner{margin:0 12px 6px;flex-shrink:0;padding:8px 10px}
+.remote-mode .screen-card{display:flex;flex-direction:column;flex:1;min-height:0;padding:10px 14px 0;border:0;border-radius:0;box-shadow:none;overflow:auto}
+.remote-mode .screen-card>.card-head{display:none}
+.remote-mode .screen-card h2{font-size:13px;font-weight:550;color:#636b67}
+.remote-mode .screen-card .sub{font-size:11px;color:#8a908c}
+.remote-mode .screen-stats{gap:4px}
+.remote-mode .screen-stats .stat{font-size:10px;padding:4px 6px;border:0;border-radius:8px;background:#f3f6f4}
+.remote-mode .screen-stats .btn{min-height:30px;border:0;background:#f3f6f4;font-size:11px;padding:0 8px;border-radius:8px}
+.remote-mode .screen-shell:not(.immersive){flex:1;min-height:130px;aspect-ratio:auto;max-height:none;margin-top:0;border-radius:14px}
+.remote-mode #fullscreenBtn{position:absolute;z-index:4;right:10px;top:10px;width:34px;min-height:34px;padding:0;border:0;border-radius:9px;background:#fffdf8dd;color:#35443c}
+.remote-mode .screen-shell.immersive #fullscreenBtn{display:none}
+.remote-mode .screen-foot{flex-shrink:0;padding:8px 4px 2px;gap:3px;margin-top:0}
+.remote-mode .screen-foot .tip{font-size:10.5px;color:#8a958e}
+.remote-mode .status-line{font-size:11.5px;font-weight:450}
+.remote-mode .gate-line,.remote-mode .error-line{font-size:12px}
+@media(max-width:380px){.remote-toolbar{gap:6px;padding-left:12px;padding-right:10px}.remote-mode .chat-messages{padding-left:16px;padding-right:16px}.chat-message-body{font-size:15.5px}}
+@media(max-width:600px){.mobile-panel.draft-panel{inset:0;transform:none;width:100%;height:var(--app-height,100dvh);max-height:none;border-radius:0}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden"><defs><symbol id="icon-new-chat" viewBox="0 0 24 24"><path d="M15.6729 3.91287C16.8918 2.69392 18.8682 2.69392 20.0871 3.91287C21.3061 5.13182 21.3061 7.10813 20.0871 8.32708L14.1499 14.2643C13.3849 15.0293 12.3925 15.5255 11.3215 15.6785L9.14142 15.9899C8.82983 16.0344 8.51546 15.9297 8.29289 15.7071C8.07033 15.4845 7.96554 15.1701 8.01005 14.8586L8.32149 12.6785C8.47449 11.6075 8.97072 10.615 9.7357 9.85006L15.6729 3.91287ZM18.6729 5.32708C18.235 4.88918 17.525 4.88918 17.0871 5.32708L11.1499 11.2643C10.6909 11.7233 10.3932 12.3187 10.3014 12.9613L10.1785 13.8215L11.0386 13.6986C11.6812 13.6068 12.2767 13.3091 12.7357 12.8501L18.6729 6.91287C19.1108 6.47497 19.1108 5.76499 18.6729 5.32708ZM11 3.99929C11.0004 4.55157 10.5531 4.99963 10.0008 5.00007C9.00227 5.00084 8.29769 5.00827 7.74651 5.06064C7.20685 5.11191 6.88488 5.20117 6.63803 5.32695C6.07354 5.61457 5.6146 6.07351 5.32698 6.63799C5.19279 6.90135 5.10062 7.24904 5.05118 7.8542C5.00078 8.47105 5 9.26336 5 10.4V13.6C5 14.7366 5.00078 15.5289 5.05118 16.1457C5.10062 16.7509 5.19279 17.0986 5.32698 17.3619C5.6146 17.9264 6.07354 18.3854 6.63803 18.673C6.90138 18.8072 7.24907 18.8993 7.85424 18.9488C8.47108 18.9992 9.26339 19 10.4 19H13.6C14.7366 19 15.5289 18.9992 16.1458 18.9488C16.7509 18.8993 17.0986 18.8072 17.362 18.673C17.9265 18.3854 18.3854 17.9264 18.673 17.3619C18.7988 17.1151 18.8881 16.7931 18.9393 16.2535C18.9917 15.7023 18.9991 14.9977 18.9999 13.9992C19.0003 13.4469 19.4484 12.9995 20.0007 13C20.553 13.0004 21.0003 13.4485 20.9999 14.0007C20.9991 14.9789 20.9932 15.7808 20.9304 16.4426C20.8664 17.116 20.7385 17.7136 20.455 18.2699C19.9757 19.2107 19.2108 19.9756 18.27 20.455C17.6777 20.7568 17.0375 20.8826 16.3086 20.9421C15.6008 21 14.7266 21 13.6428 21H10.3572C9.27339 21 8.39925 21 7.69138 20.9421C6.96253 20.8826 6.32234 20.7568 5.73005 20.455C4.78924 19.9756 4.02433 19.2107 3.54497 18.2699C3.24318 17.6776 3.11737 17.0374 3.05782 16.3086C2.99998 15.6007 2.99999 14.7266 3 13.6428V10.3572C2.99999 9.27337 2.99998 8.39922 3.05782 7.69134C3.11737 6.96249 3.24318 6.3223 3.54497 5.73001C4.02433 4.7892 4.78924 4.0243 5.73005 3.54493C6.28633 3.26149 6.88399 3.13358 7.55735 3.06961C8.21919 3.00673 9.02103 3.00083 9.99922 3.00007C10.5515 2.99964 10.9996 3.447 11 3.99929Z"/></symbol></defs></svg>
+<header class="topbar">
+  <div class="brand">
+    <div class="title-row">
+      <h1>ChatGPT Remote</h1>
+    </div>
+  </div>
+</header>
+
+<main id="pairView" class="pair-view">
+  <section class="card pair-card" aria-labelledby="pairTitle">
+    <h2 id="pairTitle">连接电脑</h2>
+    <p class="sub">输入电脑上显示的配对码</p>
+    <form id="pairForm" novalidate>
+      <label for="pin">6 位配对码</label>
+      <input id="pin" name="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+             autocomplete="one-time-code" autofocus placeholder="000000">
+      <label for="deviceName">设备名称</label>
+      <input id="deviceName" name="deviceName" type="text" maxlength="60" value="手机"
+             autocomplete="off" spellcheck="false">
+      <div class="error-text" id="pairError" role="alert"></div>
+      <button class="btn primary block" type="submit" id="pairBtn">连接电脑</button>
+    </form>
+  </section>
+</main>
+
+<main id="remoteView" class="remote-view" hidden>
+  <div class="banner banner-warn" id="freezeBanner" role="alert" hidden>
+    <strong>已冻结</strong>
+    <span id="freezeBannerText">所有输入操作已暂停</span>
+    <button class="btn" type="button" id="unfreezeBtn">立即解冻</button>
+  </div>
+
+  <div class="remote-toolbar">
+    <button class="context-picker" type="button" id="navigationToggleBtn" aria-label="选择项目与对话" aria-controls="navigationPanel" aria-expanded="false">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
+      <span id="currentContextTitle">当前对话</span><span class="context-arrow" aria-hidden="true">⌄</span>
+    </button>
+    <div class="view-switch" aria-label="查看方式">
+      <button class="btn" type="button" id="chatViewBtn" aria-pressed="true">对话</button>
+      <button class="btn" type="button" id="screenViewBtn" aria-pressed="false">画面</button>
+    </div>
+    <button class="btn ghost small" type="button" id="settingsToggleBtn" aria-label="设置" aria-controls="settingsPanel" aria-expanded="false">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.6 2.2-2 .9L4.4 5.5l-2 3.5L4 10.6v2.8L2.4 15l2 3.5 2-.6 2 .9L9 21h4l.6-2.2 2-.9 2 .6 2-3.5-1.6-1.6v-2.8L19.6 9l-2-3.5-2 .6-2-.9L13 3Z"/><circle cx="11" cy="12" r="3"/></svg>
+      <span class="badge" id="badge" role="status" aria-live="polite">未配对</span>
+    </button>
+  </div>
+  <div class="layout">
+    <section class="card conversation-card" id="conversationCard" aria-labelledby="conversationTitle">
+      <h2 id="conversationTitle" class="sr-only">当前对话</h2><p class="sr-only" id="chatStatus"></p>
+      <div class="chat-messages" id="chatMessages" tabindex="0" aria-label="电脑当前对话"></div>
+      <button class="btn ghost small" type="button" id="chatLatestBtn" aria-label="最新消息" hidden>↓</button>
+      <p class="chat-empty" id="chatEmpty">正在读取…</p>
+      <p class="chat-error" id="chatError" role="alert" hidden></p>
+    </section>
+    <section class="card screen-card" id="screenCard" aria-labelledby="screenTitle" hidden>
+      <div class="card-head">
+        <div>
+          <h2 id="screenTitle">Windows 画面</h2>
+          <p class="sub" id="screenSub">实时画面 · 正在连接</p>
+        </div>
+      </div>
+
+      <div class="screen-shell" id="screenShell">
+        <canvas id="screen" role="img" aria-label="Windows 画面（尚未连接）">Windows 画面</canvas>
+        <button class="btn ghost small" type="button" id="fullscreenBtn" aria-pressed="false" aria-label="全屏查看画面"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></svg></button>
+        <div class="screen-hint" id="screenHint">
+          <strong id="screenHintTitle">正在连接画面…</strong>
+          <span id="screenHintText">正在等待电脑返回第一帧截图。</span>
+        </div>
+        <div class="ribbon-stack">
+          <div class="ribbon" id="switchRibbon" hidden>窗口正在切换，请稍候…</div>
+          <div class="ribbon ribbon-warn" id="freezeRibbon" hidden>已冻结：输入操作已禁用</div>
+        </div>
+        <div class="immersive-stats" aria-hidden="true">
+          <span id="immersiveFps">FPS —</span>
+          <span id="immersiveLatency">往返 —</span>
+        </div>
+        <button class="btn screen-fullscreen-exit" type="button" id="fullscreenExit">退出全屏</button>
+      </div>
+
+      <div class="screen-foot">
+        <p class="sr-only" id="statusText" role="status"></p>
+        <p class="sr-only" id="gateHint" hidden></p>
+        <p class="error-line" id="errorLine" role="alert" hidden></p>
+        <span id="captureInfo" hidden></span>
+      </div>
+    </section>
+
+    <div class="side">
+      <section class="card composer-card" aria-labelledby="textTitle">
+        <h2 id="textTitle">发送消息</h2>
+        <input id="phoneFileInput" type="file" multiple hidden>
+        <div class="phone-files" id="phoneFiles" aria-live="polite" hidden></div>
+        <div class="queued-strip" id="queuedStrip" hidden>
+          <button class="queued-toggle" id="queuedToggleBtn" type="button" aria-expanded="false" aria-controls="queuedList"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg><span class="queued-preview" id="queuedPreview"></span><span class="queued-count" id="queuedCount"></span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <div class="queued-list" id="queuedList" hidden></div>
+        </div>
+        <div class="composer-tools">
+          <button class="btn ghost" type="button" id="computerDraftBtn" aria-controls="draftPanel" aria-expanded="false" hidden>电脑草稿</button>
+          <button class="btn ghost" type="button" id="recoveredUndoBtn" hidden>恢复手机原稿</button>
+        </div>
+        <div class="send-progress" id="sendProgress" role="status" hidden><span class="control-spinner" aria-hidden="true"></span><span id="sendProgressText">发送中…</span></div>
+        <div class="composer-input">
+          <button class="btn" id="composerOptionsBtn" type="button" aria-label="对话选项" aria-controls="optionsPanel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <label class="sr-only" for="message">要发送到电脑的文字</label>
+          <textarea id="message" maxlength="6000" rows="1" placeholder="写消息…"></textarea>
+          <button class="btn primary" type="button" id="sendEnterBtn" aria-label="发送" title="发送"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<section class="mobile-panel settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+  <header class="panel-head"><h2 id="settingsTitle">设置</h2><button class="panel-icon" id="settingsCloseBtn" type="button" aria-label="关闭设置"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+  <div class="panel-body settings-body">
+    <section class="settings-group" aria-labelledby="sendTitle"><h3 id="sendTitle">消息</h3><div class="settings-surface">
+      <button class="setting-choice" id="submitChoiceBtn" type="button" aria-expanded="false" aria-controls="submitChoices"><span>发送方式</span><span class="setting-value" id="submitChoiceValue">自动识别按钮</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+      <div class="setting-choices" id="submitChoices" role="radiogroup" aria-label="发送方式" hidden></div>
+      <select id="submitMethod" aria-label="电脑端发送方式" hidden><option value="button">自动识别按钮</option><option value="CTRL+ENTER">Ctrl + Enter</option><option value="ENTER">Enter</option></select>
+    </div></section>
+    <section class="settings-group" aria-labelledby="connectionTitle"><h3 id="connectionTitle">连接</h3><div class="settings-surface">
+      <button class="setting-choice" id="windowChoiceBtn" type="button" aria-expanded="false" aria-controls="windowChoices"><span>电脑窗口</span><span class="setting-value" id="windowChoiceValue">选择窗口</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+      <div class="setting-choices" id="windowChoices" role="radiogroup" aria-label="电脑窗口" hidden></div>
+      <select id="windowSelect" aria-label="可用窗口列表" hidden></select><button type="button" id="selectBtn" hidden>控制这个窗口</button>
+      <details class="settings-shortcuts"><summary>连接详情</summary><div class="setting-row"><span>窗口列表</span><button class="btn ghost small" type="button" id="refreshBtn">刷新</button></div><p class="state-line" id="winState"></p><div class="screen-stats"><span class="stat" id="fpsStat">FPS —</span><span class="stat" id="latencyStat">往返 —</span><span class="stat" id="responseStat">操作回显 —</span></div></details>
+    </div></section>
+    <section class="settings-group" aria-labelledby="controlTitle"><h3 id="controlTitle">操作</h3><div class="settings-surface">
+      <div class="setting-row"><span>暂停操作</span><button class="setting-switch" type="button" id="freezeBtn" role="switch" aria-checked="false" aria-label="暂停操作"><span class="switch-thumb"></span></button></div>
+      <div class="setting-row"><span>完整桌面</span><button class="setting-switch" type="button" id="desktopBtn" role="switch" aria-checked="false" aria-label="完整桌面"><span class="switch-thumb"></span></button></div>
+      <details class="settings-shortcuts"><summary>快捷键与滚动</summary>        <div class="key-grid" id="keyGrid">
+          <button class="btn key" type="button" data-key="ENTER"><span class="k-label">回车</span><span class="k-code">Enter</span></button>
+          <button class="btn key" type="button" data-key="ESC"><span class="k-label">取消</span><span class="k-code">Esc</span></button>
+          <button class="btn key" type="button" data-key="TAB"><span class="k-label">切换</span><span class="k-code">Tab</span></button>
+          <button class="btn key" type="button" data-key="BACKSPACE"><span class="k-label">退格</span><span class="k-code">Backspace</span></button>
+          <button class="btn key" type="button" data-key="CTRL+A"><span class="k-label">全选</span><span class="k-code">Ctrl+A</span></button>
+          <button class="btn key" type="button" data-key="CTRL+C"><span class="k-label">复制</span><span class="k-code">Ctrl+C</span></button>
+          <button class="btn key" type="button" data-key="CTRL+V"><span class="k-label">粘贴</span><span class="k-code">Ctrl+V</span></button>
+          <button class="btn key" type="button" data-key="CTRL+ENTER"><span class="k-label">提交</span><span class="k-code">Ctrl+Enter</span></button>
+        </div>
+        <div class="btn-row scroll-row">
+          <button class="btn" type="button" id="scrollUpBtn">↑ 向上滚动</button>
+          <button class="btn" type="button" id="scrollDownBtn">↓ 向下滚动</button>
+        </div>
+</details>
+    </div></section>
+    <section class="settings-group" aria-labelledby="accountTitle"><h3 id="accountTitle">设备</h3><div class="settings-surface"><div class="setting-row"><span>此手机</span><button class="btn danger-ghost" type="button" id="unpairBtn">解除配对</button></div></div></section>
+    <p class="settings-version" id="buildInfo">手机控制台</p><span id="modeChip" hidden></span><span id="desktopTip" hidden></span><span id="freezeTip" hidden></span>
+  </div>
+</section>
+<button class="settings-backdrop" id="settingsBackdrop" type="button" aria-label="关闭设置" hidden></button>
+<button class="settings-backdrop" id="navigationBackdrop" type="button" aria-label="关闭项目与对话" style="z-index:65" hidden></button>
+<section class="mobile-panel navigation-panel" id="navigationPanel" role="dialog" aria-modal="true" aria-labelledby="navigationTitle" hidden>
+  <header class="panel-head"><button class="panel-icon" type="button" id="navigationBackBtn" aria-label="返回项目与对话" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="navigationTitle">项目与对话</h2><button class="panel-icon navigation-new" type="button" id="navigationNewBtn" aria-label="新建对话" title="新建对话"><svg class="icon icon-compose" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-new-chat"/></svg></button><button class="panel-icon" type="button" id="navigationCloseBtn" aria-label="关闭项目与对话"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+  <div class="navigation-content">
+    <label class="sr-only" for="navigationSearch">筛选项目或对话</label><input class="navigation-search" id="navigationSearch" type="search" placeholder="搜索项目或对话" autocomplete="off">
+    <div class="navigation-filters" id="navigationFilters" aria-label="对话范围"><button class="navigation-filter" type="button" data-filter="all" aria-pressed="true">全部</button><button class="navigation-filter" type="button" data-filter="projects" aria-pressed="false">项目</button><button class="navigation-filter" type="button" data-filter="recent" aria-pressed="false">最近</button></div>
+    <p class="error-text" id="navigationError" role="status"></p><div class="navigation-list" id="navigationList" aria-label="项目与对话列表"></div>
+  </div>
+</section>
+<button class="settings-backdrop" id="draftBackdrop" type="button" aria-label="关闭电脑草稿" style="z-index:65" hidden></button>
+<section class="mobile-panel navigation-panel draft-panel" id="draftPanel" role="dialog" aria-modal="true" aria-labelledby="draftTitle" hidden>
+  <div class="card-head">
+    <div><h2 id="draftTitle">电脑草稿</h2><p class="sub" id="draftContext">当前对话</p></div>
+    <button class="btn ghost small" type="button" id="draftCloseBtn">关闭</button>
+  </div>
+  <div class="draft-body">
+    <p class="draft-label" id="draftNotice" role="status">正在读取…</p>
+    <pre class="draft-preview" id="draftPreview"></pre>
+    <p class="draft-label" id="draftPhoneLabel" hidden>手机当前消息</p>
+    <pre class="draft-preview" id="draftPhonePreview" hidden></pre>
+    <p class="error-text" id="draftError" role="alert"></p>
+    <div class="draft-actions">
+      <button class="btn" type="button" id="draftRecoverBtn">取回手机编辑</button>
+      <button class="btn danger" type="button" id="draftClearBtn">清空电脑草稿</button>
+      <button class="btn primary" type="button" id="draftSendBtn">清空并发送手机消息</button>
+    </div>
+  </div>
+  <div class="navigation-footer"><button class="btn ghost small" type="button" id="draftRefreshBtn">刷新草稿</button></div>
+</section>
+<button class="settings-backdrop" id="optionsBackdrop" type="button" aria-label="关闭对话选项" hidden></button>
+<section class="mobile-panel options-panel" id="optionsPanel" role="dialog" aria-modal="true" aria-labelledby="optionsTitle" hidden>
+  <header class="panel-head"><button class="panel-icon" type="button" id="optionsBackBtn" aria-label="返回对话选项" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="optionsTitle">对话选项</h2><button class="panel-icon" type="button" id="optionsRefreshBtn" aria-label="刷新选项"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></svg></button><button class="panel-icon" type="button" id="optionsCloseBtn" aria-label="关闭对话选项"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+  <div class="panel-body"><p class="option-error" id="optionsError" role="status" hidden></p><div class="options-list" id="optionsList" aria-label="电脑输入框选项"></div><button class="option-screen" id="optionsScreenBtn" type="button">在画面中操作</button></div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<noscript><p style="max-width:600px;margin:20px auto;padding:0 16px;color:#a13340">此页面需要启用 JavaScript 才能显示控制台。</p></noscript>
+
+<script>
+'use strict';
+(function(){
+  var TOKEN_KEY = 'chatgpt-harmony-demo-token';
+  var SUBMIT_KEY = 'chatgpt-harmony-submit-method';
+  var DELIVERY_KEY = 'chatgpt-harmony-pending-send';
+  var LONG_PRESS_MS = 550;
+  var CLICK_SLOP = 12;
+  var WINDOW_REFRESH_MS = 5000;
+  var REQUEST_TIMEOUT_MS = 8000;
+  var FRAME_STALE_MS = 4000;
+  var MAX_TEXT = 6000;
+  var ALLOWED_STATUS = { ready: true, rebound: true, desktop: true };
+  var DESKTOP_TIP = '完整桌面模式可查看并操作整块 Windows 桌面（例如登录弹窗）。演示版请勿输入账号、密码或验证码。';
+  var FREEZE_REASON = { manual: '手动冻结', auto: '自动冻结', guard: '安全守卫触发', timeout: '超时冻结', switching: '窗口切换保护' };
+
+  function $(id){ return document.getElementById(id); }
+
+  var els = {
+    chatViewBtn: $('chatViewBtn'), screenViewBtn: $('screenViewBtn'),
+    conversationCard: $('conversationCard'), screenCard: $('screenCard'),
+    conversationTitle: $('conversationTitle'), chatStatus: $('chatStatus'),
+    chatMessages: $('chatMessages'), chatEmpty: $('chatEmpty'), chatError: $('chatError'),
+    chatLatestBtn: $('chatLatestBtn'), settingsPanel: $('settingsPanel'),
+    settingsToggleBtn: $('settingsToggleBtn'), settingsCloseBtn:$('settingsCloseBtn'), settingsBackdrop: $('settingsBackdrop'), submitMethod: $('submitMethod'),
+    composerOptionsBtn:$('composerOptionsBtn'), optionsPanel:$('optionsPanel'), optionsBackdrop:$('optionsBackdrop'),
+    optionsTitle:$('optionsTitle'), optionsList:$('optionsList'), optionsError:$('optionsError'), optionsBackBtn:$('optionsBackBtn'),
+    optionsCloseBtn:$('optionsCloseBtn'), optionsRefreshBtn:$('optionsRefreshBtn'), optionsScreenBtn:$('optionsScreenBtn'),
+    navigationToggleBtn:$('navigationToggleBtn'), navigationPanel:$('navigationPanel'), navigationBackdrop:$('navigationBackdrop'),
+    navigationCloseBtn:$('navigationCloseBtn'), navigationSearch:$('navigationSearch'), navigationList:$('navigationList'),
+    navigationError:$('navigationError'),
+    navigationTitle:$('navigationTitle'),navigationNewBtn:$('navigationNewBtn'),navigationBackBtn:$('navigationBackBtn'),navigationFilters:$('navigationFilters'),
+    currentContextTitle:$('currentContextTitle'), computerDraftBtn:$('computerDraftBtn'),
+    recoveredUndoBtn:$('recoveredUndoBtn'), draftPanel:$('draftPanel'), draftBackdrop:$('draftBackdrop'), draftCloseBtn:$('draftCloseBtn'),
+    sendProgress:$('sendProgress'),sendProgressText:$('sendProgressText'),
+    draftContext:$('draftContext'), draftNotice:$('draftNotice'), draftPreview:$('draftPreview'), draftPhoneLabel:$('draftPhoneLabel'),
+    draftPhonePreview:$('draftPhonePreview'), draftError:$('draftError'), draftRecoverBtn:$('draftRecoverBtn'),
+    draftClearBtn:$('draftClearBtn'), draftSendBtn:$('draftSendBtn'), draftRefreshBtn:$('draftRefreshBtn'),
+    pairView: $('pairView'), remoteView: $('remoteView'),
+    pairForm: $('pairForm'), pin: $('pin'), deviceName: $('deviceName'),
+    pairBtn: $('pairBtn'), pairError: $('pairError'),
+    badge: $('badge'), buildInfo: $('buildInfo'), modeChip: $('modeChip'),
+    freezeBanner: $('freezeBanner'), freezeBannerText: $('freezeBannerText'), unfreezeBtn: $('unfreezeBtn'),
+    screenShell: $('screenShell'), screen: $('screen'),
+    screenHint: $('screenHint'), screenHintTitle: $('screenHintTitle'), screenHintText: $('screenHintText'),
+    switchRibbon: $('switchRibbon'), freezeRibbon: $('freezeRibbon'),
+    fpsStat: $('fpsStat'), latencyStat: $('latencyStat'), responseStat: $('responseStat'),
+    immersiveFps: $('immersiveFps'), immersiveLatency: $('immersiveLatency'),
+    fullscreenBtn: $('fullscreenBtn'), fullscreenExit: $('fullscreenExit'),
+    screenSub: $('screenSub'), statusText: $('statusText'), gateHint: $('gateHint'),
+    errorLine: $('errorLine'), captureInfo: $('captureInfo'),
+    winState: $('winState'), windowSelect: $('windowSelect'), selectBtn: $('selectBtn'),
+    refreshBtn: $('refreshBtn'), desktopBtn: $('desktopBtn'), desktopTip: $('desktopTip'),
+    message: $('message'), sendEnterBtn: $('sendEnterBtn'),
+    queuedStrip:$('queuedStrip'),queuedToggleBtn:$('queuedToggleBtn'),queuedPreview:$('queuedPreview'),queuedCount:$('queuedCount'),queuedList:$('queuedList'),
+    phoneFileInput:$('phoneFileInput'),phoneFiles:$('phoneFiles'),
+    submitChoiceBtn:$('submitChoiceBtn'),submitChoiceValue:$('submitChoiceValue'),submitChoices:$('submitChoices'),
+    windowChoiceBtn:$('windowChoiceBtn'),windowChoiceValue:$('windowChoiceValue'),windowChoices:$('windowChoices'),
+    scrollUpBtn: $('scrollUpBtn'), scrollDownBtn: $('scrollDownBtn'),
+    freezeBtn: $('freezeBtn'), freezeTip: $('freezeTip'),
+    unpairBtn: $('unpairBtn'), toast: $('toast')
+  };
+  var keyButtons = Array.prototype.slice.call(document.querySelectorAll('.key[data-key]'));
+
+  var state = {
+    token: '',
+    view: 'chat',
+    submitMethod: 'button',
+    panel: '',
+    panelBackPending: false,
+    navigationFilter:'all',
+    options:null,
+    optionsSurface:null,
+    optionsLoading:false,
+    optionsBusy:false,
+    optionsSequence:0,
+    optionsError:'',
+    optionsInvalid:false,
+    optionsPendingId:'',
+    optionsRoot:null,
+    optionsRootAt:0,
+    mediaStarted:false,
+    settingChoice:'',
+    queuedExpanded:false,
+    localQueued:[],
+    queuedSignature:'',
+    phoneFiles:[],
+    filesBusy:false,
+    fileSequence:0,
+    navigation: null,
+    navigationAt:0,
+    navigationMode:'browse',
+    navigationFold:{},
+    navigationLoaded:{},
+    navigationSignature:'',
+    navigationButtons:[],
+    navigationPendingId:'',
+    navigationSequence:0,
+    navigationNeedsRefresh:false,
+    navigationNewDraft:false,
+    navigationLoading: false,
+    navigationBusy: false,
+    activeNavigationId: '',
+    activeChatTitle: '',
+    activeChatKey: '',
+    activeChatEpoch: -1,
+    draft: null,
+    draftLoading: false,
+    draftBusy: false,
+    draftInvalid: false,
+    draftError: '',
+    draftRequestSeq: 0,
+    recoveredUndo: null,
+    actionErrorCode: '',
+    chat: null,
+    chatElements: {},
+    chatConnected: false,
+    lastChatAt: 0,
+    chatAbort: null,
+    control: null,
+    controlRetry: 0,
+    controlSeq: 0,
+    actionQueue: [],
+    actionQueueRunning: false,
+    actionFeedback: [],
+    lastActionFrame: { sequence: 0, at: 0 },
+    responseLatency: null,
+    live: false,
+    epoch: -1,
+    displayedEpoch: -1,
+    lastFrameId: 0,
+    frameSeen: false,
+    lastFrameAt: 0,
+    latency: null,
+    frameTimes: [],
+    frameW: 0,
+    frameH: 0,
+    windows: [],
+    windowSig: '',
+    pickId: null,
+    mode: 'window',
+    status: '',
+    frozen: { active: false, until_ms: 0, reason: '' },
+    version: '',
+    mock: false,
+    captureMethod: '',
+    immersive: false,
+    networkTrouble: false,
+    error: '',
+    errorSource: '',
+    sessionEnded: false,
+    freezeExpiryHandled: false,
+    windowSigRefreshAt: 0,
+    lastWindowsRefresh: 0,
+    refreshSeq: 0,
+    frameAbort: null,
+    windowTimer: 0,
+    statsTimer: 0,
+    gate: { ok: false, reason: '正在连接…' },
+    actionsInFlight: 0,
+    lastRightClickAt: 0,
+    manualRefresh: false,
+    streamAck: null,
+    sending: null,
+    instance: '',
+    pending: { pair: false, refresh: false, select: false, desktop: false, freeze: false, unpair: false, sendText: false }
+  };
+
+  /* ---------- 基础工具 ---------- */
+  function controlIcon(name){
+    var paths={image:'M3 3h18v18H3ZM3 16l5-5 4 4 3-3 6 6M15 7h.01',file:'M5 3h9l5 5v13H5ZM14 3v6h5',folder:'M3 7V5h6l2 2h10v13H3Z',chat:'M4 4h16v13H8l-4 3Z',chevron:'m9 6 6 6-6 6',down:'m6 9 6 6 6-6',check:'m5 12 4 4L19 6',plus:'M12 5v14M5 12h14',model:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z',permission:'m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6Z',effort:'M4 7h16M4 17h16M9 4v6m6 4v6'};
+    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','icon');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+    if(name==='compose'){svg.setAttribute('class','icon icon-compose');var use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#icon-new-chat');svg.appendChild(use);return svg;}
+    var path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',paths[name]||paths.plus);svg.appendChild(path);return svg;
+  }
+  function bindIconHint(button){
+    var timer=0,held=false;
+    button.addEventListener('pointerdown',function(event){
+      if(event.pointerType==='mouse' && event.button!==0)return;
+      held=false;clearTimeout(timer);
+      timer=setTimeout(function(){held=true;toast(button.getAttribute('aria-label'));},500);
+    });
+    button.addEventListener('pointerup',function(){clearTimeout(timer);});
+    button.addEventListener('pointercancel',function(){clearTimeout(timer);held=false;});
+    button.addEventListener('pointerleave',function(){clearTimeout(timer);held=false;});
+    button.addEventListener('click',function(event){if(held){held=false;event.preventDefault();event.stopImmediatePropagation();}},true);
+  }
+  function readToken(){
+    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+  function writeToken(token){
+    try {
+      if (token) localStorage.setItem(TOKEN_KEY, token);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (e) { /* 隐私模式下忽略 */ }
+  }
+  function setDisabled(el, disabled){ if (el) el.disabled = !!disabled; }
+  function setTone(el, tone){
+    if (!el) return;
+    if (tone) el.setAttribute('data-tone', tone);
+    else el.removeAttribute('data-tone');
+  }
+  function clamp(value, min, max){ return Math.min(max, Math.max(min, value)); }
+  function isStatusAllowed(status){ return !!ALLOWED_STATUS[status]; }
+
+  function setBadge(text, tone){
+    els.badge.textContent = text;
+    els.badge.setAttribute('aria-label',text); els.badge.setAttribute('title',text);
+    setTone(els.badge, tone || '');
+  }
+  function setError(message, source){
+    state.error = message || '';
+    state.errorSource = source || '';
+    els.errorLine.textContent = state.error;
+    els.errorLine.hidden = !state.error;
+    els.chatError.textContent = state.error;
+    els.chatError.hidden = !state.error;
+  }
+  function clearError(){
+    if (!state.error) return;
+    state.error = '';
+    state.errorSource = '';
+    els.errorLine.textContent = '';
+    els.errorLine.hidden = true;
+    els.chatError.textContent = '';
+    els.chatError.hidden = true;
+  }
+  function showPairError(message){ els.pairError.textContent = message || ''; }
+  function clearPairError(){ els.pairError.textContent = ''; }
+
+  var toastTimer = 0;
+  function toast(message){
+    els.toast.textContent = message;
+    els.toast.hidden = false;
+    requestAnimationFrame(function(){ els.toast.classList.add('show'); });
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){
+      els.toast.classList.remove('show');
+      toastTimer = setTimeout(function(){ els.toast.hidden = true; }, 170);
+    }, 1900);
+  }
+
+  var sleepTimer = 0;
+  var sleepResolve = null;
+  function sleep(ms){
+    return new Promise(function(resolve){
+      sleepResolve = resolve;
+      sleepTimer = setTimeout(function(){
+        sleepTimer = 0;
+        sleepResolve = null;
+        resolve();
+      }, ms);
+    });
+  }
+  function wakeSleep(){
+    if (!sleepTimer) return;
+    clearTimeout(sleepTimer);
+    sleepTimer = 0;
+    var resolve = sleepResolve;
+    sleepResolve = null;
+    if (resolve) resolve();
+  }
+
+  function updateBuildInfo(){
+    var text = '手机控制台';
+    if (state.version) {
+      var external = location.protocol === 'https:';
+      text = 'v' + state.version + (external ? ' · 外网 HTTPS' : ' · 局域网');
+      if (state.mock) text += ' · 模拟模式';
+    }
+    els.buildInfo.textContent = text;
+  }
+
+  /* ---------- API ---------- */
+  function ApiError(message, status, code){
+    this.name = 'ApiError';
+    this.message = message;
+    this.status = status || 0;
+    this.code = code || '';
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+  ApiError.prototype.constructor = ApiError;
+
+  async function request(path, options){
+    options = options || {};
+    var headers = {};
+    if (options.auth !== false && state.token) headers.Authorization = 'Bearer ' + state.token;
+    var body;
+    if (options.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(options.body);
+    }
+    if(options.rawBody!==undefined){body=options.rawBody;headers['Content-Type']='application/octet-stream';}
+    Object.assign(headers,options.headers||{});
+    var controller = new AbortController();
+    var timedOut = false;
+    var parentSignal = options.signal;
+    var abort = function(){ controller.abort(); };
+    if (parentSignal) {
+      if (parentSignal.aborted) controller.abort();
+      else parentSignal.addEventListener('abort', abort, { once: true });
+    }
+    var timer;
+    function armTimeout(){
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        timedOut = true;
+        controller.abort();
+      }, options.timeoutMs || REQUEST_TIMEOUT_MS);
+    }
+    armTimeout();
+    try {
+      var response = await fetch(path, {
+        method: options.method || 'GET',
+        headers: headers,
+        body: body,
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      if (response.status === 401) {
+        endSession('配对已失效，请重新输入电脑上的 6 位配对码。');
+        throw new ApiError('配对已失效', 401);
+      }
+      if (!response.ok) {
+        var message = '请求失败（HTTP ' + response.status + '）';
+        try {
+          var data = await response.json();
+          if (data && typeof data.error === 'string' && data.error) message = data.error;
+        } catch (err) {
+          if (controller.signal.aborted) throw err;
+        }
+        throw new ApiError(message, response.status, data && data.code);
+      }
+      if (response.status === 204) return { status: 204, headers: response.headers };
+      if (options.stream) {
+        if (!response.body || typeof response.body.getReader !== 'function') {
+          throw new ApiError('此浏览器不支持连续画面传输。', 415);
+        }
+        return options.stream === 'conversation'
+          ? await consumeConversationStream(response, controller.signal, armTimeout)
+          : await consumeFrameStream(response, controller.signal, armTimeout);
+      }
+      if (options.frame) {
+        return { status: response.status, headers: response.headers, blob: await response.blob() };
+      }
+      try {
+        return { status: response.status, data: await response.json() };
+      } catch (err) {
+        if (controller.signal.aborted) throw err;
+        throw new ApiError('电脑返回的数据格式异常。', response.status);
+      }
+    } catch (err) {
+      if (timedOut) throw new ApiError('连接超时，正在重新连接。', 0);
+      if (err instanceof ApiError) throw err;
+      if (err && err.name === 'AbortError') throw err;
+      throw new ApiError('网络请求失败，请确认电脑上的 Agent 仍在运行，且手机与电脑网络互通（同一局域网或 HTTPS 外网入口）。', 0);
+    } finally {
+      clearTimeout(timer);
+      if (parentSignal) parentSignal.removeEventListener('abort', abort);
+    }
+  }
+
+  async function requestJson(path, options){
+    var startedAt = performance.now();
+    var response = await request(path, options);
+    var data = response.data;
+    if (data && data.ok === false) {
+      throw new ApiError(typeof data.error === 'string' && data.error ? data.error : '操作失败', response.status, data.code);
+    }
+    state.latency = Math.max(0, performance.now() - startedAt);
+    return data || {};
+  }
+
+  async function loadHealth(){
+    try {
+      var response = await fetch('/api/health', { cache: 'no-store', credentials: 'same-origin' });
+      if (!response.ok) return;
+      var data = await response.json();
+      if (data && typeof data.version === 'string') state.version = data.version;
+      if (data && typeof data.mock === 'boolean') state.mock = data.mock;
+      updateBuildInfo();
+      renderStats();
+    } catch (err) { /* 健康检查失败不影响主流程 */ }
+  }
+
+  function endSession(message, force){
+    if (state.sessionEnded && !force) return;
+    state.sessionEnded = true;
+    savePhoneSend(null);state.sending=null;
+    stopLive();
+    state.token = '';
+    writeToken('');
+    resetRemote();
+    showPairView(message || '');
+  }
+
+  /* ---------- 持续控制连接 ---------- */
+  function stopControl(){
+    clearTimeout(state.controlRetry);
+    state.controlRetry = 0;
+    var control = state.control;
+    state.control = null;
+    if (!control) return;
+    clearInterval(control.heartbeat);
+    Object.keys(control.pending).forEach(function(id){
+      var item = control.pending[id];
+      clearTimeout(item.timer);
+      item.reject(new ApiError('控制连接已断开', 0));
+    });
+    control.pending = {};
+    try { control.socket.close(); } catch (e) { /* closed */ }
+  }
+  function startControl(){
+    if (!state.live || document.hidden || state.control || typeof WebSocket !== 'function') return;
+    var socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/control');
+    var control = { socket: socket, ready: false, pending: {}, heartbeat: 0 };
+    state.control = control;
+    socket.onopen = function(){ socket.send(JSON.stringify({ type: 'auth', token: state.token })); };
+    socket.onmessage = function(event){
+      if (state.control !== control) return;
+      var reply;
+      try { reply = JSON.parse(event.data); } catch (e) { socket.close(); return; }
+      if (reply.type === 'auth') {
+        if (!reply.ok) { endSession('配对已失效，请重新配对。'); return; }
+        control.ready = true;
+        control.heartbeat = setInterval(function(){
+          if (control.ready) controlRequest('ping', {}).catch(function(){});
+        }, 10000);
+        return;
+      }
+      var item = control.pending[reply.id];
+      if (!item) return;
+      delete control.pending[reply.id];
+      clearTimeout(item.timer);
+      state.latency = Math.max(0, performance.now() - item.started);
+      if (reply.ok) item.resolve(reply.data || {});
+      else item.reject(new ApiError(reply.error || '操作失败', reply.status, reply.code));
+    };
+    socket.onerror = function(){ /* close selects the HTTP fallback */ };
+    socket.onclose = function(){
+      if (state.control !== control) return;
+      stopControl();
+      if (state.live && !document.hidden) state.controlRetry = setTimeout(startControl, 2500);
+    };
+  }
+  function controlRequest(type, payload){
+    return new Promise(function(resolve, reject){
+      var control = state.control;
+      if (!control || !control.ready || control.socket.readyState !== 1) {
+        reject(new ApiError('控制连接尚未就绪。', 0)); return;
+      }
+      if (control.socket.bufferedAmount > 65536) { reject(new ApiError('操作正在传输，请稍候。', 0)); return; }
+      var id = ++state.controlSeq;
+      var item = { resolve: resolve, reject: reject, started: performance.now(), timer: 0 };
+      control.pending[id] = item;
+      item.timer = setTimeout(function(){
+        delete control.pending[id];
+        reject(new ApiError('控制连接超时', 0));
+      }, REQUEST_TIMEOUT_MS);
+      try { control.socket.send(JSON.stringify(Object.assign({ type: type, id: id }, payload))); }
+      catch (e) { delete control.pending[id]; clearTimeout(item.timer); reject(new ApiError('控制连接已断开', 0)); }
+    });
+  }
+  function enqueueHttpAction(command){
+    return new Promise(function(resolve, reject){
+      state.actionQueue.push({ command: command, resolve: resolve, reject: reject });
+      drainHttpActions();
+    });
+  }
+  async function drainHttpActions(){
+    if (state.actionQueueRunning) return;
+    state.actionQueueRunning = true;
+    try {
+      while (state.actionQueue.length) {
+        var item = state.actionQueue.shift();
+        try {
+          if (!state.live || item.command.epoch !== state.epoch || !actionGate(item.command).ok) throw new ApiError('窗口状态已经变化，旧操作已取消。', 409);
+          item.resolve(await requestJson('/api/action', { method: 'POST', body: item.command }));
+        } catch (err) { item.reject(err); }
+      }
+    } finally { state.actionQueueRunning = false; }
+  }
+
+  /* ---------- 对话文字 ---------- */
+  function switchView(view){
+    if (state.view === view) return;
+    setImmersive(false);
+    state.view = view;
+    if (state.errorSource === 'conversation' || state.errorSource === 'frame') clearError();
+    startMedia();
+    render();
+    if (state.live) refreshWindows();
+  }
+  function renderConversation(){
+    var visible = state.view === 'chat';
+    document.body.classList.toggle('chat-mode', visible);
+    els.settingsToggleBtn.hidden = els.remoteView.hidden;
+    els.navigationToggleBtn.hidden = els.remoteView.hidden;
+    els.conversationCard.hidden = !visible;
+    els.screenCard.hidden = visible;
+    els.chatViewBtn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    els.screenViewBtn.setAttribute('aria-pressed', visible ? 'false' : 'true');
+    var chat = state.chat;
+    renderQueued();
+    els.conversationTitle.textContent = state.activeChatTitle || (chat && chat.title ? chat.title : '当前对话');
+    els.currentContextTitle.textContent = els.conversationTitle.textContent;
+    if (!visible) return;
+    els.chatStatus.textContent = state.chatConnected
+      ? (chat && chat.generating ? '正在回复…' : '已同步 · 电脑当前对话')
+      : '正在同步对话…';
+    els.chatEmpty.hidden = !!(chat && chat.messages.length);
+    els.chatMessages.hidden = !els.chatEmpty.hidden;
+    els.chatEmpty.textContent = chat && !chat.available ? chat.notice : (state.chatConnected ? '这是一个新对话，可以直接发送消息。' : '正在读取…');
+    if (state.chatConnected && !state.gate.ok) els.chatStatus.textContent = state.gate.reason;
+    els.chatError.textContent = state.error;
+    els.chatError.hidden = !state.error;
+  }
+  function messageBlocks(message){
+    if (Array.isArray(message.blocks) && message.blocks.length && message.blocks.every(function(block){
+      return block && /^(paragraph|list|heading|code)$/.test(block.kind) && typeof block.text === 'string';
+    })) return message.blocks;
+    return message.text.trim() ? message.text.split(/\n\s*\n/).map(function(text){ return { kind: 'paragraph', text: text }; }) : [];
+  }
+  function choosePhoneFiles(){
+    if(state.filesBusy || state.mode!=='window' || state.frozen.active)return;
+    setPanel('');els.phoneFileInput.click();
+  }
+  function renderPhoneFiles(){
+    els.phoneFiles.hidden=!state.phoneFiles.length;els.phoneFiles.textContent='';
+    state.phoneFiles.forEach(function(item){
+      var chip=document.createElement('div');chip.className='phone-file';chip.setAttribute('data-state',item.state);chip.appendChild(controlIcon('file'));
+      var text=document.createElement('div'),name=document.createElement('span'),status=document.createElement('span');name.className='phone-file-name';name.textContent=item.name;status.className='phone-file-status';
+      status.textContent=({uploading:'上传中…',uploaded:'待发送',attaching:'附加中…',attached:'已附加',unknown:'请检查电脑',error:'上传失败'})[item.state]||'';
+      text.appendChild(name);text.appendChild(status);chip.appendChild(text);
+      if(item.state==='unknown'||item.state==='attached'||item.state==='uploaded'||item.state==='error'){
+        var inspect=item.state==='unknown'||item.state==='attached';
+        var check=document.createElement('button');check.type='button';check.className='phone-file-action';check.textContent=inspect?'查看':'×';check.setAttribute('aria-label',(inspect?'检查附件 ':'移除附件 ')+item.name);
+        check.addEventListener('click',async function(){
+          if(inspect){switchView('screen');return;}
+          check.disabled=true;var previous=item.state;item.state='removing';renderControls();
+          try{
+            if(item.id)await requestJson('/api/uploads/discard',{method:'POST',body:{ids:[item.id]}});
+            state.phoneFiles=state.phoneFiles.filter(function(row){return row!==item;});renderPhoneFiles();renderControls();
+          }catch(err){item.state=previous;check.disabled=false;renderControls();setError(err.message||'移除失败，请稍后再试。','action');}
+        });chip.appendChild(check);
+      }
+      els.phoneFiles.appendChild(chip);
+    });
+  }
+  async function uploadPhoneFiles(files){
+    if(state.filesBusy || !files.length)return;
+    if(files.length+state.phoneFiles.length>5 || files.some(function(file){return !file.size||file.size>25*1024*1024;}) || files.reduce(function(sum,file){return sum+file.size;},0)+state.phoneFiles.reduce(function(sum,file){return sum+file.size;},0)>50*1024*1024){setError('最多 5 个文件，每个不超过 25 MB，总大小不超过 50 MB。','action');return;}
+    var sequence=++state.fileSequence,key=state.chat?state.chat.key:state.activeChatKey,epoch=state.epoch;
+    var batch=files.map(function(file){return {name:file.name,size:file.size,state:'uploading',file:file,key:key,epoch:epoch};});
+    state.phoneFiles=state.phoneFiles.concat(batch);state.filesBusy=true;renderPhoneFiles();renderControls();
+    try{
+      if(!key){var snapshot=await requestJson('/api/conversation');if(snapshot.epoch!==epoch)throw new ApiError('当前对话已变化，请重新选择文件。',409);key=snapshot.key;applyConversationEvent(Object.assign({},snapshot,{kind:'conversation',replace:true,order:snapshot.messages.map(function(message){return message.id;})}));}
+      for(var i=0;i<batch.length;i++){
+        var item=batch[i],response=await request('/api/uploads',{method:'POST',rawBody:item.file,headers:{'X-File-Name':encodeURIComponent(item.name)},timeoutMs:120000});
+        var data=response.data;if(!data || !data.file || typeof data.file.id!=='string')throw new ApiError('上传结果未确认，请重新选择。',0);
+        if(sequence!==state.fileSequence)return;
+        item.id=data.file.id;item.key=key;item.state='uploaded';delete item.file;renderPhoneFiles();
+      }
+    }catch(err){
+      batch.forEach(function(item){item.state='error';delete item.file;});renderPhoneFiles();
+      if(!err||err.status!==401)setError(err.message||'上传失败，请检查文件状态。','action');
+    }finally{if(sequence===state.fileSequence){state.filesBusy=false;renderControls();}}
+  }
+  async function attachPhoneFiles(key,epoch){
+    var batch=state.phoneFiles.filter(function(item){return item.state==='uploaded';});
+    if(!batch.length)return;
+    batch.forEach(function(item){item.state='attaching';});renderPhoneFiles();
+    if(state.chatAbort)state.chatAbort.abort();if(state.frameAbort)state.frameAbort.abort();
+    try{
+      var result=await requestJson('/api/uploads/attach',{method:'POST',body:{ids:batch.map(function(item){return item.id;}),conversationKey:key,epoch:epoch},timeoutMs:20000});
+      if(result.state!=='attached')throw new ApiError('附加结果未确认，请在画面中检查。',409);
+      batch.forEach(function(item){item.state='attached';});
+    }catch(err){batch.forEach(function(item){item.state=err&&err.code==='attachment_not_started'?'uploaded':'unknown';});throw err;}
+    finally{renderPhoneFiles();}
+  }
+  function renderMessageAttachments(body,items){
+    if(!Array.isArray(items) || !items.length)return;
+    var holder=document.createElement('div');holder.className='chat-attachments';
+    var images=items.filter(function(item){return item && item.kind==='image';}).length;
+    function add(label,image){
+      var chip=document.createElement('span');chip.className='chat-attachment';chip.appendChild(controlIcon(image?'image':'file'));
+      var text=document.createElement('span');text.textContent=label;chip.appendChild(text);holder.appendChild(chip);
+    }
+    if(images)add('图片'+(images>1?' · '+images+' 张':''),true);
+    items.slice(0,20).forEach(function(item){if(item && item.kind==='file')add(typeof item.name==='string'&&item.name?item.name:'文件',false);});
+    if(holder.children.length)body.insertBefore(holder,body.children[0]||null);
+  }
+  function renderQueued(){
+    var chat=state.chat, key=chat ? chat.key : state.activeChatKey;
+    var native=chat && Array.isArray(chat.queued) ? chat.queued.filter(function(item){return item && typeof item.text==='string' && item.text.trim();}) : [];
+    state.localQueued=state.localQueued.filter(function(item){
+      return item.key===key && performance.now()-item.at<15000 && !native.some(function(row){return row.text.trim()===item.text.trim();})
+        && !(chat && chat.messages.some(function(row){return row.role==='user' && row.text.trim()===item.text.trim();}));
+    });
+    var items=native.concat(state.localQueued), signature=JSON.stringify(items.map(function(item){return item.text;}));
+    els.queuedStrip.hidden=!items.length;
+    if(!items.length)state.queuedExpanded=false;
+    els.queuedToggleBtn.setAttribute('aria-expanded',String(state.queuedExpanded));els.queuedList.hidden=!state.queuedExpanded;
+    els.queuedPreview.textContent=items.length ? items[0].text.replace(/\s+/g,' ') : '';
+    els.queuedCount.textContent=items.length>1 ? '排队中 · '+items.length : '排队中';
+    if(signature!==state.queuedSignature){
+      state.queuedSignature=signature;els.queuedList.textContent='';
+      items.forEach(function(item){var row=document.createElement('div');row.className='queued-item';row.textContent=item.text;els.queuedList.appendChild(row);});
+    }
+  }
+  function draftStale(snapshot){
+    return !snapshot || snapshot.epoch !== state.epoch || state.mode !== 'window'
+      || (state.view === 'chat' && state.chatConnected && state.chat && state.chat.key !== snapshot.conversationKey);
+  }
+  function mergeDraftText(phone, desktop){
+    return !phone ? desktop : (!desktop || phone === desktop ? phone : phone + '\n\n' + desktop);
+  }
+  function clearDraftPreview(){
+    state.draftRequestSeq++;
+    state.draftLoading = false; state.draft = null; state.draftError = ''; state.draftInvalid = false;
+    els.draftPanel.hidden = true; els.draftBackdrop.hidden = true;
+    els.computerDraftBtn.setAttribute('aria-expanded','false');
+    els.draftPreview.textContent = ''; els.draftPhonePreview.textContent = '';
+  }
+  function closeDraft(force){
+    if (state.draftBusy && !force) return;
+    if (state.panel === 'draft') setPanel('');
+    else clearDraftPreview();
+  }
+  async function openDraft(){
+    if (state.draftBusy || state.navigationBusy) return;
+    if (!setPanel('draft')) return;
+    await refreshDraft();
+  }
+  async function refreshDraft(){
+    if (state.draftBusy) return;
+    var sequence = ++state.draftRequestSeq;
+    state.draftLoading = true; state.draftInvalid = true; state.draftError = '';
+    renderDraft();
+    try {
+      var snapshot = await requestJson('/api/draft');
+      if (sequence !== state.draftRequestSeq || els.draftPanel.hidden) return;
+      if (!snapshot || typeof snapshot.text !== 'string' || typeof snapshot.revision !== 'string'
+          || typeof snapshot.conversationKey !== 'string' || !Number.isInteger(snapshot.epoch)) throw new ApiError('草稿读取失败，请刷新重试。',0);
+      state.draft = snapshot; state.draftInvalid = false;
+    } catch (err) {
+      if (sequence === state.draftRequestSeq && !els.draftPanel.hidden) state.draftError = err.message || '读取草稿失败，请刷新重试。';
+    } finally {
+      if (sequence === state.draftRequestSeq) { state.draftLoading = false; renderControls(); }
+    }
+  }
+  function renderDraft(){
+    var snapshot = state.draft;
+    var phone = els.message.value;
+    var stale = snapshot && draftStale(snapshot);
+    var disabled = !snapshot || stale || state.draftInvalid || !snapshot.hasDraft || !snapshot.canClear
+      || state.draftLoading || state.draftBusy || state.pending.sendText || state.navigationBusy
+      || !state.live || !state.token || state.frozen.active || !isStatusAllowed(state.status);
+    els.draftCloseBtn.disabled = state.draftBusy;
+    els.draftRefreshBtn.disabled = state.draftBusy || state.draftLoading;
+    els.draftRefreshBtn.textContent = state.draftLoading ? '读取中…' : '刷新草稿';
+    els.draftRecoverBtn.disabled = disabled || mergeDraftText(phone,snapshot ? snapshot.text : '').length > MAX_TEXT;
+    els.draftClearBtn.disabled = disabled;
+    els.draftSendBtn.disabled = disabled || !phone.trim() || phone.length > MAX_TEXT;
+    els.draftSendBtn.textContent = state.draftBusy ? '处理中…' : '清空并发送手机消息';
+    if (els.draftPanel.hidden) return;
+    els.draftContext.textContent = snapshot ? snapshot.title : '当前对话';
+    els.draftNotice.textContent = state.draftLoading ? '正在读取电脑输入框…'
+      : (stale ? '当前对话已变化，请刷新草稿。'
+      : (!snapshot ? '暂时无法读取草稿。' : (!snapshot.hasDraft ? '电脑输入框为空，可以关闭后直接发送。'
+      : (snapshot.truncated ? '草稿过长，以下为部分内容；请在画面中处理完整草稿。'
+      : ''))));
+    if (snapshot && snapshot.hasDraft && mergeDraftText(phone,snapshot.text).length > MAX_TEXT && !state.draftError) {
+      els.draftNotice.textContent += ' 合并后超过手机字数上限，请先精简手机消息，或切换画面编辑。';
+    }
+    els.draftNotice.hidden = !els.draftNotice.textContent;
+    var preview = snapshot ? snapshot.text : '';
+    if (els.draftPreview.textContent !== preview) els.draftPreview.textContent = preview;
+    els.draftPreview.hidden = !preview;
+    if (els.draftPhonePreview.textContent !== phone) els.draftPhonePreview.textContent = phone;
+    els.draftPhoneLabel.hidden = els.draftPhonePreview.hidden = !phone.trim();
+    els.draftError.textContent = state.draftError;
+  }
+  function noteDraftCleared(snapshot){
+    if (state.chat && state.chat.key === snapshot.conversationKey && state.chat.epoch === snapshot.epoch && state.chat.composer) state.chat.composer.hasDraft = false;
+  }
+  async function resolveDraft(operation){
+    if (state.draftBusy || state.draftLoading || state.pending.sendText) return;
+    var snapshot = state.draft;
+    renderDraft();
+    var button = operation === 'recover' ? els.draftRecoverBtn : (operation === 'clear' ? els.draftClearBtn : els.draftSendBtn);
+    if (button.disabled || !/^(recover|clear|send)$/.test(operation)) return;
+    state.draftBusy = true; state.draftError = '';
+    var completed = false;
+    try {
+      if (operation === 'recover') {
+        var original = els.message.value;
+        var merged = mergeDraftText(original,snapshot.text);
+        // Copy first so a lost clearing acknowledgement cannot lose either draft.
+        els.message.value = merged; resizeComposer();
+        state.recoveredUndo = {original:original,merged:merged};
+      }
+      renderControls();
+      if (operation === 'send') completed = await sendText(true,snapshot);
+      else completed = await sendAction({kind:'draft',operation:'clear',conversationKey:snapshot.conversationKey,
+        draftRevision:snapshot.revision,epoch:snapshot.epoch});
+      if (!completed) {
+        state.draftInvalid = true;
+        state.draftError = (operation === 'recover' ? '取回的文字已保留在手机。' : '') + (state.error || '处理结果未确认，请刷新草稿查看。');
+        return;
+      }
+      noteDraftCleared(snapshot);
+      if (operation !== 'send') toast(operation === 'recover' ? '已取回手机，可继续编辑后发送' : '电脑草稿已清空，手机文字已保留');
+    } finally {
+      state.draftBusy = false;
+      if (completed) { closeDraft(); if (operation === 'recover') els.message.focus(); }
+      render();
+    }
+  }
+  function setNavigation(open){
+    if (open) { if (setPanel('navigation')) {
+      if(state.navigation && state.navigation.epoch===state.epoch){renderNavigation();if(state.navigationNeedsRefresh)refreshNavigation();}
+      else refreshNavigation();
+    } }
+    else if (state.panel === 'navigation') {state.navigationMode='browse';setPanel('');}
+  }
+  async function refreshNavigation(force){
+    if (state.navigationLoading) return;
+    var sequence=++state.navigationSequence,epoch=state.epoch;
+    state.navigationLoading = true;
+    els.navigationError.textContent = '';
+    renderNavigation();
+    try {
+      var snapshot = await requestJson('/api/navigation');
+      if(sequence!==state.navigationSequence || epoch!==state.epoch)return;
+      if (!snapshot || !Array.isArray(snapshot.items) || typeof snapshot.key !== 'string') throw new ApiError('项目与对话列表格式异常。',0);
+      snapshot.items.forEach(function(item){
+        if (!item || typeof item.id !== 'string' || typeof item.title !== 'string' || !/^(project|thread|section|more|sidebar|new)$/.test(item.kind)) throw new ApiError('项目与对话列表格式异常。',0);
+      });
+      acceptNavigation(snapshot,force===true);
+      els.navigationError.textContent = snapshot.available ? '' : snapshot.notice;
+    } catch (err) { if(sequence===state.navigationSequence)els.navigationError.textContent = err.message || '读取列表失败，请刷新重试。'; }
+    finally { if(sequence===state.navigationSequence){state.navigationLoading = false; renderNavigation();} }
+  }
+  function acceptNavigation(snapshot,force){
+    var previous=state.navigation;
+    if(previous && previous.source!==snapshot.source){state.navigationFold={};state.navigationLoaded={};previous=null;}
+    var items=snapshot.items.map(function(item){return Object.assign({},item,{catalogKey:snapshot.key});});
+    items.filter(function(item){return item.kind==='project';}).forEach(function(project){
+      var id=project.project||project.id,children=items.filter(function(item){return item.project===id && /^(thread|more)$/.test(item.kind);});
+      if(!force && !children.length && !project.expanded && previous){
+        previous.items.filter(function(item){return item.project===id && /^(thread|more)$/.test(item.kind);}).forEach(function(item){items.push(item);});
+      }
+      if(project.expanded || children.length)state.navigationLoaded[id]=true;
+      else if(force){state.navigationLoaded[id]=false;state.navigationFold[id]=false;}
+      if(!(id in state.navigationFold))state.navigationFold[id]=false;
+    });
+    state.navigation=Object.assign({},snapshot,{items:items});state.navigationAt=performance.now();state.navigationNeedsRefresh=false;
+    var selected=items.find(function(item){return item.kind==='thread'&&item.selected;});
+    if(selected)state.activeNavigationId=selected.id;
+  }
+  function openNewChat(){
+    state.navigationMode='create';els.navigationSearch.value='';setNavigation(true);renderNavigation();els.navigationBackBtn.focus({preventScroll:true});
+  }
+  function renderNavigation(){
+    var creating=state.navigationMode==='create';
+    els.navigationTitle.textContent=creating?'新建对话':'项目与对话';
+    els.navigationBackBtn.hidden=!creating;els.navigationNewBtn.hidden=creating;els.navigationFilters.hidden=creating;
+    els.navigationSearch.placeholder=creating?'选择项目':'搜索项目或对话';
+    els.navigationNewBtn.disabled=state.navigationBusy||state.pending.sendText||state.draftBusy;
+    var catalog = state.navigation;
+    var list = els.navigationList;
+    function updateButtons(){state.navigationButtons.forEach(function(row){
+      row.button.disabled=state.navigationBusy||state.pending.sendText||state.draftBusy||(!row.local&&state.navigationLoading);
+      var pending=state.navigationBusy&&row.item.id===state.navigationPendingId;row.button.setAttribute('aria-busy',String(pending));row.spinner.hidden=!pending;
+    });}
+    var signature=JSON.stringify([catalog&&catalog.items,!catalog&&state.navigationLoading,els.navigationSearch.value,state.navigationFilter,state.navigationFold,creating,state.activeNavigationId]);
+    if(signature===state.navigationSignature){updateButtons();return;}
+    state.navigationSignature=signature;var scroll=list.scrollTop,focused=document.activeElement&&document.activeElement.getAttribute('data-navigation-id');list.textContent = '';state.navigationButtons=[];
+    function restorePosition(){
+      if(focused){var row=state.navigationButtons.find(function(row){return row.item.id===focused;});if(row&&!row.button.disabled)row.button.focus({preventScroll:true});}
+      list.scrollTop=scroll;
+    }
+    if (!catalog) { var loading=document.createElement('p');loading.className='navigation-empty';loading.textContent=state.navigationLoading?'正在读取…':'暂无对话';list.appendChild(loading);return; }
+    var query = els.navigationSearch.value.trim().toLocaleLowerCase();
+    function matches(item){ return !query || (item.title + ' ' + (item.projectTitle || '')).toLocaleLowerCase().indexOf(query) !== -1; }
+    function add(item, parent, local, label){
+      var button = document.createElement('button'); button.type = 'button'; button.className = 'navigation-item';
+      button.setAttribute('data-kind',item.kind);
+      button.setAttribute('data-navigation-id',item.id);
+      if (item.id === state.activeNavigationId) button.setAttribute('data-active','true');
+      var expanded=item.kind==='project'?(state.navigationFold[item.project||item.id]===undefined?item.expanded:state.navigationFold[item.project||item.id]):item.expanded;
+      if (typeof expanded === 'boolean') button.setAttribute('aria-expanded',String(expanded));
+      var icon = document.createElement('span'); icon.className = 'navigation-icon';
+      icon.appendChild(controlIcon(item.kind === 'project' ? 'folder' : (item.kind === 'thread' ? 'chat' : 'plus')));
+      icon.setAttribute('aria-hidden','true');
+      var title = document.createElement('span'); title.className='navigation-title';title.textContent = label || (item.kind === 'more' ? '显示更多对话' : item.title);
+      button.appendChild(icon); button.appendChild(title); button.disabled = state.navigationBusy || state.navigationLoading || state.pending.sendText || state.draftBusy;
+      if (item.kind==='project' || item.id===state.activeNavigationId) { var arrow=document.createElement('span');arrow.className='navigation-chevron';arrow.appendChild(controlIcon(item.kind==='project' ? (expanded?'down':'chevron') : 'check'));arrow.setAttribute('aria-hidden','true');button.appendChild(arrow); }
+      var spinner=document.createElement('span');spinner.className='control-spinner';spinner.hidden=true;spinner.setAttribute('aria-hidden','true');button.appendChild(spinner);state.navigationButtons.push({button:button,item:item,spinner:spinner,local:!!local});
+      button.addEventListener('click',function(){ navigateItem(item); }); parent.appendChild(button);
+    }
+    if(creating){
+      catalog.items.filter(function(item){return item.kind==='new';}).forEach(function(item){var title=item.project?(item.projectTitle||'当前项目'):'不使用项目';if(!query||title.toLocaleLowerCase().indexOf(query)!==-1)add(item,list,false,title);});
+      if(!list.children.length){var empty=document.createElement('p');empty.className='navigation-empty';empty.textContent=query?'没有找到匹配的项目':'当前电脑页面没有可用的新建入口';list.appendChild(empty);}
+      updateButtons();restorePosition();return;
+    }
+    var grouped = {};
+    catalog.items.filter(function(item){return item.kind==='project' && state.navigationFilter!=='recent';}).forEach(function(project){
+      var id=project.project||project.id;
+      var children = catalog.items.filter(function(item){return item.project===id && /^(thread|more)$/.test(item.kind);});
+      if (!matches(project) && !children.some(matches)) return;
+      var group=document.createElement('section');group.className='navigation-group';
+      var create=catalog.items.find(function(item){return item.kind==='new'&&item.project===id;});
+      if(create){
+        var head=document.createElement('div');head.className='navigation-project-head';add(project,head,true);
+        var button=document.createElement('button');button.type='button';button.className='navigation-project-new';button.setAttribute('data-navigation-id',create.id);button.setAttribute('aria-label','在 '+project.title+' 中新建对话');button.setAttribute('title','在 '+project.title+' 中新建对话');button.appendChild(controlIcon('compose'));bindIconHint(button);
+        var spinner=document.createElement('span');spinner.className='control-spinner';spinner.hidden=true;button.appendChild(spinner);state.navigationButtons.push({button:button,item:create,spinner:spinner,local:false});button.addEventListener('click',function(){navigateItem(create);});head.appendChild(button);group.appendChild(head);
+      }else add(project,group,true);
+      var expanded=id in state.navigationFold?state.navigationFold[id]:project.expanded!==false;
+      children.forEach(function(item){grouped[item.id]=true;});
+      if(expanded||query)children.filter(function(item){return query&&matches(project)?true:matches(item);}).forEach(function(item){add(item,group);});
+      list.appendChild(group);
+    });
+    catalog.items.filter(function(item){
+      if(item.kind==='project' || item.kind==='new' || grouped[item.id] || !matches(item))return false;
+      if(item.kind==='sidebar')return true;
+      if(item.kind==='section')return !item.expanded && (state.navigationFilter==='all' || (state.navigationFilter==='projects' ? /^(项目|Projects)$/i.test(item.title) : /^(最近|Recents)$/i.test(item.title)));
+      return state.navigationFilter!=='projects' && !item.project;
+    })
+      .forEach(function(item){ add(item,list); });
+    if (!list.children.length) { var empty=document.createElement('p');empty.className='navigation-empty';empty.textContent=query?'没有找到匹配的对话':'暂无已加载的对话';list.appendChild(empty); }
+    updateButtons();restorePosition();
+  }
+  async function navigateItem(item){
+    if (state.navigationBusy || state.pending.sendText || state.draftBusy || !state.navigation) return;
+    if(item.kind==='project'){
+      var id=item.project||item.id,expanded=id in state.navigationFold?state.navigationFold[id]:item.expanded!==false;
+      if(expanded){state.navigationFold[id]=false;renderNavigation();return;}
+      state.navigationFold[id]=true;
+      if(state.navigationLoaded[id] || item.expanded || state.navigation.items.some(function(row){return row.project===id&&row.kind==='thread';})){state.navigationLoaded[id]=true;renderNavigation();return;}
+    }
+    if(state.navigationLoading)return;
+    if(state.filesBusy || state.phoneFiles.length){els.navigationError.textContent='请先发送或移除输入框中的附件，再切换对话。';return;}
+    state.navigationBusy = true;
+    state.navigationPendingId=item.id;
+    renderControls(); renderNavigation();
+    els.navigationError.textContent = '';
+    try {
+      var result=null;
+      var ok = await sendAction({kind:'navigate',targetId:item.id,navigationKey:item.catalogKey||state.navigation.key,expanded:true},function(data){result=data;});
+      if (!ok) {if(state.actionErrorCode==='navigation_changed'){clearError();await refreshNavigation(true);}else els.navigationError.textContent=state.error;if(item.kind==='project')state.navigationFold[item.project||item.id]=false;return;}
+      state.navigation.epoch=state.epoch;
+      if(result && result.navigationUnchanged){state.activeNavigationId=item.id;setNavigation(false);return;}
+      if (item.kind === 'thread' || item.kind==='new') {
+        state.activeNavigationId = item.kind==='thread'?item.id:''; state.activeChatTitle = item.kind==='new'?(item.projectTitle?item.projectTitle+' · 新对话':'新对话'):item.title; state.activeChatKey = '';
+        state.chatConnected = false;
+        state.chat=null;state.chatElements={};els.chatMessages.textContent='';state.navigationNewDraft=item.kind==='new';
+        startMedia(); setNavigation(false); render();
+      } else if(result && result.navigation) {acceptNavigation(result.navigation);els.navigationError.textContent='';renderNavigation();}
+      else await refreshNavigation();
+    } finally { state.navigationBusy = false;state.navigationPendingId=''; renderNavigation(); render(); }
+  }
+  function renderMessageBody(body, blocks, phase){
+    var open={};Array.prototype.forEach.call(body.children,function(node){if(node.tagName==='DETAILS')open[node.getAttribute('data-channel')]=node.open;});
+    body.textContent = '';
+    var list = null, destination=body, channel='answer';
+    blocks.forEach(function(block){
+      var next=block.channel===phase && phase==='activity' ? 'answer' : (/^(reasoning|activity)$/.test(block.channel) ? block.channel : 'answer');
+      if(next!==channel){
+        list=null;channel=next;destination=body;
+        if(next!=='answer'){
+          var details=document.createElement('details');details.className='chat-process';details.setAttribute('data-channel',next);details.open=!!open[next];
+          var summary=document.createElement('summary');summary.textContent=next==='reasoning'?'思考过程':'工作记录';details.appendChild(summary);
+          destination=document.createElement('div');destination.className='chat-process-content';details.appendChild(destination);body.appendChild(details);
+        }
+      }
+      var node;
+      if (block.kind === 'list') {
+        if (!list) { list = document.createElement('ul'); destination.appendChild(list); }
+        node = document.createElement('li'); node.textContent = block.text; list.appendChild(node);
+        return;
+      }
+      list = null;
+      node = document.createElement(block.kind === 'heading' ? 'h3' : (block.kind === 'code' ? 'pre' : 'p'));
+      if (block.kind === 'code') {
+        var code = document.createElement('code'); code.textContent = block.text; node.appendChild(code);
+      } else node.textContent = block.text;
+      destination.appendChild(node);
+    });
+  }
+  function applyConversationEvent(event){
+    if (event.kind === 'idle') { state.lastChatAt = performance.now(); return; }
+    if (event.kind === 'status') throw new ApiError(event.error || '对话正在切换。', 409);
+    if (event.kind !== 'conversation' || !Array.isArray(event.messages) || !Array.isArray(event.order)) throw new ApiError('对话数据格式异常。', 0);
+    if (event.epoch < state.epoch) return;
+    var old = state.chat;
+    var replace = event.replace || !old || old.key !== event.key || old.epoch !== event.epoch;
+    var messages = {};
+    if (!replace) old.messages.forEach(function(message){ messages[message.id] = message; });
+    event.messages.forEach(function(message){
+      if (typeof message.id !== 'string' || typeof message.text !== 'string' || !/^(user|assistant)$/.test(message.role)) throw new ApiError('对话数据格式异常。', 0);
+      messages[message.id] = message;
+    });
+    var ordered = event.order.map(function(id){ if (!messages[id]) throw new ApiError('对话需要重新同步。', 0); return messages[id]; });
+    var list = els.chatMessages;
+    var bottom = replace || list.scrollHeight - list.scrollTop - list.clientHeight < 90;
+    if (replace) { list.textContent = ''; state.chatElements = {}; }
+    var keep = {};
+    var activeAnswer=event.generating && ordered.length && ordered[ordered.length-1].role==='assistant' ? ordered[ordered.length-1].id : '';
+    ordered.forEach(function(message, index){
+      keep[message.id] = true;
+      var row = state.chatElements[message.id];
+      if (!row) {
+        var article = document.createElement('article');
+        article.className = 'chat-message';
+        var foot = document.createElement('div'); foot.className = 'chat-message-foot';
+        var timestamp = document.createElement('span'); timestamp.className = 'chat-timestamp';
+        var duration = document.createElement('span');duration.className='chat-duration';
+        var copy = document.createElement('button'); copy.type = 'button'; copy.className = 'chat-copy';
+        copy.setAttribute('aria-label', '复制这条消息');
+        var copyIcon = document.createElement('span'); copyIcon.className = 'chat-copy-icon'; copyIcon.setAttribute('aria-hidden', 'true');
+        copy.appendChild(copyIcon);
+        var body = document.createElement('div'); body.className = 'chat-message-body';
+        foot.appendChild(copy); foot.appendChild(timestamp);foot.appendChild(duration); article.appendChild(body); article.appendChild(foot);
+        row = { article: article, timestamp: timestamp, duration:duration, body: body, copy:copy, foot:foot, text: null, signature: null };
+        state.chatElements[message.id] = row;
+        copy.addEventListener('click', function(){
+          if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(row.text).then(function(){ toast('已复制'); }, function(){ toast('请长按文字选择和复制'); });
+          } else toast('请长按文字选择和复制');
+        });
+      }
+      row.article.setAttribute('data-role', message.role);
+      row.article.setAttribute('data-phase', /^(activity|reasoning)$/.test(message.phase) ? message.phase : 'answer');
+      row.article.setAttribute('aria-label', message.role === 'user' ? '发送的消息' : '回复');
+      row.timestamp.textContent = typeof message.timestamp === 'string' ? message.timestamp.slice(0,80) : '';
+      row.timestamp.hidden = !row.timestamp.textContent;
+      row.duration.textContent=typeof message.duration==='string'?message.duration.slice(0,100):'';row.duration.hidden=!row.duration.textContent;
+      row.copy.hidden=!message.text.trim() || (message.role==='assistant' && (message.id===activeAnswer || message.complete===false || /^(activity|reasoning)$/.test(message.phase)));
+      row.foot.hidden=row.copy.hidden && row.timestamp.hidden && row.duration.hidden;
+      var blocks = messageBlocks(message);
+      var signature = JSON.stringify([blocks,message.attachments||[],message.phase||'answer']);
+      if (row.signature !== signature) { renderMessageBody(row.body, blocks, message.phase); renderMessageAttachments(row.body,message.attachments);row.signature = signature; }
+      row.text = message.text;
+      if (list.children[index] !== row.article) list.insertBefore(row.article, list.children[index] || null);
+    });
+    Object.keys(state.chatElements).forEach(function(id){
+      if (!keep[id]) { state.chatElements[id].article.remove(); delete state.chatElements[id]; }
+    });
+    state.chat = Object.assign({}, event, { messages: ordered });
+    observePhoneSend(state.chat);
+    if(event.composer && event.composer.options && typeof event.composer.options.key==='string' && Array.isArray(event.composer.options.items) && !event.composer.options.menu){
+      state.optionsRoot=Object.assign({},event.composer.options,{epoch:event.epoch});state.optionsRootAt=performance.now();
+    }
+    if (state.activeChatKey && state.activeChatKey !== event.key) { state.activeChatTitle=''; state.activeNavigationId=''; }
+    state.activeChatKey = event.key;
+    state.activeChatEpoch = event.epoch;
+    state.chatConnected = true;
+    state.lastChatAt = performance.now();
+    if (state.errorSource === 'conversation' || state.errorSource === 'network') clearError();
+    applyWindowState(event);
+    if (bottom) requestAnimationFrame(function(){ list.scrollTop = list.scrollHeight; updateChatLatest(); });
+    else updateChatLatest();
+  }
+  async function consumeConversationStream(response, signal, keepAlive){
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    try {
+      while (state.live && !signal.aborted && state.view === 'chat') {
+        var part = await reader.read();
+        if (part.done) throw new ApiError('对话连接已结束，正在重新连接。', 0);
+        keepAlive();
+        buffer += decoder.decode(part.value, { stream: true });
+        if (buffer.length > 1024 * 1024) throw new ApiError('对话数据超过限制。', 0);
+        var end;
+        while ((end = buffer.indexOf('\n')) >= 0) {
+          var line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+          if (line) applyConversationEvent(JSON.parse(line));
+        }
+      }
+    } finally { try { await reader.cancel(); } catch (e) { /* closed */ } }
+  }
+  async function conversationLoop(signal){
+    var retry = 400;
+    while (state.live && !signal.aborted && state.view === 'chat') {
+      try { await request('/api/conversation/stream', { signal: signal, stream: 'conversation' }); }
+      catch (err) {
+        if (!state.live || signal.aborted || (err && err.status === 401)) return;
+        state.chatConnected = false;
+        if (err.status === 409) {
+          state.chat = null;
+          state.chatElements = {};
+          els.chatMessages.textContent = '';
+        }
+        setError(err.message || '对话连接中断，正在重连。', 'conversation');
+        if (state.status === 'not_selected' || state.status === 'ambiguous') setSettings(true);
+        render();
+      }
+      await new Promise(function(resolve){ setTimeout(resolve, retry); });
+      retry = Math.min(3000, retry * 1.4);
+    }
+  }
+
+  /* ---------- 状态语义 ---------- */
+  function normalizeFrozen(raw){
+    var frozen = { active: false, until_ms: 0, reason: '' };
+    if (raw && typeof raw === 'object') {
+      frozen.active = !!raw.active;
+      frozen.until_ms = Number.isFinite(Number(raw.until_ms)) ? Number(raw.until_ms) : 0;
+      frozen.reason = typeof raw.reason === 'string' ? raw.reason : '';
+    }
+    return frozen;
+  }
+  function freezeInfoText(){
+    var frozen = state.frozen;
+    var reason = FREEZE_REASON[frozen.reason] || frozen.reason || '已冻结';
+    if (frozen.until_ms > 0) {
+      var left = Math.max(0, Math.ceil((frozen.until_ms - Date.now()) / 1000));
+      if (left <= 0) return reason + '，即将自动解冻';
+      return reason + ' · 约 ' + left + ' 秒后自动解冻';
+    }
+    return reason + ' · 点击“解冻”恢复操作';
+  }
+  function captureLabel(method){
+    if (method === 'printwindow') return '窗口抓取';
+    if (method === 'screen') return '屏幕抓取';
+    if (method === 'mock') return '模拟画面';
+    return method || '';
+  }
+  function statusSentence(){
+    if (!state.live) return '正在连接电脑…';
+    var status = state.status;
+    if (status === 'ready') return '已连接到 ChatGPT 窗口，可以操作。';
+    if (status === 'rebound') return '已自动重新发现 ChatGPT 窗口，可以继续操作。';
+    if (status === 'waiting') return '原窗口已关闭，正在等待新的 ChatGPT 窗口…';
+    if (status === 'ambiguous') return '发现多个候选窗口，请手动选择要控制的窗口。';
+    if (status === 'not_selected') return '尚未选择窗口，请先选择 ChatGPT 窗口。';
+    if (status === 'desktop') return '完整桌面模式：可操作整块 Windows 桌面。';
+    return state.frameSeen ? '已连接，画面持续更新。' : '正在连接电脑…';
+  }
+  function computeGate(){
+    if (state.draftBusy) return {ok:false,reason:'正在处理电脑草稿，请稍候…'};
+    if (state.navigationBusy) return {ok:false,reason:'正在切换对话，请稍候…'};
+    if (!state.live || !state.token) return { ok: false, reason: '尚未连接电脑。' };
+    if (state.frozen.active) return { ok: false, reason: '已冻结操作，请先解冻。' };
+    var status = state.status;
+    if (status === 'waiting') return { ok: false, reason: '原窗口已关闭，正在等待新窗口…' };
+    if (status === 'ambiguous') return { ok: false, reason: '发现多个候选窗口，请先手动选择。' };
+    if (status === 'not_selected') return { ok: false, reason: '尚未选择窗口，请先选择要控制的窗口。' };
+    if (!isStatusAllowed(status)) return { ok: false, reason: '正在同步窗口状态…' };
+    if (state.view === 'chat') {
+      if (!state.chatConnected || !state.chat || state.chat.epoch !== state.epoch) return { ok: false, reason: '正在同步当前对话…' };
+      if (!state.chat.available || !state.chat.composer || !state.chat.composer.available) return { ok: false, reason: '请切换到画面操作当前页面。' };
+      if (performance.now() - state.lastChatAt > 8000) return { ok: false, reason: '对话连接已中断，正在重新连接…' };
+      return { ok: true, reason: '' };
+    }
+    if (!state.frameSeen) return { ok: false, reason: '正在等待第一帧画面…' };
+    if (state.displayedEpoch < 0) return { ok: false, reason: '窗口正在切换，请等待画面更新。' };
+    if (state.epoch >= 0 && state.displayedEpoch !== state.epoch) {
+      return { ok: false, reason: '窗口正在切换，请等待画面更新。' };
+    }
+    return { ok: true, reason: '' };
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render(){
+    state.gate = computeGate();
+    renderBadge();
+    renderModeChip();
+    renderFreeze();
+    renderScreen();
+    renderWindows();
+    renderStatusText();
+    renderControls();
+    renderConversation();
+  }
+  function renderBadge(){
+    if (!state.live || !state.token) { setBadge('未配对', ''); return; }
+    if (state.frozen.active) { setBadge('已冻结', 'warn'); return; }
+    if (state.networkTrouble) { setBadge('连接异常', 'bad'); return; }
+    if (state.status === 'waiting') { setBadge('等待窗口', 'warn'); return; }
+    if (state.status === 'ambiguous') { setBadge('需要选择窗口', 'warn'); return; }
+    if (state.status === 'not_selected') { setBadge('未选择窗口', 'warn'); return; }
+    if (state.gate.ok) { setBadge(state.mode === 'desktop' ? '完整桌面' : '已连接', 'good'); return; }
+    setBadge('连接中', '');
+  }
+  function renderModeChip(){
+    var show = state.live && state.mode === 'desktop';
+    els.modeChip.hidden = !show;
+    if (show) setTone(els.modeChip, 'accent');
+  }
+  function renderFreeze(){
+    var frozen = state.frozen;
+    els.freezeBanner.hidden = !frozen.active;
+    els.freezeRibbon.hidden = !frozen.active;
+    if (frozen.active) {
+      var info = freezeInfoText();
+      els.freezeBannerText.textContent = info;
+      els.freezeTip.textContent = '当前状态：' + info + '。解冻后即可继续操作。';
+    } else {
+      els.freezeTip.textContent = '冻结后画面继续更新，但点按、滚动、文字和快捷键都会被拒绝，避免误触。';
+    }
+    els.freezeBtn.setAttribute('aria-pressed', frozen.active ? 'true' : 'false');
+    els.freezeBtn.setAttribute('aria-checked',String(frozen.active));
+  }
+  function renderScreen(){
+    var gate = state.gate;
+    var hint = null;
+    if (!state.frameSeen) {
+      hint = { title: '正在连接画面…', text: '正在等待电脑返回第一帧截图。' };
+    } else if (state.status === 'waiting') {
+      hint = { title: '窗口已关闭', text: '正在等待 ChatGPT 窗口重新出现，画面会自动恢复。' };
+    } else if (state.status === 'ambiguous') {
+      hint = { title: '请选择窗口', text: '检测到多个候选窗口，请在下方列表中选择要控制的那一个。' };
+    } else if (state.status === 'not_selected') {
+      hint = { title: '尚未选择窗口', text: '请从下方列表选择 ChatGPT 窗口，或切换为完整桌面。' };
+    }
+    els.screenHint.hidden = !hint;
+    if (hint) {
+      els.screenHintTitle.textContent = hint.title;
+      els.screenHintText.textContent = hint.text;
+    }
+    var switching = !hint && !gate.ok && !state.frozen.active && gate.reason.indexOf('切换') >= 0;
+    els.switchRibbon.hidden = !switching;
+    if (switching) els.switchRibbon.textContent = gate.reason;
+    els.freezeRibbon.hidden = !state.frozen.active;
+    els.screenShell.classList.toggle('is-blocked', !gate.ok);
+    els.screen.setAttribute('aria-label', state.frameSeen ? 'Windows 实时画面' : 'Windows 画面（尚未连接）');
+    els.captureInfo.textContent = state.captureMethod ? ' · 抓取：' + captureLabel(state.captureMethod) : '';
+    els.fullscreenBtn.setAttribute('aria-pressed', state.immersive ? 'true' : 'false');
+  }
+  function renderWindows(){
+    var windows = state.windows;
+    var signature = windows.map(function(w){
+      return w.id + ':' + (w.selected ? 1 : 0) + ':' + w.title;
+    }).join('|');
+    if (signature !== state.windowSig) {
+      state.windowSig = signature;
+      var select = els.windowSelect;
+      var previous = select.value;
+      var options = [];
+      var i;
+      if (!windows.length) {
+        var empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = '未发现可用窗口';
+        options.push(empty);
+      } else {
+        for (i = 0; i < windows.length; i++) {
+          var option = document.createElement('option');
+          option.value = String(windows[i].id);
+          option.textContent = windows[i].title + (windows[i].exe ? '（' + windows[i].exe + '）' : '');
+          options.push(option);
+        }
+      }
+      select.textContent = '';
+      for (i = 0; i < options.length; i++) select.appendChild(options[i]);
+      var ids = windows.map(function(w){ return String(w.id); });
+      var desired = '';
+      if (state.pickId !== null && ids.indexOf(String(state.pickId)) >= 0) {
+        desired = String(state.pickId);
+      } else {
+        var selected = null;
+        for (i = 0; i < windows.length; i++) { if (windows[i].selected) { selected = windows[i]; break; } }
+        if (selected) desired = String(selected.id);
+        else if (previous && ids.indexOf(previous) >= 0) desired = previous;
+        else if (windows.length) desired = ids[0];
+      }
+      select.value = desired;
+      if (state.pickId !== null && ids.indexOf(String(state.pickId)) < 0) state.pickId = null;
+    }
+    var winStateText = state.live ? statusSentence() : '正在读取窗口列表…';
+    if (windows.length) winStateText += ' 当前共 ' + windows.length + ' 个候选窗口。';
+    els.winState.textContent = winStateText;
+    els.desktopTip.textContent = state.mode === 'desktop'
+      ? '当前处于完整桌面模式。点按“返回窗口模式”可回到 ChatGPT 窗口。'
+      : DESKTOP_TIP;
+    els.windowSelect.disabled = windows.length === 0;
+    renderSettingChoices();
+  }
+  function renderSettingChoices(){
+    var methods=[['button','自动识别按钮'],['CTRL+ENTER','Ctrl + Enter'],['ENTER','Enter']];
+    els.submitChoiceValue.textContent=(methods.find(function(item){return item[0]===state.submitMethod;})||methods[0])[1];
+    var selected=state.windows.find(function(item){return item.selected;});
+    els.windowChoiceValue.textContent=state.pending.select?'正在切换…':(selected?selected.title:'选择窗口');
+    els.submitChoiceBtn.setAttribute('aria-expanded',String(state.settingChoice==='send'));els.submitChoices.hidden=state.settingChoice!=='send';
+    els.windowChoiceBtn.setAttribute('aria-expanded',String(state.settingChoice==='window'));els.windowChoices.hidden=state.settingChoice!=='window';
+    els.submitChoiceBtn.disabled=state.pending.sendText;els.windowChoiceBtn.disabled=state.pending.select||!state.windows.length;
+    function option(parent,value,title,checked,choose){
+      var button=document.createElement('button');button.type='button';button.className='setting-option';button.setAttribute('role','radio');button.setAttribute('aria-checked',String(checked));
+      var label=document.createElement('span');label.textContent=title;button.appendChild(label);if(checked)button.appendChild(controlIcon('check'));
+      button.addEventListener('click',function(){state.settingChoice='';choose(value);renderSettingChoices();});parent.appendChild(button);
+    }
+    if(state.settingChoice==='send'){
+      els.submitChoices.textContent='';methods.forEach(function(item){option(els.submitChoices,item[0],item[1],item[0]===state.submitMethod,function(value){state.submitMethod=value;els.submitMethod.value=value;try{localStorage.setItem(SUBMIT_KEY,value);}catch(e){}});});
+    }
+    if(state.settingChoice==='window'){
+      els.windowChoices.textContent='';state.windows.forEach(function(item){option(els.windowChoices,item.id,item.title,!!item.selected,function(value){els.windowSelect.value=String(value);state.pickId=value;selectWindow();});});
+    }
+  }
+  function renderStatusText(){
+    var gate = state.gate;
+    var tone = 'warn';
+    var text;
+    if (state.frozen.active) {
+      text = '已冻结：画面仍在更新，所有输入操作已暂停。';
+    } else if (gate.ok) {
+      text = statusSentence();
+      tone = 'good';
+    } else if (state.status === 'waiting' || state.status === 'ambiguous' || state.status === 'not_selected') {
+      text = statusSentence();
+    } else if (!state.frameSeen) {
+      text = '正在连接画面…';
+    } else if (state.displayedEpoch !== state.epoch) {
+      text = '窗口正在切换，画面更新后即可操作。';
+    } else {
+      text = statusSentence();
+    }
+    if (state.networkTrouble) { text = '连接异常，正在重试…'; tone = 'bad'; }
+    els.statusText.textContent = text;
+    setTone(els.statusText, tone);
+    var showGate = !gate.ok && !state.frozen.active && !(
+      state.status === 'waiting' || state.status === 'ambiguous' || state.status === 'not_selected'
+    );
+    els.gateHint.hidden = !showGate;
+    if (showGate) els.gateHint.textContent = gate.reason;
+  }
+  function renderControls(){
+    var gate = computeGate();
+    state.gate = gate;
+    var pending = state.pending;
+    var frozen = state.frozen.active;
+    var actionsDisabled = !gate.ok || frozen || state.navigationBusy || state.draftBusy || state.optionsBusy;
+    var empty = !els.message.value.trim() && !state.phoneFiles.some(function(item){return item.state==='attached'||item.state==='uploaded';});
+    var filesBlocked=state.filesBusy||state.phoneFiles.some(function(item){return !/^(attached|uploaded)$/.test(item.state) || item.epoch!==state.epoch || item.key!==(state.chat?state.chat.key:state.activeChatKey);});
+    setDisabled(els.sendEnterBtn, !state.live || !state.token || frozen || state.navigationBusy || state.draftBusy || state.optionsBusy || filesBlocked || pending.sendText || empty);
+    setDisabled(els.composerOptionsBtn, !state.live || state.mode!=='window' || frozen || state.navigationBusy || state.draftBusy || state.optionsBusy || state.filesBusy || pending.sendText);
+    setDisabled(els.submitMethod, pending.sendText);
+    setDisabled(els.message, frozen);
+    var i;
+    for (i = 0; i < keyButtons.length; i++) setDisabled(keyButtons[i], actionsDisabled);
+    setDisabled(els.scrollUpBtn, actionsDisabled);
+    setDisabled(els.scrollDownBtn, actionsDisabled);
+    setDisabled(els.freezeBtn, pending.freeze);
+    setDisabled(els.unfreezeBtn, pending.freeze);
+    setDisabled(els.selectBtn, pending.select || state.windows.length === 0);
+    setDisabled(els.refreshBtn, state.manualRefresh);
+    els.refreshBtn.textContent = state.manualRefresh ? '刷新中…' : '刷新';
+    setDisabled(els.desktopBtn, pending.desktop);
+    els.desktopBtn.setAttribute('aria-checked',String(state.mode==='desktop'));
+    setDisabled(els.unpairBtn, pending.unpair);
+    setDisabled(els.fullscreenBtn, false);
+    setDisabled(els.navigationToggleBtn, state.draftBusy || state.optionsBusy || state.filesBusy || pending.sendText);
+    setDisabled(els.settingsToggleBtn, state.draftBusy || state.optionsBusy);
+    setDisabled(els.computerDraftBtn, !state.live || state.mode !== 'window' || state.navigationBusy || pending.sendText || state.draftBusy);
+    var hasDraft = !!(state.chat && state.chat.composer && state.chat.composer.hasDraft);
+    if (state.draft && !draftStale(state.draft)) hasDraft = state.draft.hasDraft;
+    els.computerDraftBtn.setAttribute('data-has-draft',String(hasDraft));
+    els.computerDraftBtn.hidden = !hasDraft;
+    els.recoveredUndoBtn.hidden = !(state.recoveredUndo && els.message.value === state.recoveredUndo.merged && !pending.sendText && !state.draftBusy);
+    els.sendEnterBtn.setAttribute('aria-label',pending.sendText ? '发送中' : '发送');
+    els.sendEnterBtn.setAttribute('aria-busy',String(pending.sendText));
+    els.sendProgress.hidden=!state.sending || /^(sent|queued|failed)$/.test(state.sending.state);
+    els.sendProgressText.textContent=state.sending && state.sending.state==='confirming'?'正在确认…':'发送中…';
+    els.message.placeholder = '写消息…';
+    renderSettingChoices();
+    renderQueued();
+    renderDraft();
+  }
+  function renderStats(){
+    var now = performance.now();
+    var cutoff = now - 3000;
+    if (state.frameTimes.length) {
+      state.frameTimes = state.frameTimes.filter(function(t){ return t >= cutoff; });
+    }
+    var fresh = state.frameSeen && state.lastFrameAt > 0 && (now - state.lastFrameAt) < FRAME_STALE_MS;
+    var fps = null;
+    if (fresh && state.frameTimes.length >= 2) {
+      var span = (state.frameTimes[state.frameTimes.length - 1] - state.frameTimes[0]) / 1000;
+      if (span > 0.25) fps = (state.frameTimes.length - 1) / span;
+    }
+    var fpsText = fps === null ? '—' : fps.toFixed(1);
+    var latencyText = (fresh && state.latency !== null) ? Math.round(state.latency) + ' ms' : '—';
+    els.fpsStat.textContent = 'FPS ' + fpsText;
+    els.immersiveFps.textContent = 'FPS ' + fpsText;
+    els.latencyStat.textContent = '往返 ' + latencyText;
+    els.immersiveLatency.textContent = '往返 ' + latencyText;
+    els.responseStat.textContent = '操作回显 ' + (state.responseLatency === null ? '—' : Math.round(state.responseLatency) + ' ms');
+    setTone(els.latencyStat, (fresh && state.latency !== null)
+      ? (state.latency < 350 ? 'good' : (state.latency < 900 ? 'warn' : 'bad'))
+      : '');
+    setTone(els.immersiveLatency, '');
+    var sub = '实时画面';
+    if (state.captureMethod) sub += ' · ' + captureLabel(state.captureMethod);
+    else if (state.mock) sub += ' · 模拟画面';
+    if (fresh) {
+      sub += ' · 更新于 ' + ((now - state.lastFrameAt) / 1000).toFixed(1) + ' 秒前';
+    } else if (state.frameSeen) {
+      sub += ' · 画面已静止';
+    } else if (state.live) {
+      sub += ' · 等待第一帧';
+    } else {
+      sub += ' · 正在连接';
+    }
+    els.screenSub.textContent = sub;
+    if (state.frozen.active) {
+      renderFreeze();
+      if (state.frozen.until_ms > 0 && Date.now() > state.frozen.until_ms + 300 && !state.freezeExpiryHandled) {
+        state.freezeExpiryHandled = true;
+        refreshWindows();
+      }
+    }
+  }
+
+  /* ---------- 会话生命周期 ---------- */
+  function resetRemote(){
+    state.navigation=null;state.navigationFold={};state.navigationLoaded={};state.navigationSignature='';state.navigationMode='browse';state.navigationNeedsRefresh=false;state.navigationNewDraft=false;state.navigationSequence++;state.navigationLoading=false;
+    state.fileSequence++;state.phoneFiles=[];state.filesBusy=false;renderPhoneFiles();
+    state.optionsRoot=null;state.optionsRootAt=0;state.localQueued=[];state.queuedExpanded=false;state.settingChoice='';
+    closeDraft(true); state.draftBusy = false; state.recoveredUndo = null; state.actionErrorCode = '';
+    state.chat = null;
+    state.activeChatKey = ''; state.activeChatEpoch = -1; state.activeChatTitle = '';
+    state.actionFeedback = [];
+    state.lastActionFrame = { sequence: 0, at: 0 };
+    state.responseLatency = null;
+    state.chatElements = {};
+    state.chatConnected = false;
+    state.lastChatAt = 0;
+    els.chatMessages.textContent = '';
+    state.epoch = -1;
+    state.displayedEpoch = -1;
+    state.lastFrameId = 0;
+    state.frameSeen = false;
+    state.lastFrameAt = 0;
+    state.latency = null;
+    state.frameTimes = [];
+    state.frameW = 0;
+    state.frameH = 0;
+    state.windows = [];
+    state.windowSig = '';
+    state.pickId = null;
+    state.mode = 'window';
+    state.status = '';
+    state.frozen = { active: false, until_ms: 0, reason: '' };
+    state.captureMethod = '';
+    state.networkTrouble = false;
+    state.freezeExpiryHandled = false;
+    state.lastWindowsRefresh = 0;
+    state.windowSigRefreshAt = 0;
+    state.gate = { ok: false, reason: '正在连接…' };
+    state.actionsInFlight = 0;
+    state.lastRightClickAt = 0;
+    state.manualRefresh = false;
+    state.streamAck = null;
+    state.pending = { pair: false, refresh: false, select: false, desktop: false, freeze: false, unpair: false, sendText: false };
+    setImmersive(false);
+    var context = els.screen.getContext('2d');
+    context.clearRect(0, 0, els.screen.width, els.screen.height);
+    els.screenShell.style.removeProperty('--ar');
+    els.screenHint.hidden = false;
+    els.screenHintTitle.textContent = '正在连接画面…';
+    els.screenHintText.textContent = '正在等待电脑返回第一帧截图。';
+    els.switchRibbon.hidden = true;
+    els.freezeRibbon.hidden = true;
+    els.freezeBanner.hidden = true;
+    els.message.value = '';
+    els.windowSelect.textContent = '';
+    els.winState.textContent = '正在读取窗口列表…';
+    els.statusText.textContent = '正在检查窗口状态…';
+    els.gateHint.hidden = true;
+    els.screenSub.textContent = '实时画面 · 正在连接';
+    els.fpsStat.textContent = 'FPS —';
+    els.latencyStat.textContent = '往返 —';
+    els.immersiveFps.textContent = 'FPS —';
+    els.immersiveLatency.textContent = '往返 —';
+    els.modeChip.hidden = true;
+    els.desktopTip.textContent = DESKTOP_TIP;
+    clearError();
+    renderStats();
+  }
+
+  function enterRemote(){
+    state.sessionEnded = false;
+    els.pairView.hidden = true;
+    els.remoteView.hidden = false;
+    document.body.classList.add('remote-mode');
+    clearPairError();
+    resetRemote();
+    render();
+    startLive();
+    resumePhoneSend();
+    renderStats();
+  }
+
+  function showPairView(message){
+    state.fileSequence++;state.phoneFiles=[];state.filesBusy=false;renderPhoneFiles();
+    state.optionsRoot=null;state.optionsRootAt=0;state.localQueued=[];state.queuedExpanded=false;state.settingChoice='';
+    closeDraft(true); state.draftBusy = false; state.recoveredUndo = null;
+    setPanel('');
+    els.remoteView.hidden = true;
+    els.pairView.hidden = false;
+    document.body.classList.remove('remote-mode');
+    document.body.classList.remove('chat-mode');
+    els.settingsToggleBtn.hidden = true;
+    els.navigationToggleBtn.hidden = true;
+    setNavigation(false);
+    setSettings(false);
+    setBadge('未配对', '');
+    if (message) showPairError(message); else clearPairError();
+    setTimeout(function(){
+      if (!els.pairView.hidden) {
+        try { els.pin.focus({ preventScroll: true }); } catch (e) { try { els.pin.focus(); } catch (e2) {} }
+      }
+    }, 80);
+  }
+
+  function startLive(){
+    if (state.live) return;
+    state.live = true;
+    state.mediaStarted=true;
+    state.frameTimes = [];
+    state.lastWindowsRefresh = 0;
+    state.windowTimer = setInterval(function(){ if (state.live) refreshWindows(); }, WINDOW_REFRESH_MS);
+    state.statsTimer = setInterval(function(){ if (state.live) renderStats(); }, 600);
+    refreshWindows();
+    startControl();
+    startMedia();
+  }
+  function startMedia(){
+    if (state.frameAbort) state.frameAbort.abort();
+    if (state.chatAbort) state.chatAbort.abort();
+    state.chatConnected = false;
+    if (!state.live || document.hidden || state.panel || state.optionsBusy) return;
+    var controller = new AbortController();
+    if (state.view === 'chat') {
+      state.chatAbort = controller;
+      conversationLoop(controller.signal);
+      return;
+    }
+    state.frameAbort = controller;
+    streamLoop(controller.signal).catch(function(err){
+      if (err && err.name === 'AbortError') return;
+      if (state.live) setError('画面循环异常：' + (err && err.message ? err.message : err), 'frame');
+    });
+  }
+  function stopLive(){
+    state.live = false;
+    state.mediaStarted=false;
+    if (state.chatAbort) state.chatAbort.abort();
+    stopControl();
+    if (state.frameAbort) {
+      try { state.frameAbort.abort(); } catch (e) { /* ignore */ }
+      state.frameAbort = null;
+    }
+    if (state.windowTimer) { clearInterval(state.windowTimer); state.windowTimer = 0; }
+    if (state.statsTimer) { clearInterval(state.statsTimer); state.statsTimer = 0; }
+    wakeSleep();
+  }
+
+  /* ---------- 窗口状态 ---------- */
+  function normalizeWindows(list){
+    var out = [];
+    if (!Array.isArray(list)) return out;
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (!item || typeof item !== 'object') continue;
+      var id = Number(item.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      out.push({
+        id: id,
+        title: typeof item.title === 'string' && item.title ? item.title : '未命名窗口',
+        exe: typeof item.exe === 'string' ? item.exe : '',
+        selected: !!item.selected
+      });
+    }
+    return out;
+  }
+
+  function applyWindowState(info){
+    if (!info || typeof info !== 'object') return;
+    if (Number.isFinite(Number(info.epoch)) && Number(info.epoch) < state.epoch) return;
+    var prevStatus = state.status;
+    var prevEpoch = state.epoch;
+    if (typeof info.version === 'string') state.version = info.version;
+    if (typeof info.instance === 'string') state.instance = info.instance;
+    if (typeof info.mock === 'boolean') state.mock = info.mock;
+    if (info.mode === 'desktop' || info.mode === 'window') state.mode = info.mode;
+    if (typeof info.status === 'string') state.status = info.status;
+    if (info.frozen && typeof info.frozen === 'object') state.frozen = normalizeFrozen(info.frozen);
+    if (Array.isArray(info.windows)) state.windows = normalizeWindows(info.windows);
+    if (Number.isFinite(Number(info.epoch))) state.epoch = Number(info.epoch);
+    if(state.navigation && state.navigation.epoch!==state.epoch && !state.navigationBusy){state.navigation=null;state.navigationFold={};state.navigationLoaded={};state.navigationSignature='';state.navigationSequence++;state.navigationLoading=false;}
+    if (state.epoch!==prevEpoch && state.panel==='options' && state.options && state.options.epoch!==state.epoch) {
+      state.optionsSequence++;state.optionsInvalid=true;state.optionsLoading=false;state.optionsSurface=null;
+      state.optionsError='电脑窗口已变化，请刷新选项。';renderOptions();
+    }
+    if (state.chat && state.chat.epoch !== state.epoch) {
+      state.chat = null;
+      state.chatConnected = false;
+      state.chatElements = {};
+      els.chatMessages.textContent = '';
+    }
+    state.lastWindowsRefresh = performance.now();
+    state.networkTrouble = false;
+    if (state.errorSource === 'network' || state.errorSource === 'frame') clearError();
+    if (state.status !== prevStatus) state.freezeExpiryHandled = false;
+    updateBuildInfo();
+    var allowed = isStatusAllowed(state.status);
+    if ((allowed && !isStatusAllowed(prevStatus)) || state.epoch !== prevEpoch || (!state.frameSeen && allowed)) {
+      wakeSleep();
+    }
+    render();
+    renderStats();
+  }
+
+  async function refreshWindows(manual){
+    if (!state.live || !state.token) return;
+    if (manual === true) {
+      state.manualRefresh = true;
+      renderControls();
+    }
+    if (state.pending.refresh) return;
+    state.pending.refresh = true;
+    state.lastWindowsRefresh = performance.now();
+    var seq = ++state.refreshSeq;
+    renderControls();
+    try {
+      var info = await requestJson('/api/windows');
+      if (seq !== state.refreshSeq || !state.live) return;
+      applyWindowState(info);
+    } catch (err) {
+      if (!state.live || (err && err.name === 'AbortError')) return;
+      if (err && err.status === 401) return;
+      state.networkTrouble = true;
+      setError((err && err.message) || '读取窗口状态失败', 'network');
+      renderBadge();
+      renderStatusText();
+    } finally {
+      state.pending.refresh = false;
+      state.manualRefresh = false;
+      state.lastWindowsRefresh = performance.now();
+      renderControls();
+    }
+  }
+
+  /* ---------- 操作 ---------- */
+  var scrollPending = 0;
+  var scrollTimer = 0;
+  var scrollEpoch = -1;
+  function queueScroll(delta){
+    if (state.view !== 'screen' || !computeGate().ok) return;
+    if (scrollEpoch !== state.epoch) scrollPending = 0;
+    scrollEpoch = state.epoch;
+    scrollPending += delta;
+    if (scrollTimer) return;
+    scrollTimer = setTimeout(function flush(){
+      scrollTimer = 0;
+      if (scrollEpoch !== state.epoch || state.view !== 'screen' || !computeGate().ok) { scrollPending = 0; return; }
+      var amount = clamp(scrollPending, -1200, 1200);
+      scrollPending -= amount;
+      if (amount) sendAction({ kind: 'scroll', delta: amount });
+      if (scrollPending) scrollTimer = setTimeout(flush, 40);
+    }, 40);
+  }
+  function actionGate(payload){
+    if (payload.kind === 'message') {
+      var gate = messageGate(!!payload.draftRevision);
+      var key = state.chat ? state.chat.key : state.activeChatKey;
+      var epoch = state.chat ? state.chat.epoch : state.activeChatEpoch;
+      if (gate.ok && !payload.draftRevision && (payload.conversationKey !== key || epoch !== state.epoch)) return {ok:false,reason:'当前对话已变化，请确认后再发送。'};
+      return gate;
+    }
+    return payload.kind === 'navigate' || payload.kind === 'draft' || payload.kind === 'composer' || payload.draftRevision
+      ? {ok:state.live && !!state.token && state.mode==='window' && isStatusAllowed(state.status) && !state.frozen.active
+          && (payload.kind !== 'navigate' || !state.draftBusy),reason:'请连接电脑窗口并解冻后操作。'}
+      : computeGate();
+  }
+  function messageGate(replacingDraft){
+    if (!state.live || !state.token) return {ok:false,reason:'连接已断开，请重新连接。'};
+    if (state.frozen.active) return {ok:false,reason:'操作已冻结，请在设置中解冻。'};
+    if (state.navigationBusy) return {ok:false,reason:'正在切换对话，请稍后发送。'};
+    if (state.optionsBusy) return {ok:false,reason:'正在调整对话选项，请稍后发送。'};
+    if (state.draftBusy && !replacingDraft) return {ok:false,reason:'草稿处理中，请稍后发送。'};
+    if (state.mode !== 'window' || !isStatusAllowed(state.status)) return {ok:false,reason:'请在设置中选择可用的电脑窗口。'};
+    return {ok:true,reason:''};
+  }
+  async function sendAction(payload,onResult){
+    state.actionErrorCode = '';
+    var gate = actionGate(payload);
+    if (!gate.ok) {
+      setError(gate.reason, 'gate');
+      return false;
+    }
+    if (state.actionsInFlight >= 64) { setError('操作较多，请稍候再继续。', 'action'); return false; }
+    state.actionsInFlight++;
+    var actionStartedAt = performance.now();
+    try {
+      var command = Object.assign({ epoch: state.epoch }, payload);
+      var data = state.control && state.control.ready && !state.actionQueueRunning && !state.actionQueue.length
+        ? await controlRequest('action', { payload: command })
+        : await enqueueHttpAction(command);
+      if (state.view === 'screen' && Number.isInteger(data.actionSequence)) {
+        state.actionFeedback.push({ sequence: data.actionSequence, started: actionStartedAt });
+        recordActionFrame(state.lastActionFrame.sequence, state.lastActionFrame.at);
+      }
+      if (Number.isFinite(Number(data.epoch)) && Number(data.epoch) !== state.epoch) {
+        state.epoch = Number(data.epoch);
+        wakeSleep();
+        if(payload.kind==='navigate'&&state.navigation)state.navigation.epoch=state.epoch;
+        else refreshWindows();
+      }
+      if (state.errorSource === 'action' || state.errorSource === 'gate') clearError();
+      if(onResult) onResult(data);
+      return true;
+    } catch (err) {
+      if (!err || err.status === 401) return false;
+      if(payload.messageId && !/^(delivery_invalid|delivery_conflict|delivery_busy)$/.test(err.code||'')){
+        if(onResult)onResult({delivery:{id:payload.messageId,state:'confirming'}});
+        return true;
+      }
+      state.actionErrorCode = err.code || '';
+      setError(err.message || '操作失败', 'action');
+      if (err.status === 409) {
+        wakeSleep();
+        refreshWindows();
+      }
+      return false;
+    } finally {
+      state.actionsInFlight--;
+    }
+  }
+
+  function normalizeSendText(text){return String(text||'').replace(/\r\n?/g,'\n').trim();}
+  function savePhoneSend(task){
+    try {if(task)localStorage.setItem(DELIVERY_KEY,JSON.stringify(task));else localStorage.removeItem(DELIVERY_KEY);}catch(e){}
+  }
+  function beginPhoneSend(payload){
+    var before=state.chat||{},text=normalizeSendText(payload.text);
+    var task={id:'send_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2)+'_'+Math.random().toString(36).slice(2),
+      text:payload.text,key:payload.conversationKey,epoch:payload.epoch,instance:state.instance,state:'sending',attachmentIds:payload.attachmentIds||[],
+      observed:!!state.chat && state.chat.key===payload.conversationKey && state.chat.epoch===payload.epoch,
+      sources:(before.messages||[]).filter(function(m){return m.sourceId;}).map(function(m){return m.sourceId;}),
+      matches:(before.messages||[]).filter(function(m){return m.role==='user'&&normalizeSendText(m.text)===text;}).length,
+      empty:!(before.messages||[]).length,queueIds:(before.queued||[]).map(function(q){return q.id;})};
+    state.sending=task;payload.messageId=task.id;payload.deliveryInstance=task.instance;savePhoneSend(task);renderControls();return task;
+  }
+  function finishPhoneSend(task,status){
+    if(!task || state.sending!==task || /^(sent|queued)$/.test(task.state))return;
+    task.state=status;
+    if(els.message.value===task.text){els.message.value='';resizeComposer();}
+    state.phoneFiles=state.phoneFiles.filter(function(file){return task.attachmentIds.indexOf(file.id)===-1;});renderPhoneFiles();
+    if(state.navigationNewDraft){state.navigationNeedsRefresh=true;state.navigationNewDraft=false;}
+    if(status==='queued'){
+      state.localQueued.push({key:task.key,text:normalizeSendText(task.text)||('附件 · '+task.attachmentIds.length+' 个'),at:performance.now()});renderQueued();
+    }
+    state.recoveredUndo=null;savePhoneSend(null);
+    if(task.done)task.done(null);
+    if(state.errorSource==='send')clearError();
+    renderControls();
+  }
+  function observePhoneSend(snapshot){
+    var task=state.sending;
+    if(!task || !task.observed || /^(sent|queued|failed)$/.test(task.state) || snapshot.epoch!==task.epoch)return;
+    var messages=snapshot.messages||[],text=normalizeSendText(task.text);
+    var same=task.key===snapshot.key || messages.some(function(m){return m.sourceId&&task.sources.indexOf(m.sourceId)!==-1;});
+    if(!same && !task.empty)return;
+    var matching=messages.filter(function(m){return m.role==='user'&&normalizeSendText(m.text)===text&&(text||(task.attachmentIds.length&&(m.attachments||[]).length));});
+    if(matching.length>task.matches || (task.sources.length&&matching.some(function(m){return m.sourceId&&task.sources.indexOf(m.sourceId)===-1;}))){finishPhoneSend(task,'sent');return;}
+    if(same && text && (snapshot.queued||[]).some(function(q){return task.queueIds.indexOf(q.id)===-1&&normalizeSendText(q.text)===text;}))finishPhoneSend(task,'queued');
+  }
+  async function awaitPhoneSend(task,receipt){
+    var delay=250,lookupAbort=new AbortController(),done=new Promise(function(resolve){task.done=resolve;});
+    try{
+    while(state.live && state.token && state.sending===task){
+      if(/^(sent|queued)$/.test(task.state))return true;
+      if(receipt && receipt.id===task.id){
+        if(/^(sent|queued)$/.test(receipt.state)){finishPhoneSend(task,receipt.state);return true;}
+        if(receipt.state==='failed'){
+          task.state='failed';state.actionErrorCode=receipt.code||'';savePhoneSend(null);
+          setError(receipt.error||'未发送，请重试。','send');return false;
+        }
+        task.state=receipt.state==='sending'?'sending':'confirming';renderControls();
+      }
+      var pauseTimer;
+      await Promise.race([new Promise(function(resolve){pauseTimer=setTimeout(resolve,delay);}),done]);
+      clearTimeout(pauseTimer);
+      if(/^(sent|queued)$/.test(task.state))return true;
+      try {
+        var result=await Promise.race([requestJson('/api/delivery?id='+encodeURIComponent(task.id),{signal:lookupAbort.signal}),done]);
+        if(/^(sent|queued)$/.test(task.state))return true;
+        receipt=result && result.delivery;
+      }
+      catch(err){
+        if(err && err.status===401)return false;
+        task.state='confirming';renderControls();receipt=null;
+        if(err && err.status===404){
+          try{var recovered=await requestJson('/api/delivery/resolve',{method:'POST',body:{id:task.id,instance:task.instance||''},signal:lookupAbort.signal});receipt=recovered.delivery;}catch(e){}
+        }
+      }
+      delay=Math.min(2000,delay*1.5);
+    }
+    return /^(sent|queued)$/.test(task.state);
+    }finally{lookupAbort.abort();delete task.done;}
+  }
+  async function resumePhoneSend(){
+    var task;
+    try{task=JSON.parse(localStorage.getItem(DELIVERY_KEY)||'null');}catch(e){}
+    if(!task || typeof task.id!=='string' || typeof task.text!=='string' || !Array.isArray(task.sources) || !Array.isArray(task.attachmentIds) || !Array.isArray(task.queueIds))return;
+    state.sending=task;state.pending.sendText=true;
+    if(!els.message.value)els.message.value=task.text;
+    resizeComposer();renderControls();
+    try{await awaitPhoneSend(task,null);}
+    finally{if(state.sending===task){state.sending=null;state.pending.sendText=false;renderControls();}}
+  }
+
+  async function sendText(enter, draft){
+    if (state.pending.sendText || (state.draftBusy && !draft)) return false;
+    if(state.filesBusy || state.phoneFiles.some(function(item){return !/^(attached|uploaded)$/.test(item.state)||item.epoch!==state.epoch||item.key!==(state.chat?state.chat.key:state.activeChatKey);})){setError('请先检查当前附件状态。','action');return false;}
+    var text = els.message.value;
+    if ((!text || !text.trim()) && !state.phoneFiles.length) {
+      setError('请先输入要发送的文字。', 'gate');
+      try { els.message.focus(); } catch (e) { /* ignore */ }
+      return false;
+    }
+    if (text.length > MAX_TEXT) {
+      setError('文字超过 ' + MAX_TEXT + ' 字，请删减后再发送。', 'gate');
+      return false;
+    }
+    if (!draft && state.view === 'chat' && state.chat && state.chat.composer && state.chat.composer.hasDraft) { await openDraft(); return false; }
+    state.pending.sendText = true;
+    var attachmentReadPaused=false,sendTask=null;
+    renderControls();
+    try {
+      var payload = {kind:state.mode === 'window' ? 'message' : 'text',text:text,submit:!!enter,submitMethod:state.submitMethod};
+      if(state.phoneFiles.length)payload.attachmentIds=state.phoneFiles.map(function(item){return item.id;});
+      if (payload.kind === 'message' && !draft) {
+        var gate = messageGate(false);
+        if (!gate.ok) { setError(gate.reason,'action'); if (!isStatusAllowed(state.status)) setSettings(true); return false; }
+        var observedKey = state.chat ? state.chat.key : state.activeChatKey;
+        var observedEpoch = state.chat ? state.chat.epoch : state.activeChatEpoch;
+        if (!observedKey) {
+          var expectedEpoch = state.epoch;
+          var snapshot = await requestJson('/api/conversation');
+          if (!snapshot || !Array.isArray(snapshot.messages) || typeof snapshot.key !== 'string') throw new ApiError('读取当前对话失败，请重试。',0);
+          applyConversationEvent(Object.assign({},snapshot,{kind:'conversation',replace:true,order:snapshot.messages.map(function(message){return message.id;})}));
+          if (expectedEpoch !== snapshot.epoch) { setError('当前对话已变化，请确认后再发送。','action'); return false; }
+          observedKey = snapshot.key; observedEpoch = snapshot.epoch;
+        }
+        payload.conversationKey = observedKey; payload.epoch = observedEpoch;
+      }
+      if (draft) { payload.conversationKey = draft.conversationKey; payload.draftRevision = draft.revision; payload.epoch = draft.epoch; }
+      if(state.phoneFiles.length){attachmentReadPaused=true;await attachPhoneFiles(payload.conversationKey,payload.epoch);}
+      if(payload.kind==='message' && enter)sendTask=beginPhoneSend(payload);
+      var outcome=null;
+      var ok = await sendAction(payload,function(data){outcome=data;});
+      if (!ok) {if(sendTask)savePhoneSend(null);if (!draft && state.actionErrorCode === 'draft_exists') await openDraft(); return false; }
+      if(sendTask){
+        if(outcome && outcome.delivery){
+          ok=await awaitPhoneSend(sendTask,outcome.delivery);
+        }else{finishPhoneSend(sendTask,(outcome&&outcome.submission&&outcome.submission.state==='queued')?'queued':'sent');}
+        if(!ok && !draft && state.actionErrorCode==='draft_exists'){state.pending.sendText=false;await openDraft();}
+        return ok;
+      }
+      if (els.message.value === text) { els.message.value = ''; resizeComposer(); }
+      state.phoneFiles=[];renderPhoneFiles();
+      if(state.navigationNewDraft){state.navigationNeedsRefresh=true;state.navigationNewDraft=false;}
+      if(outcome && outcome.submission && outcome.submission.state==='queued'){
+        state.localQueued.push({key:payload.conversationKey,text:text.trim()||('附件 · '+payload.attachmentIds.length+' 个'),at:performance.now()});renderQueued();toast('已排队');
+      }
+      state.recoveredUndo = null;
+      return true;
+    } catch (err) {
+      if (!err || err.status !== 401) setError((err && err.message) || '发送失败，文字已保留。','action');
+      return false;
+    } finally {
+      if(sendTask && state.sending===sendTask)state.sending=null;
+      state.pending.sendText = false;
+      renderControls();
+      if(attachmentReadPaused&&state.mediaStarted&&!state.panel)startMedia();
+    }
+  }
+
+  async function selectWindow(){
+    if (state.pending.select) return;
+    var id = Number(els.windowSelect.value);
+    if (!Number.isFinite(id) || id <= 0) {
+      setError('请先从列表中选择一个窗口。', 'gate');
+      return;
+    }
+    state.pending.select = true;
+    renderControls();
+    try {
+      var info = await requestJson('/api/select', { method: 'POST', body: { id: id } });
+      applyWindowState(info);
+      state.displayedEpoch = -1;
+      state.pickId = null;
+      clearError();
+      var title = '';
+      for (var i = 0; i < state.windows.length; i++) {
+        if (state.windows[i].id === id) { title = state.windows[i].title; break; }
+      }
+      toast(title ? '已选择窗口：' + title : '已选择窗口');
+      wakeSleep();
+    } catch (err) {
+      if (err && err.status !== 401) {
+        setError(err.message || '选择窗口失败', 'action');
+        if (err.status === 409) refreshWindows();
+      }
+    } finally {
+      state.pending.select = false;
+      render();
+    }
+  }
+
+  async function toggleDesktop(){
+    if (state.pending.desktop) return;
+    var toDesktop = state.mode !== 'desktop';
+    if (toDesktop && !window.confirm('进入完整桌面模式后，可查看并操作整块 Windows 桌面上的其他窗口（例如登录弹窗）。\n\n请仅在可信网络中使用，不要通过本工具输入账号、密码或验证码。\n\n确定切换到完整桌面模式吗？')) return;
+    state.pending.desktop = true;
+    renderControls();
+    try {
+      var info = await requestJson(toDesktop ? '/api/desktop' : '/api/window', { method: 'POST', body: {} });
+      applyWindowState(info);
+      if (toDesktop) switchView('screen');
+      state.displayedEpoch = -1;
+      clearError();
+      toast(toDesktop ? '已切换到完整桌面模式' : '已返回窗口模式');
+      wakeSleep();
+      refreshWindows();
+    } catch (err) {
+      if (err && err.status !== 401) {
+        setError(err.message || '切换模式失败', 'action');
+        if (err.status === 409) refreshWindows();
+      }
+    } finally {
+      state.pending.desktop = false;
+      render();
+    }
+  }
+
+  async function toggleFreeze(){
+    if (state.pending.freeze) return;
+    var target = !state.frozen.active;
+    state.pending.freeze = true;
+    renderControls();
+    try {
+      var data = await requestJson('/api/freeze', { method: 'POST', body: { frozen: target } });
+      if (data.frozen && typeof data.frozen === 'object') state.frozen = normalizeFrozen(data.frozen);
+      else state.frozen.active = target;
+      if (Number.isFinite(Number(data.epoch))) state.epoch = Number(data.epoch);
+      state.freezeExpiryHandled = false;
+      clearError();
+      toast(target ? '已冻结：输入操作已禁用' : '已解冻，可以继续操作');
+      render();
+      refreshWindows();
+    } catch (err) {
+      if (err && err.status !== 401) setError(err.message || '切换冻结状态失败', 'action');
+    } finally {
+      state.pending.freeze = false;
+      render();
+    }
+  }
+
+  async function unpair(){
+    if (state.pending.unpair) return;
+    if (!window.confirm('解除配对后，此浏览器需要重新输入配对码才能控制电脑。确定解除吗？')) return;
+    state.pending.unpair = true;
+    renderControls();
+    try {
+      await requestJson('/api/unpair', { method: 'POST', body: {} });
+    } catch (err) { /* 令牌可能已失效，仍然清理本地状态 */ }
+    state.pending.unpair = false;
+    endSession('已解除配对。此浏览器需要重新配对才能继续控制电脑。', true);
+  }
+
+  /* ---------- 画面长轮询 ---------- */
+  function recordActionFrame(sequence, at){
+    if (!Number.isInteger(sequence) || sequence <= 0) return;
+    if (sequence >= state.lastActionFrame.sequence) state.lastActionFrame = { sequence: sequence, at: at };
+    state.actionFeedback = state.actionFeedback.filter(function(item){
+      if (item.sequence <= sequence && at >= item.started) { state.responseLatency = at - item.started; return false; }
+      return at - item.started < 15000;
+    });
+  }
+  function headerNumber(response, name){
+    var raw = response.headers.get(name);
+    if (raw === null) return null;
+    var value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  }
+  function readFrameMeta(response){
+    return {
+      frameId: headerNumber(response, 'X-Frame-Id'),
+      actionSequence: headerNumber(response, 'X-Action-Sequence'),
+      epoch: headerNumber(response, 'X-Target-Epoch'),
+      capturedMs: headerNumber(response, 'X-Captured-Ms'),
+      method: response.headers.get('X-Capture-Method') || ''
+    };
+  }
+  function preloadImage(url, timeoutMs){
+    return new Promise(function(resolve, reject){
+      var image = new Image();
+      var settled = false;
+      var timer = setTimeout(function(){
+        if (settled) return;
+        settled = true;
+        reject(new Error('画面加载超时'));
+      }, timeoutMs || 5000);
+      image.onload = function(){
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(image);
+      };
+      image.onerror = function(){
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error('画面解码失败'));
+      };
+      image.src = url;
+    });
+  }
+  function applyFrameAspect(width, height){
+    if (!width || !height) return;
+    if (state.frameW === width && state.frameH === height) return;
+    state.frameW = width;
+    state.frameH = height;
+    try { els.screenShell.style.setProperty('--ar', width + ' / ' + height); } catch (e) { /* ignore */ }
+  }
+
+  async function displayFrame(blob, meta, signal){
+    if (meta.frameId !== null && meta.frameId > state.lastFrameId) state.lastFrameId = meta.frameId;
+
+    if (meta.epoch !== null && state.epoch >= 0 && meta.epoch < state.epoch) {
+      state.displayedEpoch = -1;
+      state.gate = computeGate();
+      renderScreen();
+      renderStatusText();
+      await sleep(220);
+      return;
+    }
+
+    var url = URL.createObjectURL(blob);
+    var image;
+    try {
+      image = await preloadImage(url, 5000);
+    } catch (err) {
+      try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ }
+      throw new ApiError('画面解码失败。', 0);
+    }
+    if (signal.aborted || !state.live) {
+      try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ }
+      return;
+    }
+
+    // Paint onto one persistent surface; replacing an img URL can flash on mobile.
+    var canvas = els.screen;
+    var context = canvas.getContext('2d', { alpha: false });
+    try {
+      if (meta.kind === 'patch') {
+        if (!state.frameSeen || canvas.width !== meta.width || canvas.height !== meta.height
+            || !Number.isInteger(meta.x) || !Number.isInteger(meta.y) || meta.x < 0 || meta.y < 0
+            || meta.x + image.naturalWidth > canvas.width || meta.y + image.naturalHeight > canvas.height) {
+          throw new ApiError('画面需要重新同步。', 409);
+        }
+        context.drawImage(image, meta.x, meta.y);
+      } else {
+        if (canvas.width !== image.naturalWidth) canvas.width = image.naturalWidth;
+        if (canvas.height !== image.naturalHeight) canvas.height = image.naturalHeight;
+        applyFrameAspect(image.naturalWidth, image.naturalHeight);
+        context.drawImage(image, 0, 0);
+      }
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+
+    state.frameSeen = true;
+    state.networkTrouble = false;
+    state.lastFrameAt = performance.now();
+    recordActionFrame(meta.actionSequence, state.lastFrameAt);
+    if (meta.method) state.captureMethod = meta.method;
+    state.frameTimes.push(performance.now());
+    if (state.frameTimes.length > 240) state.frameTimes.splice(0, state.frameTimes.length - 240);
+
+    if (meta.epoch !== null) {
+      if (meta.epoch > state.epoch) {
+        state.epoch = meta.epoch;
+        wakeSleep();
+        refreshWindows();
+      }
+      state.displayedEpoch = meta.epoch;
+    } else if (state.epoch >= 0) {
+      state.displayedEpoch = state.epoch;
+    }
+
+    if (state.errorSource === 'network' || state.errorSource === 'frame') clearError();
+    render();
+    renderStats();
+  }
+
+  function FrameParser(){ this.buffer = new Uint8Array(0); }
+  FrameParser.prototype.push = function(chunk){
+    if (this.buffer.length + chunk.length > 4 * 1024 * 1024 + 8192 + 8) {
+      throw new ApiError('画面数据超过限制。', 0);
+    }
+    var combined = new Uint8Array(this.buffer.length + chunk.length);
+    combined.set(this.buffer);
+    combined.set(chunk, this.buffer.length);
+    this.buffer = combined;
+    var packets = [];
+    var offset = 0;
+    while (this.buffer.length - offset >= 8) {
+      var lengths = new DataView(this.buffer.buffer, this.buffer.byteOffset + offset, 8);
+      var metadataLength = lengths.getUint32(0);
+      var imageLength = lengths.getUint32(4);
+      if (metadataLength < 2 || metadataLength > 8192 || imageLength > 4 * 1024 * 1024) {
+        throw new ApiError('画面数据格式异常。', 0);
+      }
+      var total = 8 + metadataLength + imageLength;
+      if (this.buffer.length - offset < total) break;
+      var meta = JSON.parse(new TextDecoder().decode(this.buffer.subarray(offset + 8, offset + 8 + metadataLength)));
+      packets.push({ meta: meta, bytes: this.buffer.slice(offset + 8 + metadataLength, offset + total) });
+      offset += total;
+    }
+    this.buffer = this.buffer.slice(offset);
+    return packets;
+  };
+
+  function acknowledgeFrame(meta){
+    if (!meta.streamId || !state.live) return;
+    if (state.control && state.control.ready) {
+      controlRequest('ack', { streamId: meta.streamId, frameId: meta.frameId }).catch(function(){});
+      return;
+    }
+    var ack = state.streamAck;
+    if (!ack || ack.id !== meta.streamId) {
+      ack = { id: meta.streamId, latest: 0, sent: 0, pending: 0 };
+      state.streamAck = ack;
+    }
+    ack.latest = Math.max(ack.latest, meta.frameId);
+    sendFrameAcknowledgment(ack);
+  }
+
+  function sendFrameAcknowledgment(ack){
+    if (!state.live || state.streamAck !== ack || ack.pending >= 2 || ack.latest <= ack.sent) return;
+    var frameId = ack.latest;
+    ack.sent = frameId;
+    ack.pending++;
+    (async function(){
+      try {
+        await requestJson('/api/stream/ack', { method: 'POST', body: { streamId: ack.id, frameId: frameId },
+          signal: state.frameAbort ? state.frameAbort.signal : undefined });
+      } catch (err) {
+        // Later cumulative acknowledgments cover progress after a failed request.
+      } finally {
+        ack.pending--;
+        sendFrameAcknowledgment(ack);
+      }
+    })();
+  }
+
+  async function consumeFrameStream(response, signal, keepAlive){
+    var reader = response.body.getReader();
+    var parser = new FrameParser();
+    try {
+      while (state.live && !signal.aborted) {
+        var part = await reader.read();
+        if (part.done) throw new ApiError('画面连接已结束，正在重新连接。', 0);
+        var packets = parser.push(part.value);
+        for (var i = 0; i < packets.length; i++) {
+          keepAlive();
+          var packet = packets[i];
+          var meta = packet.meta;
+          if (meta.kind === 'status') throw new ApiError(meta.error || '目标窗口暂不可用。', 409);
+          if (meta.kind === 'idle') {
+            if (state.frameSeen) state.lastFrameAt = performance.now();
+            continue;
+          }
+          if (meta.kind !== 'full' && meta.kind !== 'patch') throw new ApiError('画面数据格式异常。', 0);
+          await displayFrame(new Blob([packet.bytes], { type: meta.kind === 'patch' ? 'image/png' : 'image/jpeg' }), meta, signal);
+          if (signal.aborted || !state.live) return;
+          acknowledgeFrame(meta);
+        }
+        if (document.hidden) return;
+      }
+    } finally {
+      try { await reader.cancel(); } catch (err) { /* connection already closed */ }
+    }
+  }
+
+  async function streamLoop(signal){
+    var retry = 0;
+    while (state.live && !signal.aborted) {
+      if (document.hidden) { await sleep(500); continue; }
+      try {
+        await request('/api/stream', { signal: signal, stream: true });
+        retry = 0;
+      } catch (err) {
+        if (!state.live || signal.aborted || (err && err.name === 'AbortError')) return;
+        if (err.status === 401) return;
+        if (err.status === 404 || err.status === 415) { await frameLoop(signal); return; }
+        state.networkTrouble = err.status !== 409;
+        state.displayedEpoch = -1;
+        setError(err.message || '画面连接中断，正在重新连接。', 'frame');
+        refreshWindows();
+        render();
+        retry = retry ? Math.min(retry * 1.5, 4000) : 500;
+        await sleep(retry);
+      }
+    }
+  }
+
+  async function frameLoop(signal){
+    var conflictBackoff = 0;
+    var errorBackoff = 0;
+    while (state.live && !signal.aborted) {
+      if (document.hidden) {
+        await sleep(500);
+        continue;
+      }
+      var startedAt = performance.now();
+      try {
+        var since = state.lastFrameId > 0 ? state.lastFrameId : 0;
+        var response = await request('/api/frame?since=' + encodeURIComponent(since), { signal: signal, frame: true });
+        if (response.status === 204) {
+          conflictBackoff = 0;
+          errorBackoff = 0;
+          var elapsed = performance.now() - startedAt;
+          if (elapsed < 180) await sleep(180);
+          continue;
+        }
+        var meta = readFrameMeta(response);
+        var blob = response.blob;
+        if (signal.aborted || !state.live) return;
+        if (!blob || blob.size === 0) throw new ApiError('电脑返回了空画面。', 0);
+        await displayFrame(blob, meta, signal, startedAt);
+        conflictBackoff = 0;
+        errorBackoff = 0;
+        if (performance.now() - state.lastWindowsRefresh > WINDOW_REFRESH_MS) refreshWindows();
+      } catch (err) {
+        if (!state.live || signal.aborted || (err && err.name === 'AbortError')) return;
+        if (err && err.status === 401) return;
+        if (err && err.status === 409) {
+          state.networkTrouble = false;
+          state.displayedEpoch = -1;
+          setError(err.message || '目标窗口暂不可用，正在重试…', 'frame');
+          refreshWindows();
+          conflictBackoff = conflictBackoff ? Math.min(conflictBackoff * 1.5, 2000) : 800;
+          await sleep(conflictBackoff);
+          continue;
+        }
+        state.networkTrouble = true;
+        errorBackoff = errorBackoff ? Math.min(errorBackoff * 1.6, 6000) : 600;
+        setError((err && err.message) || '画面连接中断，正在重试…', 'network');
+        renderBadge();
+        renderStatusText();
+        await sleep(errorBackoff);
+      }
+    }
+  }
+
+  /* ---------- 触控 ---------- */
+  function remotePoint(clientX, clientY){
+    var image = els.screen;
+    var width = state.frameW || 0;
+    var height = state.frameH || 0;
+    if (!width || !height) return null;
+    var rect = image.getBoundingClientRect();
+    if (!rect || rect.width < 2 || rect.height < 2) return null;
+    var scale = Math.min(rect.width / width, rect.height / height);
+    if (!scale || !Number.isFinite(scale)) return null;
+    var drawWidth = width * scale;
+    var drawHeight = height * scale;
+    var left = rect.left + (rect.width - drawWidth) / 2;
+    var top = rect.top + (rect.height - drawHeight) / 2;
+    var x = (clientX - left) / drawWidth;
+    var y = (clientY - top) / drawHeight;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 };
+  }
+
+  function bindScreenGestures(){
+    var image = els.screen;
+    var gesture = null;
+    var longPressTimer = 0;
+    var lastWheelAt = 0;
+
+    function cancelLongPress(){
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = 0; }
+    }
+    function vibrate(ms){
+      try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* ignore */ }
+    }
+
+    image.addEventListener('pointerdown', function(event){
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (event.isPrimary === false) return;
+      cancelLongPress();
+      gesture = {
+        id: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastY: event.clientY,
+        startedAt: Date.now(),
+        moved: false,
+        longFired: false,
+        acc: 0,
+        lastScrollAt: 0
+      };
+      try { image.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+      longPressTimer = setTimeout(function(){
+        longPressTimer = 0;
+        if (!gesture || gesture.id !== event.pointerId || gesture.moved || gesture.longFired) return;
+        var point = remotePoint(gesture.startX, gesture.startY);
+        if (!point) return;
+        gesture.longFired = true;
+        state.lastRightClickAt = Date.now();
+        vibrate(12);
+        sendAction({ kind: 'right', x: point.x, y: point.y });
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    image.addEventListener('pointermove', function(event){
+      if (!gesture || gesture.id !== event.pointerId) return;
+      var dx = event.clientX - gesture.startX;
+      var dy = event.clientY - gesture.startY;
+      if (Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP) gesture.moved = true;
+      if (gesture.moved) cancelLongPress();
+      if (!gesture.moved || gesture.longFired) return;
+      gesture.acc += (event.clientY - gesture.lastY);
+      gesture.lastY = event.clientY;
+      var now = Date.now();
+      if (Math.abs(gesture.acc) >= 14 && now - gesture.lastScrollAt >= 110) {
+        var delta = clamp(Math.round(-gesture.acc * 1.5), -600, 600);
+        if (delta) queueScroll(delta);
+        gesture.acc = 0;
+        gesture.lastScrollAt = now;
+      }
+    }, { passive: true });
+
+    function finishGesture(event, cancelled){
+      cancelLongPress();
+      if (!gesture || gesture.id !== event.pointerId) return;
+      var active = gesture;
+      gesture = null;
+      if (cancelled || active.longFired) return;
+      var dx = event.clientX - active.startX;
+      var dy = event.clientY - active.startY;
+      if (Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP) {
+        if (Math.abs(active.acc) >= 8) {
+          var delta = clamp(Math.round(-active.acc * 1.5), -600, 600);
+          if (delta) queueScroll(delta);
+        }
+        return;
+      }
+      if (Date.now() - active.startedAt < LONG_PRESS_MS) {
+        var point = remotePoint(active.startX, active.startY);
+        if (point) sendAction({ kind: 'tap', x: point.x, y: point.y });
+      }
+    }
+    image.addEventListener('pointerup', function(event){ finishGesture(event, false); }, { passive: true });
+    image.addEventListener('pointercancel', function(event){ finishGesture(event, true); }, { passive: true });
+
+    image.addEventListener('contextmenu', function(event){
+      event.preventDefault();
+      if (Date.now() - state.lastRightClickAt < 800) return;
+      var point = remotePoint(event.clientX, event.clientY);
+      if (!point) return;
+      state.lastRightClickAt = Date.now();
+      sendAction({ kind: 'right', x: point.x, y: point.y });
+    });
+
+    image.addEventListener('wheel', function(event){
+      event.preventDefault();
+      if (!computeGate().ok) return;
+      var magnitude = Math.min(600, Math.max(120, Math.round(Math.abs(event.deltaY) || 120)));
+      var delta = event.deltaY > 0 ? magnitude : -magnitude;
+      queueScroll(delta);
+    }, { passive: false });
+  }
+
+  /* ---------- 全屏 ---------- */
+  function setImmersive(on){
+    state.immersive = !!on;
+    els.screenShell.classList.toggle('immersive', state.immersive);
+    document.body.classList.toggle('immersive-open', state.immersive);
+    els.fullscreenBtn.setAttribute('aria-pressed', state.immersive ? 'true' : 'false');
+    if (state.immersive) {
+      try { els.fullscreenExit.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    } else {
+      try { els.fullscreenBtn.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    }
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  function showPanel(name){
+    var previous=state.panel;
+    if (previous==='draft' && name!=='draft') clearDraftPreview();
+    if (previous==='options' && name!=='options') {
+      var menu=state.options;
+      state.optionsSequence++;state.options=null;state.optionsSurface=null;state.optionsLoading=false;state.optionsError='';els.optionsList.textContent='';
+      if (menu && menu.menu && !state.optionsBusy && state.live && state.token) dismissOptions(menu,true);
+    }
+    state.panel=name;
+    if(name && !previous) {
+      if(state.chatAbort)state.chatAbort.abort();
+      if(state.frameAbort)state.frameAbort.abort();
+    }
+    ['settings','navigation','draft','options'].forEach(function(panel){
+      els[panel+'Panel'].hidden=panel!==name;els[panel+'Backdrop'].hidden=panel!==name;
+    });
+    els.remoteView.inert=!!name;
+    els.settingsToggleBtn.setAttribute('aria-expanded',String(name==='settings'));
+    els.navigationToggleBtn.setAttribute('aria-expanded',String(name==='navigation'));
+    els.computerDraftBtn.setAttribute('aria-expanded',String(name==='draft'));
+    els.composerOptionsBtn.setAttribute('aria-expanded',String(name==='options'));
+    var focus=name ? els[name+'CloseBtn'] : ({settings:els.settingsToggleBtn,navigation:els.navigationToggleBtn,draft:els.computerDraftBtn,options:els.composerOptionsBtn})[previous];
+    if (focus) try { focus.focus({preventScroll:true}); } catch(e) { /* optional focus */ }
+    if(!name && previous && state.mediaStarted && !state.optionsBusy) startMedia();
+  }
+  function setPanel(name){
+    if (state.panelBackPending || (name && (state.draftBusy || state.pending.sendText || state.optionsBusy))) return false;
+    if (name===state.panel) return true;
+    var history=window.history;
+    if (history) {
+      if (name) {
+        var entry=Object.assign({},history.state||{},{harmonyRemotePanel:name});
+        if (state.panel || (history.state && history.state.harmonyRemotePanel)) history.replaceState(entry,'');
+        else history.pushState(entry,'');
+      } else if (history.state && history.state.harmonyRemotePanel) {
+        state.panelBackPending=true;history.back();
+      }
+    }
+    showPanel(name);return true;
+  }
+  function panelPopState(event){
+    state.panelBackPending=false;
+    var name=event.state && event.state.harmonyRemotePanel;
+    if (els.remoteView.hidden || ['settings','navigation','draft','options'].indexOf(name)<0) name='';
+    if(name!=='navigation')state.navigationMode='browse';
+    showPanel(name);
+    if (name==='navigation') {if(state.navigation && state.navigation.epoch===state.epoch){renderNavigation();if(state.navigationNeedsRefresh)refreshNavigation();}else refreshNavigation();}
+    if (name==='draft') refreshDraft();
+    if (name==='options') refreshOptions();
+  }
+  function setSettings(open){
+    if (open) setPanel('settings');
+    else if (state.panel==='settings') setPanel('');
+  }
+  async function openOptions(){
+    if (!setPanel('options')) return;
+    if(state.optionsRoot && state.optionsRoot.epoch===state.epoch && performance.now()-state.optionsRootAt<120000) {
+      state.options=state.optionsRoot;state.optionsInvalid=false;renderOptions();return;
+    }
+    await refreshOptions();
+  }
+  function acceptOptions(snapshot){
+    if (!snapshot || typeof snapshot.key!=='string' || !Number.isInteger(snapshot.epoch) || !Array.isArray(snapshot.items)
+        || snapshot.items.some(function(item){return !item || typeof item.id!=='string' || typeof item.title!=='string';})) throw new ApiError('选项读取失败，请刷新重试。',0);
+    if(snapshot.epoch!==state.epoch) throw new ApiError('电脑窗口已变化，请刷新选项。',0);
+    state.options=snapshot;state.optionsInvalid=false;
+    if(!snapshot.menu) {state.optionsRoot=snapshot;state.optionsRootAt=performance.now();}
+  }
+  async function refreshOptions(){
+    if (state.optionsBusy) return;
+    var sequence=++state.optionsSequence;
+    state.optionsLoading=true;state.optionsSurface=null;state.optionsError='';renderOptions();
+    try {
+      var snapshot=await requestJson('/api/composer');
+      if (sequence!==state.optionsSequence || state.panel!=='options') return;
+      acceptOptions(snapshot);
+    } catch(err) { if (sequence===state.optionsSequence) { state.options=null;state.optionsError=err.message||'暂时无法读取选项。'; } }
+    finally { if (sequence===state.optionsSequence) {state.optionsLoading=false;renderOptions();} }
+  }
+  function renderOptions(){
+    var snapshot=state.options;
+    els.optionsTitle.textContent=state.optionsSurface ? state.optionsSurface.title : (snapshot && snapshot.menu ? (({permission:'权限',model:'模型',effort:'思考强度',tools:'工具与附件'})[snapshot.category]||'选择选项') : '对话选项');
+    els.optionsBackBtn.hidden=!(snapshot && snapshot.menu);
+    els.optionsBackBtn.disabled=state.optionsBusy||state.optionsLoading;
+    els.optionsRefreshBtn.disabled=state.optionsBusy||state.optionsLoading;
+    els.optionsRefreshBtn.setAttribute('aria-busy',String(state.optionsLoading));
+    els.optionsError.textContent=state.optionsError;els.optionsError.hidden=!state.optionsError;
+    els.optionsList.textContent='';
+    if (state.optionsSurface && !state.optionsLoading) {
+      var surface=state.optionsSurface;
+      var canvas=document.createElement('canvas');canvas.className='option-surface';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',surface.title);canvas.setAttribute('aria-busy','true');
+      var decoded=atob(surface.image.split(',')[1]),bytes=new Uint8Array(decoded.length);
+      for(var byte=0;byte<decoded.length;byte++) bytes[byte]=decoded.charCodeAt(byte);
+      var surfaceUrl=URL.createObjectURL(new Blob([bytes],{type:'image/png'}));
+      preloadImage(surfaceUrl,5000).then(function(image){
+        canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);canvas.setAttribute('aria-busy','false');
+      },function(){if(state.optionsSurface===surface){state.optionsError='控件画面加载失败，请刷新重试。';els.optionsError.textContent=state.optionsError;els.optionsError.hidden=false;}}).finally(function(){URL.revokeObjectURL(surfaceUrl);});
+      canvas.addEventListener('pointerdown',function(event){if(!state.optionsBusy) {event.preventDefault();canvas.setPointerCapture(event.pointerId);}});
+      canvas.addEventListener('pointerup',function(event){
+        if(state.optionsBusy) return;
+        var rect=canvas.getBoundingClientRect(),x=(event.clientX-rect.left)/rect.width,y=(event.clientY-rect.top)/rect.height,b=surface.bounds;
+        if(x<b.x || y<b.y || x>b.x+b.width || y>b.y+b.height) return;
+        invokeOption(surface.item,{x:(x-b.x)/b.width,y:(y-b.y)/b.height});
+      });
+      els.optionsList.appendChild(canvas);return;
+    }
+    if (snapshot) snapshot.items.slice().sort(function(a,b){var order=['model','permission','effort','tools'];return snapshot.menu?0:order.indexOf(a.kind)-order.indexOf(b.kind);}).forEach(function(item){
+      var button=document.createElement('button');button.type='button';button.className='option-row';
+      button.setAttribute('data-selected',String(!!item.selected));
+      button.setAttribute('aria-busy',String(state.optionsBusy && state.optionsPendingId===item.id));
+      if (item.selected) button.setAttribute('aria-current','true');
+      button.setAttribute('data-pending',String(state.optionsBusy && state.optionsPendingId===item.id));
+      var mark=document.createElement('span');mark.className='option-mark';if(item.selected || !snapshot.menu)mark.appendChild(controlIcon(item.selected?'check':item.kind));mark.setAttribute('aria-hidden','true');
+      var title=document.createElement('span');title.className='option-title';title.textContent=item.kind==='upload'?'添加文件':(item.label||item.title);
+      if(!snapshot.menu || item.description) {var caption=document.createElement('span');caption.className='option-caption';caption.textContent=snapshot.menu?item.description:(({model:'模型',permission:'权限',effort:'思考强度',tools:'工具与插件'})[item.kind]||'');title.appendChild(caption);}
+      var arrow=document.createElement('span');var pending=state.optionsBusy && state.optionsPendingId===item.id;arrow.className=pending?'control-spinner':'navigation-chevron';if(!pending && !snapshot.menu)arrow.appendChild(controlIcon('chevron'));arrow.setAttribute('aria-hidden','true');
+      button.appendChild(mark);button.appendChild(title);button.appendChild(arrow);
+      button.disabled=state.optionsBusy || state.optionsLoading || state.optionsInvalid || item.enabled===false || snapshot.epoch!==state.epoch;
+      button.addEventListener('click',function(){invokeOption(item);});els.optionsList.appendChild(button);
+    });
+    if(snapshot && !snapshot.menu){
+      var upload=document.createElement('button');upload.type='button';upload.className='option-row';upload.appendChild(controlIcon('file'));
+      var uploadTitle=document.createElement('span');uploadTitle.className='option-title';uploadTitle.textContent='添加文件';upload.appendChild(uploadTitle);upload.appendChild(controlIcon('chevron'));
+      upload.disabled=state.filesBusy||state.pending.sendText||state.frozen.active;upload.addEventListener('click',choosePhoneFiles);els.optionsList.appendChild(upload);
+    }
+    if (!snapshot || !snapshot.items.length) {
+      var empty=document.createElement('p');empty.className='option-empty';empty.textContent=state.optionsLoading?'正在读取…':'当前页面没有可读取的选项';els.optionsList.appendChild(empty);
+    }
+  }
+  async function openOptionSurface(item){
+    var snapshot=state.options,sequence=++state.optionsSequence;
+    state.optionsLoading=true;state.optionsError='';renderOptions();
+    try {
+      var surface=await requestJson('/api/composer/surface?key='+encodeURIComponent(snapshot.key)+'&target='+encodeURIComponent(item.id));
+      if(sequence!==state.optionsSequence || state.panel!=='options') return;
+      if(surface.epoch!==state.epoch || surface.key!==snapshot.key || surface.targetId!==item.id || typeof surface.image!=='string' || !surface.image.startsWith('data:image/png;base64,') || !surface.bounds
+          || !['x','y','width','height'].every(function(k){return Number.isFinite(surface.bounds[k]) && surface.bounds[k]>=0;}) || surface.bounds.width<=0 || surface.bounds.height<=0) throw new ApiError('选项画面已变化，请刷新。',0);
+      state.optionsSurface=Object.assign(surface,{item:item,title:item.title});
+    } catch(err) {if(sequence===state.optionsSequence)state.optionsError=err.message||'暂时无法显示此选项。';}
+    finally {if(sequence===state.optionsSequence){state.optionsLoading=false;renderOptions();}}
+  }
+  async function invokeOption(item,point){
+    var snapshot=state.options;
+    if (!snapshot || snapshot.epoch!==state.epoch || state.optionsBusy || state.optionsInvalid || state.optionsLoading || !snapshot.items.some(function(row){return row.id===item.id && row.enabled!==false;})) return;
+    if(item.kind==='upload'){choosePhoneFiles();return;}
+    if(item.kind==='surface' && !point) {await openOptionSurface(item);return;}
+    state.optionsBusy=true;state.optionsPendingId=item.id;state.optionsError='';renderOptions();renderControls();
+    var ok=false,result=null;
+    try {
+      ok=await sendAction(Object.assign({kind:'composer',operation:point?'tap':'invoke',optionsKey:snapshot.key,targetId:item.id},point||{}),function(data){result=data;});
+      if (!ok) {state.optionsRoot=null;state.optionsInvalid=true;state.optionsError=state.error||'操作结果未确认，请刷新查看。';}
+    } finally {state.optionsBusy=false;state.optionsPendingId='';renderControls();}
+    if (state.panel!=='options') {
+      if(state.live && state.token) try {await dismissOptions(result && result.options ? result.options : await requestJson('/api/composer'),true);} catch(err) { /* a later read is required */ }
+      if(state.mediaStarted && !state.panel)startMedia();
+    } else if (ok) {
+      if(result && result.options) {try{acceptOptions(result.options);state.optionsSurface=null;renderOptions();}catch(err){state.optionsInvalid=true;state.optionsError=err.message;renderOptions();}}
+      else await refreshOptions();
+      if(point) {var updated=state.options && state.options.items.find(function(row){return row.id===item.id;});if(updated)await openOptionSurface(updated);}
+    } else renderOptions();
+  }
+  async function dismissOptions(snapshot,all){
+    if (!snapshot || !snapshot.menu || state.optionsBusy || snapshot.epoch!==state.epoch) return;
+    state.optionsBusy=true;renderControls();
+    try {
+      for (var depth=0;depth<5;depth++) {
+        var result=null;
+        var ok=await sendAction({kind:'composer',operation:'dismiss',optionsKey:snapshot.key},function(data){result=data;});
+        if (!ok) break;
+        snapshot=result && result.options ? result.options : await requestJson('/api/composer');
+        if(state.panel==='options')acceptOptions(snapshot);
+        if(!snapshot.menu && snapshot.epoch===state.epoch) {state.optionsRoot=snapshot;state.optionsRootAt=performance.now();}
+        if (!all || !snapshot.menu || snapshot.epoch!==state.epoch) break;
+      }
+    } catch(err) {setError('菜单关闭结果未确认，请在画面中查看。','action');}
+    finally {state.optionsBusy=false;renderControls();if(!state.panel && state.mediaStarted)startMedia();}
+  }
+  async function optionsBack(){
+    if (state.optionsBusy) return;
+    if(state.optionsSurface) {state.optionsSurface=null;renderOptions();return;}
+    await dismissOptions(state.options);
+    if (state.panel==='options') renderOptions();
+  }
+  function resizeComposer(){
+    els.message.style.height = 'auto';
+    els.message.style.height = Math.min(150, Math.max(40, els.message.scrollHeight)) + 'px';
+  }
+  function updateChatLatest(){
+    els.chatLatestBtn.hidden = els.chatMessages.scrollHeight - els.chatMessages.scrollTop - els.chatMessages.clientHeight < 100;
+  }
+  function updateViewport(){
+    var viewport = window.visualViewport;
+    var height = viewport ? viewport.height : window.innerHeight;
+    if (height) document.body.style.setProperty('--app-height', Math.round(height) + 'px');
+  }
+  function bindEvents(){
+    els.phoneFileInput.addEventListener('change',function(){var files=Array.prototype.slice.call(els.phoneFileInput.files||[]);els.phoneFileInput.value='';uploadPhoneFiles(files);});
+    els.queuedToggleBtn.addEventListener('click',function(){state.queuedExpanded=!state.queuedExpanded;renderQueued();});
+    els.submitChoiceBtn.addEventListener('click',function(){state.settingChoice=state.settingChoice==='send'?'':'send';renderSettingChoices();});
+    els.windowChoiceBtn.addEventListener('click',function(){state.settingChoice=state.settingChoice==='window'?'':'window';renderSettingChoices();});
+    window.addEventListener('popstate',panelPopState);
+    els.navigationToggleBtn.addEventListener('click',function(){setNavigation(els.navigationPanel.hidden);});
+    els.navigationCloseBtn.addEventListener('click',function(){setNavigation(false);});
+    els.navigationBackdrop.addEventListener('click',function(){setNavigation(false);});
+    bindIconHint(els.navigationNewBtn);
+    els.navigationNewBtn.addEventListener('click',openNewChat);
+    els.navigationBackBtn.addEventListener('click',function(){state.navigationMode='browse';els.navigationSearch.value='';renderNavigation();});
+    els.navigationSearch.addEventListener('input',renderNavigation);
+    els.computerDraftBtn.addEventListener('click',openDraft);
+    els.draftCloseBtn.addEventListener('click',function(){closeDraft();});
+    els.draftBackdrop.addEventListener('click',function(){closeDraft();});
+    els.draftRefreshBtn.addEventListener('click',refreshDraft);
+    els.draftRecoverBtn.addEventListener('click',function(){resolveDraft('recover');});
+    els.draftClearBtn.addEventListener('click',function(){resolveDraft('clear');});
+    els.draftSendBtn.addEventListener('click',function(){resolveDraft('send');});
+    els.recoveredUndoBtn.addEventListener('click',function(){
+      if (state.recoveredUndo && els.message.value === state.recoveredUndo.merged) {
+        els.message.value = state.recoveredUndo.original; state.recoveredUndo = null;
+        resizeComposer(); renderControls(); els.message.focus();
+      }
+    });
+    els.settingsToggleBtn.addEventListener('click', function(){ setSettings(state.panel!=='settings'); });
+    els.settingsCloseBtn.addEventListener('click', function(){setSettings(false);});
+    els.settingsBackdrop.addEventListener('click', function(){ setSettings(false); });
+    Array.prototype.forEach.call(document.querySelectorAll('.navigation-filter'),function(button){button.addEventListener('click',function(){
+      state.navigationFilter=button.getAttribute('data-filter');
+      Array.prototype.forEach.call(document.querySelectorAll('.navigation-filter'),function(filter){filter.setAttribute('aria-pressed',String(filter===button));});renderNavigation();
+    });});
+    els.composerOptionsBtn.addEventListener('click',openOptions);
+    els.optionsRefreshBtn.addEventListener('click',refreshOptions);
+    els.optionsCloseBtn.addEventListener('click',function(){setPanel('');});
+    els.optionsBackdrop.addEventListener('click',function(){setPanel('');});
+    els.optionsBackBtn.addEventListener('click',optionsBack);
+    els.optionsScreenBtn.addEventListener('click',function(){setPanel('');switchView('screen');});
+    els.submitMethod.addEventListener('change', function(){
+      var method = els.submitMethod.value;
+      if (['button', 'CTRL+ENTER', 'ENTER'].indexOf(method) === -1) return;
+      state.submitMethod = method;
+      try { localStorage.setItem(SUBMIT_KEY, method); } catch (e) { /* privacy mode */ }
+      renderControls();
+    });
+    els.chatViewBtn.addEventListener('click', function(){ switchView('chat'); });
+    els.screenViewBtn.addEventListener('click', function(){ switchView('screen'); });
+    els.chatLatestBtn.addEventListener('click', function(){ els.chatMessages.scrollTop = els.chatMessages.scrollHeight; updateChatLatest(); });
+    els.chatMessages.addEventListener('scroll',updateChatLatest,{passive:true});
+    els.pin.addEventListener('input', function(){
+      var digits = els.pin.value.replace(/\D+/g, '').slice(0, 6);
+      if (els.pin.value !== digits) els.pin.value = digits;
+      if (digits.length === 6) clearPairError();
+    });
+    els.pairForm.addEventListener('submit', function(event){
+      event.preventDefault();
+      pair();
+    });
+    els.windowSelect.addEventListener('change', function(){
+      var id = Number(els.windowSelect.value);
+      state.pickId = Number.isFinite(id) && id > 0 ? id : null;
+      renderControls();
+    });
+    els.selectBtn.addEventListener('click', selectWindow);
+    els.refreshBtn.addEventListener('click', function(){ refreshWindows(true); });
+    els.desktopBtn.addEventListener('click', toggleDesktop);
+    els.freezeBtn.addEventListener('click', toggleFreeze);
+    els.unfreezeBtn.addEventListener('click', toggleFreeze);
+    els.unpairBtn.addEventListener('click', unpair);
+    els.sendEnterBtn.addEventListener('click', function(){ sendText(true); });
+    els.scrollUpBtn.addEventListener('click', function(){ queueScroll(-240); });
+    els.scrollDownBtn.addEventListener('click', function(){ queueScroll(240); });
+    var i;
+    for (i = 0; i < keyButtons.length; i++) {
+      (function(button){
+        button.addEventListener('click', function(){
+          sendAction({ kind: 'key', key: button.getAttribute('data-key') });
+        });
+      })(keyButtons[i]);
+    }
+    els.message.addEventListener('keydown', function(event){
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.isComposing) {
+        event.preventDefault();
+        sendText(true);
+      }
+    });
+    els.message.addEventListener('input', function(){ resizeComposer(); renderControls(); });
+    window.addEventListener('resize', updateViewport);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', updateViewport);
+    els.fullscreenBtn.addEventListener('click', function(){ setImmersive(!state.immersive); });
+    els.fullscreenExit.addEventListener('click', function(){ setImmersive(false); });
+    document.addEventListener('keydown', function(event){
+      if (event.key === 'Escape' && state.panel) { if (!state.draftBusy) setPanel('');event.preventDefault();return; }
+      if (event.key === 'Tab' && state.panel) {
+        var focusable=els[state.panel+'Panel'].querySelectorAll('button:not(:disabled):not([hidden]),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary');
+        var first=focusable[0],last=focusable[focusable.length-1];
+        if (first && event.shiftKey && document.activeElement===first) {last.focus();event.preventDefault();}
+        else if (last && !event.shiftKey && document.activeElement===last) {first.focus();event.preventDefault();}
+      }
+      if (event.key === 'Escape' && state.immersive) {
+        event.preventDefault();
+        setImmersive(false);
+      }
+    });
+    document.addEventListener('visibilitychange', function(){
+      if (state.live) startMedia();
+      if (document.hidden) stopControl();
+      else if (state.live) startControl();
+      if (!document.hidden && state.live) {
+        state.frameTimes = [];
+        wakeSleep();
+        refreshWindows();
+        renderStats();
+      }
+    });
+    bindScreenGestures();
+  }
+
+  async function pair(){
+    if (state.pending.pair) return;
+    var pin = els.pin.value.replace(/\D+/g, '');
+    var name = (els.deviceName.value || '').trim() || '手机';
+    if (pin.length !== 6) {
+      showPairError('请输入 6 位数字配对码。');
+      try { els.pin.focus(); } catch (e) { /* ignore */ }
+      return;
+    }
+    clearPairError();
+    state.pending.pair = true;
+    setDisabled(els.pairBtn, true);
+    els.pairBtn.textContent = '正在连接…';
+    try {
+      var data = await requestJson('/api/pair', { method: 'POST', auth: false, body: { pin: pin, name: name } });
+      if (!data || typeof data.token !== 'string' || !data.token) {
+        throw new ApiError('配对响应缺少令牌，请重试。', 0);
+      }
+      state.token = data.token;
+      writeToken(state.token);
+      els.pin.value = '';
+      enterRemote();
+    } catch (err) {
+      if (err && err.status === 401) return;
+      showPairError((err && err.message) || '配对失败，请检查配对码。');
+    } finally {
+      state.pending.pair = false;
+      setDisabled(els.pairBtn, false);
+      els.pairBtn.textContent = '连接电脑';
+    }
+  }
+
+  function boot(){
+    try {
+      var method = localStorage.getItem(SUBMIT_KEY);
+      if (['button', 'CTRL+ENTER', 'ENTER'].indexOf(method) !== -1) state.submitMethod = method;
+    } catch (e) { /* privacy mode */ }
+    els.submitMethod.value = state.submitMethod;
+    bindEvents();
+    updateViewport();
+    updateBuildInfo();
+    state.token = readToken();
+    if (state.token) {
+      enterRemote();
+    } else {
+      showPairView('');
+      renderStats();
+    }
+    loadHealth();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

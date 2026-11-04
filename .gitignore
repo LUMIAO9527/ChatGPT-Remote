@@ -1,0 +1,10 @@
+# 运行时数据、虚拟环境与缓存
+WindowsAgent/data/
+WindowsAgent/.venv/
+__pycache__/
+*.pyc
+
+# 过程与临时文件
+_wip/
+ChatGPT Remote.lnk
+docs/screenshots/
