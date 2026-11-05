@@ -10,6 +10,7 @@ import sys
 import threading
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from conversation import ConversationReader, parse_snapshot, conversation_event, draft_snapshot
@@ -27,6 +28,71 @@ def masked(payload, opcode=1, final=True):
 
 
 class ConversationTests(unittest.TestCase):
+    def test_local_project_catalog_keeps_the_native_new_chat_target_private(self):
+        reader=ConversationReader();reader.history=Mock()
+        reader.history.resolve.return_value={'id':'existing'}
+        reader.history.catalog.return_value=[{'id':'local-p','kind':'project','title':'App Lab','project':'local-p','projectTitle':'App Lab'}]
+        calls=[];identities=iter(['before','after'])
+        def call(**request):
+            calls.append(request)
+            if request['operation']=='navigation':return {'ok':True,'identity':'nav','items':[
+                {'id':'selected','kind':'thread','title':'Current','selected':True},
+                {'id':'new','kind':'new','title':'在 App Lab 中开始新聊天','project':'native-p','projectTitle':'App Lab'}]}
+            if request['operation']=='identity':return {'ok':True,'identity':next(identities)}
+            return {'ok':True}
+        reader._call=call;snapshot=reader.navigation(1)
+        new=next(row for row in snapshot['items'] if row['kind']=='new')
+        self.assertEqual(new['project'],'local-p');self.assertNotIn('nativeProject',new)
+        with patch('conversation.time.sleep'):reader.navigate(1,snapshot['key'],'new',False)
+        self.assertEqual(next(row for row in calls if row['operation']=='navigate')['project'],'native-p')
+
+    def test_indexed_thread_navigation_uses_one_native_route(self):
+        reader=ConversationReader();thread='11111111-1111-4111-8111-111111111111';reader.history=Mock()
+        reader.history.resolve.side_effect=[{'id':'other'},{'id':thread}]
+        reader.catalogs['catalog']=(0,1,'native',[{'id':'item','kind':'thread','threadId':thread}])
+        reader._call=lambda **_: {'ok':True,'selectedTitle':'title'}
+        with patch('conversation.os.startfile') as opened,patch('conversation.time.sleep'):
+            self.assertEqual(reader.navigate(1,'catalog','item',False),'thread')
+            opened.assert_called_once_with('codex://threads/'+thread)
+    def test_structured_paragraphs_do_not_join_when_their_screen_rectangles_overlap(self):
+        result = parse_snapshot({'nodes': [
+            {'type': 'Text', 'name': 'ChatGPT 说：', 'marker': True},
+            {'type': 'Text', 'name': '第一段 ', 'blockId': 'p1', 'rect': {'top': 0, 'bottom': 20}},
+            {'type': 'Text', 'name': '强调', 'strong': True, 'blockId': 'p1', 'rect': {'top': 0, 'bottom': 20}},
+            {'type': 'Text', 'name': '第二段', 'blockId': 'p2', 'rect': {'top': 0, 'bottom': 20}}]})
+        blocks = result['messages'][0]['blocks']
+        self.assertEqual([b['text'] for b in blocks], ['第一段 强调', '第二段'])
+        self.assertEqual(blocks[0]['runs'], [{'text': '第一段 '}, {'text': '强调', 'strong': True}])
+        self.assertFalse(any('_source' in b for b in blocks))
+
+    def test_accessible_full_list_text_keeps_words_missing_from_styled_children(self):
+        result = parse_snapshot({'nodes': [
+            {'type': 'Text', 'name': 'ChatGPT 说：', 'marker': True},
+            {'type': 'ListItem', 'kind': 'list', 'name': '完整内容：后半句不能丢失', 'complete': True,
+             'runs': [{'text': '完整内容', 'strong': True}, {'text': '：后半句不能丢失'}]},
+            {'type': 'Hyperlink', 'name': '来源', 'blockId': 'p2', 'href': 'https://example.com/docs'},
+            {'type': 'Text', 'name': '危险地址', 'blockId': 'p3', 'href': 'javascript:alert(1)'}]})
+        blocks = result['messages'][0]['blocks']
+        self.assertEqual(blocks[0]['text'], '完整内容：后半句不能丢失')
+        self.assertEqual(''.join(r['text'] for r in blocks[0]['runs']), blocks[0]['text'])
+        self.assertEqual(blocks[1]['runs'][0]['href'], 'https://example.com/docs')
+        self.assertNotIn('runs', blocks[2])
+
+    def test_native_activity_after_a_user_message_is_separate_and_groups_consecutive_updates(self):
+        result = parse_snapshot({'generating': True, 'nodes': [
+            {'type': 'Text', 'name': '你说：', 'marker': True},
+            {'type': 'Text', 'name': '请继续'},
+            {'type': 'Text', 'name': '读取文件', 'role': 'assistant', 'channel': 'activity'},
+            {'type': 'Text', 'name': 'ChatGPT 说：', 'marker': True, 'channel': 'activity'},
+            {'type': 'Text', 'name': '检查结果', 'channel': 'activity'},
+            {'type': 'Text', 'name': 'ChatGPT 说：', 'marker': True},
+            {'type': 'Text', 'name': '最终正文'}]})
+        self.assertEqual([m['role'] for m in result['messages']], ['user', 'assistant', 'assistant'])
+        self.assertEqual(result['messages'][0]['text'], '请继续')
+        self.assertEqual(result['messages'][1]['phase'], 'activity')
+        self.assertEqual(result['messages'][1]['text'], '读取文件\n\n检查结果')
+        self.assertEqual(result['messages'][2]['text'], '最终正文')
+
     def test_attachment_only_messages_and_explicit_completion_are_preserved(self):
         result=parse_snapshot({'generating':True,'nodes':[
             {'type':'Text','name':'你说：','marker':True},
@@ -230,11 +296,11 @@ $ast=[System.Management.Automation.Language.Parser]::ParseFile('SCRIPT_PATH',[re
 $ast.FindAll({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in @('Normalize-Message','Get-ComposerDraft')},$true) | ForEach-Object {Invoke-Expression $_.Extent.Text}
 $prompt='accessible prompt'
 $r=@(
- ((Get-ComposerDraft ($prompt+"`n") $prompt $false) -ceq ''),
- ((Get-ComposerDraft $prompt $prompt $true) -ceq $prompt),
- ((Get-ComposerDraft ('  '+[char]0x200B+"`r`n") $prompt $false) -ceq ''),
- ((Get-ComposerDraft 'real draft' $prompt $false) -ceq 'real draft'),
- ((Get-ComposerDraft $null $prompt $false) -eq $null),
+ ((Get-ComposerDraft ($prompt+"`n") $true) -ceq ''),
+ ((Get-ComposerDraft $prompt $false) -ceq $prompt),
+ ((Get-ComposerDraft ('  '+[char]0x200B+"`r`n") $false) -ceq ''),
+ ((Get-ComposerDraft 'real draft' $false) -ceq 'real draft'),
+ ((Get-ComposerDraft $null $false) -eq $null),
  ((Normalize-Message "first`r`nsecond`n") -ceq "first`nsecond")
 )
 ConvertTo-Json -InputObject $r -Compress
@@ -346,7 +412,8 @@ ConvertTo-Json -InputObject $r -Compress
             {'kind': 'list', 'text': '完整项目：包括粗体以外的正文'},
             {'kind': 'code', 'text': 'print("one")\nprint("two")'}])
 
-    def test_default_submission_invokes_button_once_and_does_not_press_enter(self):
+    @patch('attachments.paste_text', side_effect=AssertionError('Short text must not need the clipboard'))
+    def test_default_submission_types_once_reads_back_then_invokes_one_button(self, clipboard):
         backend = WindowsBackend.__new__(WindowsBackend)
         backend.lock = threading.RLock()
         backend.mode = 'window'
@@ -360,34 +427,87 @@ ConvertTo-Json -InputObject $r -Compress
             calls.append(('prepare', hwnd, key))
             return 'observed-key'
         def submit(hwnd, key, text): calls.append(('button', hwnd, key, text))
-        backend._reader = lambda: SimpleNamespace(prepare=prepare, submit=submit)
+        reader = SimpleNamespace(prepare=prepare, submit=submit, prepared_generating=False,
+            confirm_input=lambda *args, **kw: calls.append(('verify', args, kw)))
+        backend._reader = lambda: reader
+        backend._key_chord = lambda *args: calls.append(('paste', args))
         backend._unicode_text = lambda text, **kwargs: calls.append(('type', text, kwargs))
         command = {'kind': 'message', 'text': '你好\n第二行', 'submit': True,
                    'epoch': 7, 'conversationKey': 'observed-key'}
         backend.action(command)
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'button'])
-        self.assertFalse(calls[1][2]['submit'])
+        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'button'])
+        clipboard.assert_not_called()
+        self.assertEqual(calls[1][1],command['text'])
         calls.clear()
-        backend._reader=lambda:SimpleNamespace(prepare=prepare,submit=lambda *args: calls.append(('button',*args)) or {'state':'queued'},prepared_generating=True)
-        result=backend.action({**command,'submitMethod':'CTRL+ENTER'})
-        self.assertEqual([call[0] for call in calls],['prepare','type','button'])
-        self.assertFalse(calls[1][2]['submit'])
-        self.assertEqual(result,{'submission':{'state':'queued'}})
+        reader.prepared_generating = True
+        reader.submit = lambda *args: calls.append(('button', *args)) or {'state':'queued'}
+        result = backend.action({**command, 'submitMethod':'CTRL+ENTER'})
+        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'button'])
+        self.assertEqual(result, {'submission':{'state':'queued'}})
         calls.clear()
-        backend._reader=lambda:SimpleNamespace(prepare=prepare,submit=submit)
-        backend.action({**command, 'submitMethod': 'CTRL+ENTER'})
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type'])
-        self.assertEqual(calls[1][2], {'submit': True, 'submit_key': 'CTRL+ENTER'})
+        reader.prepared_generating = False
+        backend.action({**command, 'submitMethod':'CTRL+ENTER'})
+        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'type'])
+        self.assertEqual(calls[-1][1:], ('', {'submit': True, 'submit_key':'CTRL+ENTER'}))
         calls.clear()
-        def unavailable(*_):
-            calls.append(('button',))
-            raise TargetError('send result unconfirmed')
-        backend._reader = lambda: SimpleNamespace(prepare=prepare, submit=unavailable)
+        def unavailable(*_, **kwargs):
+            calls.append(('verify',))
+            raise TargetError('input changed', 'send_not_started')
+        reader.confirm_input = unavailable
         with self.assertRaises(TargetError): backend.action(command)
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'button'])
-        self.assertFalse(calls[1][2]['submit'])
+        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify'])
 
-    def test_windows_replace_clears_prepares_types_and_submits_under_one_lock(self):
+    def test_long_text_changes_input_route_only_before_a_paste_was_invoked(self):
+        from attachments import ClipboardUnavailable
+        backend=WindowsBackend.__new__(WindowsBackend);backend.tracker=SimpleNamespace(current_id=123)
+        backend._focus=lambda _:None;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:123,GetOpenClipboardWindow=lambda:0)
+        calls=[];reader=SimpleNamespace(prepare=lambda *args:'key',prepared_generating=False,
+            confirm_input=lambda *args,**kw:calls.append('verify'),submit=lambda *args:calls.append('submit'))
+        backend._reader=lambda:reader;backend._unicode_text=lambda *args,**kw:calls.append('unicode')
+        backend._key_chord=lambda *args:calls.append('paste');command={'submit':True,'conversationKey':'key'}
+        with patch('attachments.paste_text',side_effect=ClipboardUnavailable('busy')):
+            backend._compose_message(command,'长文字'*600,'button')
+        self.assertEqual(calls,['unicode','verify','submit']);calls.clear()
+        with patch('attachments.paste_text',side_effect=lambda text,paste:paste()):
+            backend._compose_message(command,'长文字'*600,'button')
+        self.assertEqual(calls,['paste','verify','submit']);calls.clear()
+        backend.u32.GetOpenClipboardWindow=lambda:456
+        with patch('attachments.paste_text',side_effect=AssertionError('Known busy clipboard must be skipped')):
+            backend._compose_message(command,'长文字'*600,'button')
+        self.assertEqual(calls,['unicode','verify','submit']);calls.clear()
+        backend.u32.GetOpenClipboardWindow=lambda:0
+        def failed_readback(*args,**kwargs):calls.append('verify');raise ClipboardUnavailable('callback has run')
+        reader.confirm_input=failed_readback
+        with patch('attachments.paste_text',side_effect=lambda text,paste:paste()),self.assertRaises(ClipboardUnavailable):
+            backend._compose_message(command,'长文字'*600,'button')
+        self.assertEqual(calls,['paste','verify'])
+
+    def test_focus_is_recovered_only_before_input_and_rechecks_the_empty_draft(self):
+        backend=WindowsBackend.__new__(WindowsBackend);backend.tracker=SimpleNamespace(current_id=123)
+        current=[123];calls=[]
+        def focus(hwnd):current[0]=hwnd;calls.append('focus')
+        def prepare(*args):
+            calls.append('prepare')
+            if calls.count('prepare')==1:current[0]=456
+            return 'key'
+        backend._focus=focus;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:current[0])
+        reader=SimpleNamespace(prepare=prepare,prepared_generating=False,
+            confirm_input=lambda *args,**kw:calls.append('verify'),submit=lambda *args:calls.append('submit'))
+        backend._reader=lambda:reader;backend._unicode_text=lambda *args,**kw:calls.append('input')
+        command={'submit':True,'conversationKey':'key'}
+        backend._compose_message(command,'继续','button')
+        self.assertEqual(calls,['focus','prepare','focus','prepare','input','verify','submit'])
+        calls.clear()
+        def changed(*args):
+            result=prepare(*args)
+            if calls.count('prepare')==2:raise TargetError('draft changed')
+            return result
+        reader.prepare=changed
+        with self.assertRaises(TargetError):backend._compose_message(command,'继续','button')
+        self.assertNotIn('input',calls);self.assertNotIn('submit',calls)
+
+    @patch('attachments.paste_text', side_effect=lambda text, paste: paste())
+    def test_windows_replace_clears_prepares_types_and_submits_under_one_lock(self, clipboard):
         backend=WindowsBackend.__new__(WindowsBackend)
         backend.lock=threading.RLock();backend.mode='window'
         backend.tracker=SimpleNamespace(epoch=7,current_id=123)
@@ -401,15 +521,17 @@ ConvertTo-Json -InputObject $r -Compress
             calls.append((kind,args,kwargs))
             return 'observed-key'
         backend._reader=lambda:SimpleNamespace(clear_draft=lambda *args,**kw:record('clear',*args,**kw),
-            prepare=lambda *args:record('prepare',*args),submit=lambda *args:record('submit',*args))
+            prepare=lambda *args:record('prepare',*args),submit=lambda *args:record('submit',*args),
+            confirm_input=lambda *args,**kw:record('verify',*args,**kw),prepared_generating=False)
+        backend._key_chord=lambda *args:record('paste',*args)
         backend._unicode_text=lambda *args,**kw:record('type',*args,**kw)
         command={'kind':'message','text':'Mobile replacement','submit':True,'epoch':7,
             'conversationKey':'observed-key','draftRevision':'observed-draft'}
         backend.action(command)
-        self.assertEqual([c[0] for c in calls],['clear','prepare','type','submit'])
+        self.assertEqual([c[0] for c in calls],['clear','prepare','type','verify','submit'])
+        clipboard.assert_not_called()
         self.assertEqual(calls[0][1],(123,'observed-key','observed-draft'))
         self.assertEqual(calls[0][2],{'for_send':True})
-        self.assertFalse(calls[2][2]['submit'])
 
     def test_delta_sends_changes_and_resets_on_conversation_or_epoch_switch(self):
         one = {'key': 'a', 'epoch': 2, 'revision': '1', 'messages': [
@@ -438,6 +560,32 @@ ConvertTo-Json -InputObject $r -Compress
         self.assertEqual(raised.exception.code, 'send_pending')
         self.assertEqual(operations, ['identity', 'submit'])
         self.assertIsNone(reader.cached)
+
+    def test_paste_validation_rejects_changed_text_before_any_submission(self):
+        reader = ConversationReader()
+        operations = []
+        def call(**request):
+            operations.append(request['operation'])
+            if request['operation'] == 'identity':
+                return {'ok': True, 'identity': 'stable'}
+            return {'ok': False, 'reason': 'draft changed'}
+        reader._call = call
+        with self.assertRaises(TargetError) as raised:
+            reader.confirm_input(123, parse_snapshot({'identity':'stable'})['key'], 'mobile text', True)
+        self.assertEqual(raised.exception.code, 'send_not_started')
+        self.assertEqual(operations, ['identity', 'input_ready'])
+
+    def test_transient_identity_read_is_checked_again_before_preparing_input(self):
+        reader = ConversationReader()
+        replies = iter([{'ok':False}, {'ok':True, 'identity':'stable'}, {'ok':True}])
+        operations = []
+        def call(**request):
+            operations.append(request['operation'])
+            return next(replies)
+        reader._call = call
+        key = parse_snapshot({'identity':'stable'})['key']
+        self.assertEqual(reader.prepare(123, key), key)
+        self.assertEqual(operations, ['identity', 'identity', 'prepare'])
 
     def test_navigation_rebinds_changed_runtime_id_before_a_single_invocation(self):
         reader=ConversationReader();calls=[]

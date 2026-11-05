@@ -17,8 +17,10 @@ import subprocess
 import threading
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 from windows_control import TargetError
+from local_history import LocalHistory, UUID
 
 ROLE_MARKERS = {"你说：": "user", "你说:": "user", "You said:": "user",
                 "ChatGPT 说：": "assistant", "ChatGPT 说:": "assistant",
@@ -72,19 +74,48 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
                 for block in blocks:
                     if used >= 40000:
                         break
-                    visible.append({**block, "text": block["text"][:40000-used]})
+                    public = {k: v for k, v in block.items() if not k.startswith('_') and k != 'runs'}
+                    public['text'] = block['text'][:40000-used]
+                    if block.get('runs'):
+                        left, runs = len(public['text']), []
+                        for run in block['runs']:
+                            if left <= 0: break
+                            runs.append({**run, 'text': run['text'][:left]})
+                            left -= len(run['text'])
+                        public['runs'] = runs
+                    visible.append(public)
                     used += len(block["text"])
-                messages.append({"id": f"m{len(messages)}", "role": role, "text": text[:40000], "blocks": visible,
+                message = {"id": f"m{len(messages)}", "role": role, "text": text[:40000], "blocks": visible,
                                  **({'sourceId':source_id} if source_id else {}),
                                  "complete": role == "user" or ended or completed or not bool(raw.get("generating")),
                                  **({"attachments": list(attachments)} if attachments else {}),
                                  **({'duration':duration} if duration else {}),
                                  **({"timestamp": timestamp} if timestamp else {}),
-                                 **({"phase": phase} if phase != "answer" else {})})
+                                 **({"phase": phase} if phase != "answer" else {})}
+                if (messages and role == 'assistant' and phase in ('activity', 'reasoning')
+                        and messages[-1].get('phase') == phase and messages[-1]['role'] == role):
+                    previous = messages[-1]
+                    previous['text'] += ('\n\n' if previous['text'] and message['text'] else '') + message['text']
+                    previous['blocks'].extend(message['blocks'])
+                    previous['complete'] = message['complete']
+                    for key in ('duration', 'timestamp'):
+                        if key in message: previous[key] = message[key]
+                else:
+                    messages.append(message)
 
     for node in raw.get("nodes", []):
         name = str(node.get("name") or "")
         marker = ROLE_MARKERS.get(name.strip()) if node.get("marker") else None
+        # Native user bubbles and activity containers carry their own role.
+        # Tool status between turns must not inherit the preceding user's role.
+        native_role = node.get('role')
+        if not marker and not node.get('queued') and native_role in ('user', 'assistant') and native_role != role:
+            finish(ended=True)
+            role, blocks, previous_rect, timestamp = native_role, [], None, ''
+            source_id, attachments, completed = str(node.get('sourceId') or '')[:160], [], False
+            duration = pending_duration if role == 'assistant' else ''
+            if role == 'assistant': pending_duration = ''
+            phase = node.get('channel') if role == 'assistant' and node.get('channel') in ('activity', 'reasoning') else 'answer'
         if marker:
             finish(ended=True)
             role, blocks, previous_rect, timestamp = marker, [], None, ""
@@ -117,23 +148,48 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
             if node.get("type") == "ListItem" and node.get("leaf") is False and not node.get("complete"):
                 continue
             if name.strip() and name.strip() not in ("最新一条回复", "Latest reply"):
-                kind = "list" if node.get("type") == "ListItem" else (
+                kind = node.get('kind') if node.get('kind') in ('paragraph', 'list', 'heading', 'code') else (
+                    "list" if node.get("type") == "ListItem" else (
                     "heading" if node.get("type") == "Header" else ("code" if node.get("code") else "paragraph"))
+                )
                 channel = node.get("channel") if role == "assistant" and node.get("channel") in ("activity", "reasoning") else phase
                 rect = node.get("rect")
-                inline = (blocks and kind in ("paragraph", "code") and blocks[-1]["kind"] == kind
-                          and blocks[-1].get("channel", "answer") == channel
-                          and rect and previous_rect and rect["top"] <= previous_rect["bottom"] + 3
-                          and rect["bottom"] >= previous_rect["top"] - 3)
+                block_id = str(node.get('blockId') or '')
+                inline = (blocks and blocks[-1]['kind'] == kind and blocks[-1].get('channel', 'answer') == channel
+                          and ((block_id and blocks[-1].get('_source') == block_id) or (
+                              not block_id and kind in ('paragraph', 'code') and rect and previous_rect
+                              and rect['top'] <= previous_rect['bottom'] + 3
+                              and rect['bottom'] >= previous_rect['top'] - 3)))
+                def text_run(value):
+                    run = {'text': str(value.get('text') or ''), **{k: True for k in ('strong', 'emphasis', 'inlineCode') if value.get(k)}}
+                    href = str(value.get('href') or '')[:8000]
+                    try:
+                        parsed = urlsplit(href)
+                        if parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username and not parsed.password:
+                            run['href'] = href
+                    except ValueError:
+                        pass
+                    return run
+                supplied = node.get('runs')
+                runs = ([text_run(run) for run in supplied] if isinstance(supplied, list) and supplied
+                        and all(isinstance(run, dict) and isinstance(run.get('text'), str) for run in supplied) else [])
+                if not runs or ''.join(run['text'] for run in runs) != name:
+                    runs = [text_run({**node, 'text': name})]
+                formatted = any(len(run) > 1 for run in runs)
                 if inline:
+                    if formatted or blocks[-1].get('runs'):
+                        blocks[-1].setdefault('runs', [{'text': blocks[-1]['text']}]).extend(runs)
                     blocks[-1]["text"] += name
-                    previous_rect = {"top": min(previous_rect["top"], rect["top"]),
-                                     "bottom": max(previous_rect["bottom"], rect["bottom"])}
+                    if rect and previous_rect:
+                        previous_rect = {"top": min(previous_rect["top"], rect["top"]),
+                                         "bottom": max(previous_rect["bottom"], rect["bottom"])}
                 else:
-                    if blocks and kind == "code" and blocks[-1]["kind"] == "code" and blocks[-1].get("channel", "answer") == channel:
+                    if not block_id and blocks and kind == "code" and blocks[-1]["kind"] == "code" and blocks[-1].get("channel", "answer") == channel:
                         blocks[-1]["text"] += "\n" + name
                     else:
-                        blocks.append({"kind": kind, "text": name, **({"channel": channel} if channel != "answer" else {})})
+                        blocks.append({"kind": kind, "text": name, **({'_source': block_id} if block_id else {}),
+                                       **({'runs': runs} if formatted else {}),
+                                       **({"channel": channel} if channel != "answer" else {})})
                     previous_rect = rect
     finish()
     if pending_duration:
@@ -185,7 +241,68 @@ class ConversationReader:
         self.accessible_hwnd = 0
         self.catalogs: dict[str, tuple[float, int, str, list[dict]]] = {}
         self.option_catalogs: dict[str, tuple[float, int, dict]] = {}
+        self.queue_catalogs: dict[str, tuple[float, int, dict]] = {}
+        self.queue_used: dict[tuple[str,str], float] = {}
         self.prepared_generating = False
+        self.history = LocalHistory()
+
+    def _remember_queue(self, hwnd: int, raw: dict) -> dict:
+        if not raw.get('ok') or not isinstance(raw.get('identity'),str):
+            raise TargetError('暂时无法读取电脑队列，请刷新')
+        snapshot={field:raw.get(field,default) for field,default in (
+            ('identity',''),('items',[]),('actions',[]),('paused',False),('hasDraft',False))}
+        key=hashlib.sha256(json.dumps(snapshot,sort_keys=True).encode()).hexdigest()[:24]
+        self.queue_catalogs[key]=(time.monotonic(),hwnd,snapshot)
+        while len(self.queue_catalogs)>8:self.queue_catalogs.pop(next(iter(self.queue_catalogs)))
+        return {'key':key,**{k:v for k,v in snapshot.items() if k!='identity'},'available':True}
+
+    def queue(self, hwnd: int) -> dict:
+        with self.lock:
+            return self._remember_queue(hwnd,self._call(operation='queue',hwnd=hwnd))
+
+    def queue_action(self, hwnd: int, key: str, target: str) -> dict:
+        with self.lock:
+            reference=self.queue_catalogs.get(key)
+            if not reference or reference[1]!=hwnd or time.monotonic()-reference[0]>120:
+                raise TargetError('队列已变化，请刷新后重新选择','queue_changed')
+            snapshot=reference[2]
+            choices=[(None,a) for a in snapshot['actions']]
+            choices += [(row,a) for row in snapshot['items'] for a in row.get('actions',[])]
+            matches=[(row,a) for row,a in choices if a.get('id')==target and a.get('enabled')]
+            if len(matches)!=1 or (key,target) in self.queue_used:
+                raise TargetError('该队列操作已处理或已变化，请先检查电脑状态','queue_changed')
+            row,action=matches[0]
+            self.queue_used={k:v for k,v in self.queue_used.items() if time.monotonic()-v<120}
+            self.queue_used[key,target]=time.monotonic()
+            reply=self._call(operation='queue_invoke',hwnd=hwnd,identity=snapshot['identity'],
+                             target=target,action=action['operation'],
+                             item=row['id'] if row else '',text=row['text'] if row else '')
+            self.cached=None
+            if not reply.get('ok'):
+                reason=reply.get('reason','')
+                if reason=='queue draft exists':
+                    self.queue_used.pop((key,target),None)
+                    raise TargetError('电脑输入框已有草稿，请先处理后再编辑队列','draft_exists')
+                raise TargetError('队列操作未确认，请检查电脑状态后刷新','queue_pending')
+            result={'queue':self._remember_queue(hwnd,self._call(operation='queue',hwnd=hwnd))}
+            def confirmed(current):
+                if self.queue_catalogs[current['key']][2]['identity']!=snapshot['identity']:return False
+                if action['operation'] in ('delete','steer'):
+                    return (not any(item['id']==row['id'] for item in current['items'])
+                            and sum(item['text']==row['text'] for item in current['items'])
+                            <sum(item['text']==row['text'] for item in snapshot['items']))
+                if action['operation']=='resume':return not current['paused']
+                if action['operation']=='stop':return not any(a['operation']=='stop' for a in current['actions'])
+                return True
+            for _ in range(5):
+                if confirmed(result['queue']):break
+                time.sleep(.08)
+                result['queue']=self._remember_queue(hwnd,self._call(operation='queue',hwnd=hwnd))
+            if not confirmed(result['queue']):
+                raise TargetError('操作结果仍在确认，请刷新队列或查看电脑画面','queue_pending')
+            if reply.get('edited'):
+                result['queueDraft']=draft_snapshot(reply)
+            return result
 
     def composer_options(self, hwnd: int) -> dict:
         with self.lock:
@@ -291,6 +408,19 @@ class ConversationReader:
 
     def _navigation(self, hwnd: int) -> tuple[dict, dict]:
         raw = self._call(operation="navigation", hwnd=hwnd)
+        selected=[row.get('title','') for row in raw.get('items',[]) if row.get('kind')=='thread' and row.get('selected')]
+        local=self.history.catalog(selected[0]) if len(selected)==1 and self.history.resolve(selected[0]) else None
+        if local:
+            local_titles={row['title'] for row in local if row['kind']=='thread'}
+            # Visible native entries remain usable, including ChatGPT cloud chats.
+            for row in raw.get('items',[]):
+                if row.get('kind')=='thread' and row.get('title') not in local_titles:
+                    local.append(row)
+            projects={row['title']:row['project'] for row in local if row['kind']=='project'}
+            for row in raw.get('items',[]):
+                if row.get('kind')=='new':
+                    row=dict(row);row['nativeProject']=row.get('project','');row['project']=projects.get(row.get('projectTitle'),row.get('project',''));local.append(row)
+            raw={**raw,'items':local,'complete':True}
         return self._remember_navigation(hwnd, raw), raw
 
     def _remember_navigation(self, hwnd: int, raw: dict) -> dict:
@@ -304,9 +434,12 @@ class ConversationReader:
             if "expanded" in item:
                 entry["expanded"] = bool(item["expanded"])
             if 'selected' in item:entry['selected']=bool(item['selected'])
+            if isinstance(item.get('threadId'),str) and UUID.fullmatch(item['threadId']):entry['threadId']=item['threadId']
+            if 'nativeProject' in item:entry['nativeProject']=item['nativeProject']
             items.append(entry)
         key = hashlib.sha256(json.dumps([raw.get("identity"), items], sort_keys=True).encode()).hexdigest()[:24]
-        snapshot={"items": items, "key": key, "source":hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24],"available": bool(items),
+        snapshot={"items": [{k:v for k,v in row.items() if k!='nativeProject'} for row in items], "key": key, "source":hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24],"available": bool(items),
+                  "complete":bool(raw.get('complete')),
                   "notice": "" if items else "电脑当前页面没有可读取的对话列表，请展开电脑侧边栏后刷新。"}
         self.catalogs[key] = (time.monotonic(), hwnd, raw["identity"], items)
         while len(self.catalogs) > 32:
@@ -322,9 +455,23 @@ class ConversationReader:
             if len(observed) != 1:
                 raise TargetError("列表已更新，请重新选择对话", 'navigation_changed')
             item = observed[0]
+            if item.get('threadId'):
+                current=self._call(operation='observe',hwnd=hwnd)
+                resolved=self.history.resolve(str(current.get('selectedTitle') or '')) if current.get('ok') else None
+                if resolved and resolved['id']==item['threadId']:return {'kind':'thread','unchanged':True}
+                # The installed desktop advertises codex://threads/<UUID>.
+                # Open the indexed conversation through its native route.
+                os.startfile('codex://threads/'+item['threadId'])
+                self.cached=None
+                for _ in range(20):
+                    time.sleep(.07)
+                    after=self._call(operation='observe',hwnd=hwnd)
+                    resolved=self.history.resolve(str(after.get('selectedTitle') or '')) if after.get('ok') else None
+                    if resolved and resolved['id']==item['threadId']:return 'thread'
+                raise TargetError('对话正在打开，请稍候','navigation_pending')
             before = self._call(operation="identity", hwnd=hwnd) if item["kind"] in ('thread','new') else None
             reply = self._call(operation="navigate", hwnd=hwnd, identity=reference[2],
-                               target=target, kind=item["kind"], title=item["title"], project=item['project'],
+                               target=target, kind=item["kind"], title=item["title"], project=item.get('nativeProject',item['project']),
                                projectTitle=item['projectTitle'], expanded=expanded, refresh=refresh)
             self.cached = None
             if not reply.get('ok') and reply.get('reason') == 'navigation changed':
@@ -336,7 +483,7 @@ class ConversationReader:
                 if fresh.get('identity') == reference[2] and len(matches) == 1:
                     reply = self._call(operation='navigate', hwnd=hwnd, identity=fresh['identity'],
                                        target=matches[0]['id'], kind=item['kind'], title=item['title'],
-                                       project=item['project'], projectTitle=item['projectTitle'],
+                                       project=matches[0].get('nativeProject',item['project']), projectTitle=item['projectTitle'],
                                        expanded=expanded, refresh=refresh)
                 else:
                     raise TargetError('列表已更新，请重新选择对话', 'navigation_changed')
@@ -443,22 +590,42 @@ class ConversationReader:
         with self.lock:
             if self.cached and self.cached[0] == hwnd and time.monotonic() - self.cached[1] < 0.4:
                 return dict(self.cached[2])
-            raw = self._call(operation="read", hwnd=hwnd)
+            observed=self._call(operation='observe',hwnd=hwnd)
+            result=self.history.snapshot(observed) if observed.get('ok') else None
+            raw=observed
+            if result is None:raw = self._call(operation="read", hwnd=hwnd)
             if not raw.get("ok"):
                 raise TargetError("当前窗口暂时无法读取对话，请切换画面操作")
-            result = parse_snapshot(raw)
+            if result is None:result = parse_snapshot(raw)
+            if isinstance(observed.get('queue'),dict):
+                result['queue']=self._remember_queue(hwnd,observed['queue'])
             root_options = result.get('composer', {}).get('options')
             if isinstance(root_options, dict):
                 result['composer'] = {**result['composer'], 'options': self._remember_options(hwnd, root_options)}
             self.cached = (hwnd, time.monotonic(), result, raw["identity"])
             return dict(result)
 
+    def _identity(self, hwnd: int, key: str | None = None) -> dict:
+        raw = self._call(operation="identity", hwnd=hwnd)
+        def matches():
+            return raw.get('ok') and (key is None or hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24] == key)
+        if not matches():
+            deadline = time.monotonic() + .5
+            while True:
+                raw = self._call(operation="identity", hwnd=hwnd, fresh=True)
+                if matches() or (raw.get('ok') and not str(raw.get('identity') or '').endswith('|')) or time.monotonic() >= deadline:
+                    break
+                time.sleep(.04)
+        if not raw.get("ok"):
+            raise TargetError("暂时无法读取电脑输入框", "composer_unavailable")
+        return raw
+
     def prepare(self, hwnd: int, key: str | None) -> str:
         # Always inspect again before input, including the existing draft.
         with self.lock:
-            raw = self._call(operation="identity", hwnd=hwnd)
+            raw = self._identity(hwnd, key)
             observed_key = hashlib.sha256(str(raw.get("identity") or "").encode()).hexdigest()[:24]
-            if not raw.get("ok") or (key is not None and observed_key != key):
+            if key is not None and observed_key != key:
                 raise TargetError("电脑已切换对话，请等手机更新后再发送")
             reply = self._call(operation="prepare", hwnd=hwnd, identity=raw["identity"])
             self.prepared_generating = bool(reply.get("generating"))
@@ -470,6 +637,21 @@ class ConversationReader:
                 raise TargetError(reasons.get(reply.get("reason"), "无法定位消息输入框，请切换画面操作"),
                                   "draft_exists" if reply.get("reason") == "draft exists" else "")
             return observed_key
+
+    def confirm_input(self, hwnd: int, key: str, text: str, submit: bool = False) -> None:
+        """Wait for native input to reach the editor before releasing it."""
+        with self.lock:
+            raw = self._identity(hwnd, key)
+            if hashlib.sha256(str(raw.get("identity") or "").encode()).hexdigest()[:24] != key:
+                raise TargetError("电脑已切换对话，手机草稿已保留", "conversation_changed")
+            reply = self._call(operation="input_ready", hwnd=hwnd, identity=raw["identity"], text=text, submit=submit)
+            self.cached = None
+            self.prepared_generating = bool(reply.get('generating'))
+            if not reply.get("ok"):
+                reasons = {"draft changed": "电脑草稿已被修改，手机草稿已保留",
+                           "conversation changed": "电脑已切换对话，手机草稿已保留",
+                           "send button unavailable": "电脑发送按钮尚未就绪，手机草稿已保留"}
+                raise TargetError(reasons.get(reply.get("reason"), "文字尚未完整填入，手机草稿已保留"), "send_not_started")
 
     def attachment_focus(self, hwnd: int, key: str) -> dict:
         with self.lock:
@@ -493,10 +675,17 @@ class ConversationReader:
                 raise TargetError('文件已传到电脑，附加结果未确认；请在画面中检查，没有自动重试')
             finally:self.cached=None
 
+    def attachments_ready(self, hwnd: int, before: dict, count: int) -> bool:
+        with self.lock:
+            raw=self._call(operation='attachments',hwnd=hwnd,identity=before['identity'])
+            if not raw.get('ok'):raise TargetError('电脑已切换对话，请返回附加文件的对话','attachment_context_changed')
+            current=raw.get('attachments',{})
+            return bool(current.get('ready') and current.get('count',0)>=before.get('count',0)+count)
+
     def submit(self, hwnd: int, key: str, text: str) -> dict:
         with self.lock:
-            raw = self._call(operation="identity", hwnd=hwnd)
-            if not raw.get("ok") or hashlib.sha256(str(raw.get("identity") or "").encode()).hexdigest()[:24] != key:
+            raw = self._identity(hwnd, key)
+            if hashlib.sha256(str(raw.get("identity") or "").encode()).hexdigest()[:24] != key:
                 raise TargetError("电脑已切换对话，文字仍在输入框中，请先检查")
             try:
                 reply = self._call(operation="submit", hwnd=hwnd, identity=raw["identity"], text=text)

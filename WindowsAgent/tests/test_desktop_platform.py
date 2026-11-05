@@ -124,7 +124,7 @@ class PanelTests(unittest.TestCase):
 
     def test_changing_pages_does_not_resize_or_move_the_native_window(self):
         for page in PANEL_SIZES:self.panel.resize(page)
-        self.assertEqual(self.panel.page,'update');self.assertFalse(self.queue)
+        self.assertEqual(self.panel.page,next(reversed(PANEL_SIZES)));self.assertFalse(self.queue)
         self.panel.place.assert_not_called()
 
     def test_explicit_exit_cancels_a_queued_show(self):

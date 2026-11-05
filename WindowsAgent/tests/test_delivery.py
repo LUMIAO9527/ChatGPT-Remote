@@ -55,6 +55,13 @@ class DeliveryTests(unittest.TestCase):
         self.store.submit(self.command,'phone')
         self.wait_for('sent');self.assertEqual(len(self.calls),1)
 
+    def test_keyboard_send_without_an_immediate_result_uses_message_readback(self):
+        def action(command,token):
+            self.action(command,token)
+            return None
+        self.store.action=action;self.store.submit(self.command,'phone')
+        self.wait_for('sent');self.assertEqual(len(self.calls),1)
+
     def test_old_identical_text_never_confirms_delayed_new_send(self):
         started=threading.Event()
         def action(command,token):

@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 let html=readFileSync(new URL('../desktop.html',import.meta.url),'utf8');
-for(const [marker,name] of [['MOTION','desktop-motion.js'],['PREFERENCES','desktop-preferences.js']])html=html.replace('/*REMOTE_'+marker+'*/',readFileSync(new URL('../assets/'+name,import.meta.url),'utf8'));
+for(const [marker,name] of [['MOTION','desktop-motion.js'],['PREFERENCES','desktop-preferences.js'],['LIFECYCLE','desktop-lifecycle.js']])html=html.replace('/*REMOTE_'+marker+'*/',readFileSync(new URL('../assets/'+name,import.meta.url),'utf8'));
 html=html.replace('/*REMOTE_HOST*/','window.REMOTE_TRAY_HOST=false;');
 const source=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const base={running:true,windows:[{id:1,title:'ChatGPT',selected:true}],devices:[{id:'phone',name:'手机'}],version:'0.16.0',computerName:'我的电脑',phoneUrl:'https://computer.example.ts.net:8443/',preferences:{theme:'system',material:'glass',motion:true,autoHide:true}};

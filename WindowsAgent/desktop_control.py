@@ -186,6 +186,20 @@ class DesktopControl:
         return url + ('?' + urlencode({'k': key}) if key else '')
 
     def dispatch(self, operation: str, payload: dict) -> dict:
+        if operation == 'maintenance.prepare':
+            with self.state.action_lock, self.state.deliveries.lock:
+                if any(v['state'] in ('sending','confirming','unknown') for v in self.state.deliveries.records.values()):
+                    raise DesktopControlError('还有消息正在发送或等待确认，请确认发送结果后重试。')
+                if self.state.maintenance_active():raise DesktopControlError('另一个维护操作正在进行。')
+                self.state.maintenance_token=secrets.token_hex(16)
+                self.state.maintenance_expires=time.monotonic()+120
+                return {'token':self.state.maintenance_token}
+        if operation == 'maintenance.cancel':
+            with self.state.action_lock:
+                if not hmac.compare_digest(self.state.maintenance_token,str(payload.get('token',''))):
+                    raise DesktopControlError('维护操作已改变，请重试。')
+                self.state.maintenance_token=''
+                return {}
         if operation == 'status':
             info = self.state.info()
             selected = next((window for window in info.get('windows', []) if window.get('selected')), None)

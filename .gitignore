@@ -8,3 +8,11 @@ __pycache__/
 _wip/
 ChatGPT Remote.lnk
 docs/screenshots/
+
+# 独立程序、私密数据与本机交接
+/ChatGPTRemote.exe
+/ChatGPT-Remote-v*-source.zip
+/SHA256SUMS.txt
+/HANDOFF.md
+/_data/
+/.chatgptremote*

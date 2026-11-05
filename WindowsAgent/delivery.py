@@ -152,7 +152,7 @@ class DeliveryStore:
                 record['before'] = before
             if self.stop.is_set():
                 return
-            result = self.action(command, token)
+            result = self.action(command, token) or {}
             submission = result.get('submission', {})
             with self.lock:
                 if submission.get('state') in ('sent', 'queued'):

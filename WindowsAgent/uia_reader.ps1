@@ -8,8 +8,9 @@ Add-Type -AssemblyName UIAutomationTypes
 $AE = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+$script:controlTree=$null
 
-function Get-WindowTree($handle) {
+function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false) {
     $root = $AE::FromHandle([IntPtr][long]$handle)
     if ($null -eq $root) { throw 'window unavailable' }
     $cache = New-Object System.Windows.Automation.CacheRequest
@@ -18,12 +19,40 @@ function Get-WindowTree($handle) {
         $AE::IsEnabledProperty, $AE::IsKeyboardFocusableProperty, $AE::IsOffscreenProperty,
         $AE::BoundingRectangleProperty, $AE::RuntimeIdProperty)) { $cache.Add($property) }
     $active = $cache.Activate()
-    try { $nodes = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-                                [System.Windows.Automation.Condition]::TrueCondition) }
+    $condition=[System.Windows.Automation.Condition]::TrueCondition
+    if($controlsOnly -or $contentOnly) {
+        $filters=New-Object 'System.Collections.Generic.List[System.Windows.Automation.Condition]'
+        $types=@($CT::Document,$CT::Edit,$CT::Button,$CT::Hyperlink,$CT::Header,$CT::ComboBox)
+        if($contentOnly){$types+=@($CT::Text,$CT::ListItem,$CT::Image)}
+        foreach($type in $types) {
+            $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$type))
+        }
+        $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'sr-only'))
+        $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'min-w-0 flex-1 self-center text-start select-text'))
+        $condition=[System.Windows.Automation.OrCondition]::new($filters.ToArray())
+    }
+    try {
+        $nodes=$null
+        $stamp=[Diagnostics.Stopwatch]::GetTimestamp()
+        if($controlsOnly -and $script:controlTree -and $script:controlTree.handle -eq $handle -and
+            ($stamp-$script:controlTree.at)/[Diagnostics.Stopwatch]::Frequency -lt 0.75) {
+            try {
+                $live=New-Object 'System.Collections.Generic.List[System.Windows.Automation.AutomationElement]'
+                foreach($node in $script:controlTree.nodes){$live.Add($node.GetUpdatedCache($cache))}
+                $nodes=$live
+            } catch {$script:controlTree=$null}
+        }
+        $discovered=$null -eq $nodes
+        if($discovered){$nodes=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition)}
+        # Reuse element references briefly, refreshing every property. A removed
+        # element rebuilds the list; no draft, focus or enabled state is cached.
+        if($controlsOnly){$script:controlTree=@{handle=$handle;at=$(if($discovered){$stamp}else{$script:controlTree.at});nodes=$nodes}}
+        else{$script:controlTree=$null}
+    }
     finally { $active.Dispose() }
     $document = $null
     foreach($node in $nodes) { if($node.Cached.ControlType -eq $CT::Document) {$document=$node;break} }
-    return @{root=$root; nodes=$nodes;document=$document}
+    return @{root=$root; nodes=$nodes;document=$document;condition=$condition}
 }
 
 function Normalize-Message($value) {
@@ -31,14 +60,42 @@ function Normalize-Message($value) {
     return ($value -replace "`r`n?", "`n" -replace '[\u200B\uFEFF\u2060]', '').TrimEnd([char[]]@(10,13,0))
 }
 
-function Get-ComposerDraft($value, $prompt, $sendEnabled) {
+function Get-ComposerDraft($value, $placeholderOnly=$false) {
     $clean = Normalize-Message $value
     if ($null -eq $clean) { return $null }
     if ([string]::IsNullOrWhiteSpace($clean)) { return '' }
-    # Chromium exposes an empty contenteditable's accessible prompt as Value.
-    # Actual text equal to the prompt enables Send and remains a real draft.
-    if (!$sendEnabled -and $clean -ceq (Normalize-Message $prompt)) { return '' }
+    if ($placeholderOnly) { return '' }
     return $clean
+}
+
+function Test-ComposerPlaceholder($composer) {
+    if($composer.Current.ClassName -notmatch 'ProseMirror'){return $false}
+    $placeholder=$false;$content=$false
+    $id=$composer.GetRuntimeId() -join '.'
+    $texts=$composer.FindAll([Windows.Automation.TreeScope]::Descendants,
+        [Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text))
+    foreach($text in $texts){
+        if($text.Current.ClassName -match 'ProseMirror-trailingBreak' -or [string]::IsNullOrWhiteSpace($text.Current.Name)){continue}
+        $node=$text;$isPlaceholder=$false
+        for($depth=0;$depth -lt 8;$depth++){
+            $node=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($node,$script:parentCache)
+            if(!$node -or ($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.') -ceq $id){break}
+            if($node.Cached.ClassName -match '(^|\s)(placeholder|is-editor-empty)(\s|$)'){$isPlaceholder=$true;break}
+        }
+        if($isPlaceholder){$placeholder=$true}else{$content=$true}
+    }
+    return $placeholder -and !$content
+}
+
+function Get-ConversationIdentity($handle, $documentId, $title, $firstMarker, $selectedThreads, $messageAnchor='') {
+    $selected=@($selectedThreads | Select-Object -Unique)
+    if($documentId -and $selected.Count -eq 1) {
+        return ([string]$handle)+'|'+$documentId+'|thread|'+$selected[0]
+    }
+    if($documentId -and $messageAnchor) {
+        return ([string]$handle)+'|'+$documentId+'|message|'+$messageAnchor
+    }
+    return ([string]$handle)+'|'+$title+'|'+$firstMarker
 }
 
 $script:styleCache=@{}
@@ -49,6 +106,76 @@ $script:parentCache.Add($AE::ClassNameProperty)
 $script:parentCache.Add($AE::NameProperty)
 $script:parentCache.Add($AE::ControlTypeProperty)
 $script:parentCache.Add($AE::RuntimeIdProperty)
+$script:rawPathCache=@{}
+function Get-TextContext($node) {
+    $path=New-Object 'System.Collections.Generic.List[object]'
+    $cursor=$node
+    for($depth=0;$cursor -and $depth -lt 32;$depth++) {
+        $id=$cursor.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
+        if($script:rawPathCache.ContainsKey($id)) {
+            foreach($part in $script:rawPathCache[$id]){$path.Add($part)}
+            break
+        }
+        $c=$cursor.Cached
+        $path.Add(@{id=$id;class=$c.ClassName;name=$c.Name;type=$c.ControlType;element=$cursor})
+        if($c.ControlType -in @($CT::Document,$CT::Window)){break}
+        $cursor=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($cursor,$script:parentCache)
+    }
+    $parts=$path.ToArray()
+    for($offset=0;$offset -lt $parts.Count;$offset++) {
+        if(!$script:rawPathCache.ContainsKey($parts[$offset].id)) {
+            $script:rawPathCache[$parts[$offset].id]=@($parts[$offset..($parts.Count-1)])
+        }
+    }
+    $classes=($parts | ForEach-Object {$_.class}) -join ' '
+    $context=@{classes=$classes;parentClass=$(if($parts.Count -gt 1){$parts[1].class}else{''});
+        transcript=($classes -match '(^| )thread-scroll-container( |$)');channel='answer';blockId='';kind='paragraph';
+        strong=($classes -match '(^| )font-(semibold|bold)( |$)');emphasis=($classes -match '(^| )italic( |$)');
+        inlineCode=($classes -match '_Code_|inline-code');code=($classes -match 'CodeBlock|code-block|_Pre_');
+        user=($classes -match '(^| )bg-user-message( |$)');scopeId='';queueId='';resourceId='';documentId='';href=''}
+    foreach($part in $parts) {
+        if(!$context.documentId -and $part.type -eq $CT::Document){$context.documentId=$part.id}
+        if(!$context.href -and $part.type -eq $CT::Hyperlink) {
+            $valuePattern=$null
+            if($part.element.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$valuePattern)) {
+                $value=$valuePattern.Current.Value;if($value -match '^https?://'){$context.href=$value}
+            }
+        }
+        if(!$context.scopeId -and ($part.class -ceq 'relative shrink-0' -or $part.class -ceq 'group flex min-w-0 flex-col')){$context.scopeId=$part.id}
+        if(!$context.resourceId -and $part.class -match '(^| )group/resource-card( |$)'){$context.resourceId=$part.id}
+        if(!$context.queueId -and ($part.class -match '(?i)(^|[ _-])(queued-message|pending-message|message-queue)([ _-]|$)' -or
+            $part.class -ceq 'min-w-0 flex-1 self-center text-start select-text')){$context.queueId=$part.id}
+        if(!$context.blockId -and ($part.class -match '_Paragraph_|markdown-paragraph|_Heading_|markdown-heading|CodeBlock|code-block|_Pre_' -or
+            $part.type -eq $CT::Header)){$context.blockId=$part.id}
+        if($part.type -eq $CT::ListItem -or $part.class -match '_ListItem_|markdown-list-item') {
+            if($context.kind -ne 'list'){$context.blockId=$part.id;$context.kind='list'}
+        } elseif($context.kind -ne 'list' -and ($part.type -eq $CT::Header -or $part.class -match '_Heading_|markdown-heading')){$context.kind='heading'}
+    }
+    if($context.code){$context.kind='code'}
+    if($classes -match '(?i)reasoning|thinking|analysis-content'){$context.channel='reasoning'}
+    elseif($classes -match '(^| )group flex min-w-0 flex-col( |$)|group/activity-header|group/agent-activity|_Activity_|tool-activity'){$context.channel='activity'}
+    return $context
+}
+
+function Get-AccessibleRuns($text, $children) {
+    $runs=New-Object 'System.Collections.Generic.List[object]';$position=0;$formatted=$false
+    foreach($child in $children) {
+        if($child.Cached.ControlType -ne $CT::Text -or !$child.Cached.Name){continue}
+        $context=Get-TextContext $child
+        if(!$context.strong -and !$context.emphasis -and !$context.inlineCode -and !$context.href){continue}
+        $fragment=$child.Cached.Name
+        $at=$text.IndexOf($fragment,$position,[StringComparison]::Ordinal)
+        if($at -lt 0){continue}
+        if($at -gt $position){$runs.Add(@{text=$text.Substring($position,$at-$position)})}
+        $run=@{text=$fragment}
+        foreach($flag in @('strong','emphasis','inlineCode')){if($context[$flag]){$run[$flag]=$true}}
+        if($context.href){$run.href=$context.href}
+        $runs.Add($run);$position=$at+$fragment.Length;$formatted=$true
+    }
+    if(!$formatted){return @()}
+    if($position -lt $text.Length){$runs.Add(@{text=$text.Substring($position)})}
+    return $runs.ToArray()
+}
 function Get-NodeStyle($node, $document) {
     $id=$node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
     if($script:styleCache.ContainsKey($id)){return $script:styleCache[$id]}
@@ -68,23 +195,48 @@ function Get-NodeStyle($node, $document) {
     return $style
 }
 
-function Read-Window($handle, $optionsOnly=$false, $includeContent=$true) {
-    $tree = Get-WindowTree $handle
+function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $controlsOnly=$false) {
+    $script:rawPathCache=@{}
+    $tree = Get-WindowTree $handle $controlsOnly ($includeContent -and !$optionsOnly -and !$controlsOnly)
     $root = $tree.root
     $nodes = $tree.nodes
     $documentId=if($tree.document){$tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
     $records = New-Object 'System.Collections.Generic.List[object]'
     $composers = New-Object 'System.Collections.Generic.List[object]'
+    $preferredComposers = New-Object 'System.Collections.Generic.List[object]'
     $senders = New-Object 'System.Collections.Generic.List[object]'
+    $selectedThreads = New-Object 'System.Collections.Generic.List[string]'
+    $selectedTitle=''
     $title = ''
     $firstMarker = ''
+    $messageAnchor = ''
     $generating = $false
     $sendEnabled = $false
     $footer = $false
-    $role='';$userStyle=$null;$assistantStyle=$null
+    $role=''
     $contentEnded=$false
-    $limit = [Math]::Min(6000, $nodes.Count)
-    for ($i = 0; $i -lt $limit; $i++) {
+    $skipContentUntil=-1
+    # Bound by messages, not the first N page nodes. Long histories must retain
+    # the latest response and composer while all control metadata is inspected.
+    $limit = $nodes.Count
+    $markerIndexes=New-Object 'System.Collections.Generic.List[int]'
+    $hasTranscript=$false
+    if(!$controlsOnly -and !$optionsOnly -and $includeContent) {
+        for($j=0;$j -lt $nodes.Count;$j++) {
+            $item=$nodes[$j].Cached
+            if($item.ClassName -match 'sr-only' -and $item.Name -match '^(你说[：:]|ChatGPT 说[：:]|You said:|ChatGPT said:|用户[：:]|助手[：:])$' -and
+                (Test-PrimaryDocument $nodes[$j] $documentId)){
+                $markerIndexes.Add($j)
+                if(!$hasTranscript -and (Get-TextContext $nodes[$j]).transcript){$hasTranscript=$true}
+            }
+        }
+    }
+    $contentStart=if($markerIndexes.Count -gt 80){$markerIndexes[$markerIndexes.Count-80]}else{0}
+    if($nodes.Count -gt 4000 -and $markerIndexes.Count) {
+        $tail=@($markerIndexes | Where-Object {$_ -ge $nodes.Count-4000 -and $_ -ge $contentStart})
+        $contentStart=if($tail.Count){$tail[0]}else{$markerIndexes[$markerIndexes.Count-1]}
+    }
+    for ($i = 0; $i -lt $nodes.Count; $i++) {
         $node = $nodes[$i]
         $c = $node.Cached
         if ($c.IsPassword) { continue }
@@ -92,9 +244,21 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true) {
         $type = $c.ControlType.ProgrammaticName.Replace('ControlType.', '')
         $name = $c.Name
         if ($type -eq 'Document' -and !$title) { $title = $name }
-        $isMarker = $c.ClassName -match 'sr-only' -and $name -match '^(你说[：:]|ChatGPT 说[：:]|You said:|ChatGPT said:|用户[：:]|助手[：:])$'
+        $isMarker = $c.ClassName -match 'sr-only' -and $name -match '^(你说[：:]|ChatGPT 说[：:]|You said:|ChatGPT said:|用户[：:]|助手[：:])$' -and
+            (Test-PrimaryDocument $node $documentId)
+        if($type -in @('Button','Hyperlink') -and $c.ClassName -match 'app-action-sidebar-thread-selected' -and
+            $c.ClassName -match '(^| )bg-primary-ghost-hover( |$)' -and (Test-PrimaryDocument $node $documentId)) {
+            $selectedThreads.Add(($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'))
+            $selectedTitle=$name
+        }
         if (!$firstMarker -and $isMarker) {
             $firstMarker = ($node.GetRuntimeId() -join '.')
+            # Sidebar virtualization may hide the selected row. Anchor the
+            # first message's body instead of its replaceable role heading.
+            $body=[Windows.Automation.TreeWalker]::RawViewWalker.GetNextSibling($node,$script:parentCache)
+            if($body -and $body.Cached.ControlType -in @($CT::Text,$CT::Edit,$CT::Group,$CT::Custom,$CT::List,$CT::Image)) {
+                $messageAnchor=$body.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
+            }
         }
         if ($isMarker) { $footer = $false;$role=if($name -match '^(你说|You said|用户)'){'user'}else{'assistant'} }
         if ($type -eq 'Button') {
@@ -106,12 +270,12 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true) {
                 $senders.Add($node)
             }
             if ($firstMarker -and $name -match '^(复制消息|编辑消息|复制|朗读|评价回复|更多操作|Copy message|Edit message|Copy|Read aloud|More actions)$') { $footer = $true }
-            if(!$optionsOnly -and $includeContent -and !$contentEnded -and $role -eq 'assistant' -and $c.IsEnabled -and
+            if($i -lt $limit -and !$optionsOnly -and $includeContent -and !$contentEnded -and $role -eq 'assistant' -and $c.IsEnabled -and
                 ($name -match '^(复制消息|Copy message)$' -or $c.AutomationId -eq 'copy-turn-action-button')) {
                 $records.Add(@{type='Status';complete=$true})
             }
         }
-        if(!$optionsOnly -and $includeContent -and !$contentEnded -and $firstMarker -and !$footer -and
+        if($i -lt $limit -and !$optionsOnly -and $includeContent -and !$contentEnded -and $firstMarker -and !$footer -and
             $type -eq 'Image' -and $c.ClassName -notmatch '(^|[ -])icon(-| |$)') {
             $r=$c.BoundingRectangle
             if(!$r.IsEmpty -and $r.Width -ge 64 -and $r.Height -ge 48) {
@@ -128,42 +292,52 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true) {
                 if($script:imageAttachmentCache[$scopeKey]){$records.Add(@{type='Attachment';kind='image';id=$imageId})}
             }
         }
-        if ($type -eq 'Edit' -and $c.IsEnabled -and $c.IsKeyboardFocusable -and (
+        $isPrompt=$c.AutomationId -eq 'prompt-textarea' -or
+            $name -match '^(使用 ChatGPT Work|消息输入框|Message ChatGPT|Ask anything|询问任何问题|向 ChatGPT 发送消息)$'
+        if ($type -eq 'Edit' -and $c.IsEnabled -and $c.IsKeyboardFocusable -and !$c.IsOffscreen -and (
             $c.ClassName -match 'ProseMirror' -or $c.AutomationId -eq 'prompt-textarea' -or
             $name -match '^(使用 ChatGPT Work|消息输入框|Message ChatGPT|Ask anything|询问任何问题|向 ChatGPT 发送消息)$') -and
             (Test-PrimaryDocument $node $documentId)) {
             $composers.Add($node)
+            if($isPrompt){$preferredComposers.Add($node)}
         }
-        if (!$optionsOnly -and $includeContent -and !$contentEnded -and $type -in @('Text', 'Hyperlink', 'Header', 'ListItem', 'Edit')) {
+        if (($firstMarker -or $type -eq 'Edit') -and $i -ge $contentStart -and $i -gt $skipContentUntil -and $i -lt $limit -and !$optionsOnly -and $includeContent -and !$contentEnded -and $type -in @('Text', 'Hyperlink', 'Header', 'ListItem', 'Edit')) {
             $parent=$null;$parentClass=''
+            $context=$null
             if($firstMarker -and $type -ne 'Edit') {
-                $parent=$walker.GetParent($node,$script:parentCache)
-                if($parent){$parentClass=$parent.Cached.ClassName}
+                $context=Get-TextContext $node
+                $parentClass=$context.parentClass
+                if($context.documentId -cne $documentId){continue}
+                if($hasTranscript -and !$context.transcript -and !$context.queueId){continue}
             }
-            if ($footer -and !$isMarker -and $type -ne 'Edit' -and $parentClass -notmatch '(^| )thread-scroll-container( |$)|(?i)queued|pending-message|message-queue') { continue }
+            if ($footer -and !$isMarker -and $type -ne 'Edit' -and !$context.blockId -and $context.channel -eq 'answer' -and
+                !$context.queueId -and $parentClass -notmatch '(^| )thread-scroll-container( |$)|(^| )text-size-chat( |$)') { continue }
             $record = @{type=$type; name=$name; marker=$isMarker}
-            if($isMarker){$record.sourceId=$documentId+'|'+($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.')}
+            if($type -eq 'Edit'){$record.editorId=$node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}
+            if($type -in @('ListItem','Header') -and !$isMarker -and $firstMarker) {
+                # Some providers expose the complete list item only in Name;
+                # descendants contain just styled fragments. Keep both facts.
+                $childCount=$node.FindAll([Windows.Automation.TreeScope]::Descendants,$tree.condition).Count
+                if($childCount -gt 0) {
+                    $children=@($nodes[($i+1)..([Math]::Min($i+$childCount,$nodes.Count-1))])
+                    $runs=@(Get-AccessibleRuns $name $children)
+                    if($runs.Count){$record.runs=$runs}
+                    $skipContentUntil=$i+$childCount
+                }
+            }
+            if($isMarker){$record.sourceId=$documentId+'|'+$(if($context.scopeId){$context.scopeId}else{$node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'})}
             # Native elapsed-time labels are top-level metadata. Identical words
             # quoted inside a message remain body text.
-            if($type -eq 'Text' -and $parentClass -match '(^| )thread-scroll-container( |$)' -and
+            if($type -eq 'Text' -and !$context.blockId -and !$context.user -and $context.classes -match '(^| )text-size-chat( |$)' -and
                 ($name -match '^(?i)(已处理|已思考|思考了|已工作|处理用时|耗时|Worked for|Thought for|Took)\s*(\d+(\.\d+)?\s*(小时|分钟|毫秒|秒|时|分|h(ours?)?|m(in(ute)?s?)?|s(ec(ond)?s?)?|ms)\s*)+[.。]?$' -or $name -match '^(活动|Activity)$')){
-                $durationId=$documentId+'|'+($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.')
-                if(!$script:durationNodeCache.ContainsKey($durationId)){
-                    $rawParent=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($node,$script:parentCache)
-                    $pc=if($rawParent){$rawParent.Cached.ClassName}else{''}
-                    $native=$pc -match '(^| )text-size-chat( |$)' -and $pc -match '(^| )overflow-visible( |$)' -and $pc -match '(^| )py-0( |$)'
-                    if($native){$gp=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($rawParent,$script:parentCache);$native=$gp -and $gp.Cached.ClassName -ceq 'relative shrink-0'}
-                    if($script:durationNodeCache.Count -ge 256){$script:durationNodeCache.Clear()}
-                    $script:durationNodeCache[$durationId]=[bool]$native
-                }
-                if($script:durationNodeCache[$durationId]){
+                if($context.classes -match '(^| )overflow-visible( |$)' -and $context.classes -match '(^| )py-0( |$)'){
                     if($name -match '^(活动|Activity)$'){$records.Add(@{type='Status';activity=$true})}
                     else{$record.duration=$true;$records.Add($record)}
                     continue
                 }
             }
-            if(!$isMarker -and ($c.ClassName+' '+$parentClass) -match '(^|[ _-])(queued-message|pending-message|message-queue)([ _-]|$)') {
-                $record.queued=$true;$record.queueId=$parent.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
+            if(!$isMarker -and $context.queueId) {
+                $record.queued=$true;$record.queueId=$context.queueId
                 if($c.ClassName -match '(^|[ _-])(queue-status|queue-label)([ _-]|$)'){continue}
             }
             if ($firstMarker -and $type -ne 'Edit') {
@@ -173,40 +347,45 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true) {
                 }
                 # Work-mode commentary and tool activity have native containers.
                 # Use structure and observed typography, never words in the body.
-                if($role -eq 'assistant' -and $parentClass -match '^group flex min-w-0 flex-col$') {$record.channel='activity'}
-                elseif($role -eq 'assistant' -and $parentClass -ceq 'outline-none') {$record.channel='activity'}
-                elseif(($c.ClassName+' '+$parentClass) -match '(?i)reasoning|thinking|analysis-content') {$record.channel='reasoning'}
-                $record.code = ($c.ClassName+' '+$parentClass) -match 'font-mono|CodeBlock|code-block|_Code_'
-                if ($type -eq 'Text' -and $parentClass -match '(^| )thread-scroll-container( |$)' -and
-                    $name -match '^\d{1,2}:\d{2}(:\d{2})?$') { $record.timestamp = $true }
-                if(!$isMarker -and !$record.timestamp -and $type -eq 'Text' -and $name.Trim() -and !$record.code) {
-                    if($role -eq 'user' -and !$userStyle) {$userStyle=Get-NodeStyle $node $tree.document}
-                    if($role -eq 'assistant' -and !$assistantStyle -and $record.channel -ne 'reasoning') {$assistantStyle=Get-NodeStyle $node $tree.document}
-                    if($role -eq 'assistant' -and $parentClass -match '(^| )thread-scroll-container( |$)') {
-                        $style=Get-NodeStyle $node $tree.document
-                        if($userStyle -and $assistantStyle -and $userStyle.ContainsKey('color') -and $assistantStyle.ContainsKey('color') -and
-                            $userStyle.color -ne $assistantStyle.color -and $style.color -eq $userStyle.color -and $style.size -eq $userStyle.size) {
-                            # Native pending user text may precede its eventual role marker.
-                            $record.queued=$true;$record.queueId='pending-'+($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.')
-                        } elseif($assistantStyle -and $style.ContainsKey('size') -and $assistantStyle.ContainsKey('size') -and $style.size -lt $assistantStyle.size) {
-                            $record.channel='reasoning'
-                        }
+                if($context.channel -ne 'answer'){$record.channel=$context.channel;if(!$isMarker){$record.role='assistant'}}
+                if($context.user -and !$record.queued){$record.role='user'}
+                if($record.role -and $context.scopeId){$record.sourceId=$documentId+'|'+$context.scopeId}
+                if($context.blockId){$record.blockId=$context.blockId;$record.kind=$context.kind}
+                $record.code=$context.code
+                if($context.strong){$record.strong=$true};if($context.emphasis){$record.emphasis=$true};if($context.inlineCode){$record.inlineCode=$true}
+                if($context.href){$record.href=$context.href}
+                if ($type -eq 'Text' -and !$context.blockId -and !$context.user -and
+                    $name -match '^(?:(?:今天|昨天|前天|星期[一二三四五六日天]|周[一二三四五六日天]|上午|下午|凌晨|晚上|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day)?)\s*)?\d{1,2}:\d{2}(:\d{2})?(?:\s*[AP]M)?$') { $record.timestamp = $true }
+                if(!$isMarker -and $context.resourceId -and $name.Trim()) {
+                    if(!(@($records | Where-Object {$_.type -eq 'Attachment' -and $_.id -ceq $context.resourceId}).Count)){
+                        $records.Add(@{type='Attachment';kind='file';id=$context.resourceId;name=$name})
                     }
+                    continue
+                }
+                if($type -eq 'Hyperlink') {
+                    $valuePattern=$null
+                    if($node.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$valuePattern)) {
+                        $href=$valuePattern.Current.Value
+                        if($href -match '^https?://'){$record.href=$href}
+                    }
+                    $skipContentUntil=$i+$node.FindAll([Windows.Automation.TreeScope]::Descendants,$tree.condition).Count
                 }
             }
             $records.Add($record)
-            if($type -eq 'Edit' -and $composers.Count -gt 0){$contentEnded=$true}
+            if($type -eq 'Edit' -and $isPrompt -and !$c.IsOffscreen){$contentEnded=$true}
             if ($type -eq 'ListItem') {
                 $record.complete = $true
                 # The accessible name contains the entire list item; children
                 # may expose only styled fragments and must not replace it.
-                $i += $node.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-                    [System.Windows.Automation.Condition]::TrueCondition).Count
+                # Skip duplicate text only. Metadata discovery must still visit
+                # sidebar descendants, including the selected conversation.
+                $skipContentUntil = $i + $node.FindAll([System.Windows.Automation.TreeScope]::Descendants,$tree.condition).Count
             }
         }
     }
     $composer = $null
     $draft = $null
+    if($preferredComposers.Count -eq 1){$composers=$preferredComposers}
     if ($composers.Count -eq 1 -and $optionsOnly) { $composer=$composers[0] }
     elseif ($composers.Count -eq 1) {
         $composer = $composers[0]
@@ -230,10 +409,132 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true) {
         })
     } else {$senders=@()}
     $sendEnabled=@($senders).Count -gt 0
-    if($composer -and !$optionsOnly){$draft=Get-ComposerDraft $draft $composer.Current.Name $sendEnabled}
-    $identity = ([string]$handle) + '|' + $title + '|' + $firstMarker
-    return @{records=$records.ToArray(); title=$title; identity=$identity; composer=$composer;
-        draft=$draft; generating=$generating; sendEnabled=$sendEnabled; senders=@($senders); truncated=($nodes.Count -gt $limit);tree=$tree}
+    foreach($sender in $senders) {
+        if($sender.Current.Name -match '^(排队|排队发送|加入队列|Queue|Queue message|Queue prompt|Add to queue)$'){$generating=$true;break}
+    }
+    if($composer -and !$optionsOnly){$draft=Get-ComposerDraft $draft (Test-ComposerPlaceholder $composer)}
+    # Message editors and hidden queue editors are not the sending composer.
+    $composerId=if($composer){$composer.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
+    $visibleRecords=@($records | Where-Object {$_.type -ne 'Edit' -or $_.editorId -ceq $composerId})
+    $identity = Get-ConversationIdentity $handle $documentId $title $firstMarker $selectedThreads $messageAnchor
+    return @{records=$visibleRecords; title=$title; identity=$identity; composer=$composer;
+        draft=$draft; generating=$generating; selectedTitle=$selectedTitle;sendEnabled=$sendEnabled; senders=@($senders); truncated=($contentStart -gt 0);tree=$tree}
+}
+
+function Read-Queue($handle, $snapshot=$null) {
+    if(!$snapshot){$snapshot=Read-Window $handle $false $false $true}
+    if(!$snapshot.tree.document){
+        return @{ok=$true;identity=$snapshot.identity;items=@();actions=@();paused=$false;hasDraft=[bool]$snapshot.draft;snapshot=$snapshot}
+    }
+    $items=New-Object 'System.Collections.Generic.List[object]'
+    $actions=New-Object 'System.Collections.Generic.List[object]'
+    $seen=@{}
+    $paused=$false
+    $rawWalker=[System.Windows.Automation.TreeWalker]::RawViewWalker
+    $previewCondition=[System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'min-w-0 flex-1 self-center text-start select-text')
+    $buttonCondition=[System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Button)
+    $row=$null
+    foreach($node in $snapshot.tree.nodes){
+        $c=$node.Cached
+        if($c.ClassName -cne 'min-w-0 flex-1 self-center text-start select-text' -and $c.ControlType -ne $CT::Edit -and
+            !($c.ControlType -eq $CT::Button -and $c.Name -match '^(删除.*(排队|队列).*消息|删除排队消息|Delete queued message|引导|Steer|立即发送|Send now|重试|Retry|排队.*消息.*操作|队列.*消息.*操作|Queued message actions)$')){continue}
+        if(!(Test-PrimaryDocument $node ($snapshot.tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'))){continue}
+        # Chromium flattens unnamed row containers. Named previews and their
+        # following action buttons retain native document order.
+        if($c.ClassName -ceq 'min-w-0 flex-1 self-center text-start select-text'){
+            $id=$node.GetRuntimeId() -join '.'
+            if($seen.ContainsKey($id)){$row=$null;continue};$seen[$id]=$true
+            $text='';$pattern=$null
+            if($node.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern,[ref]$pattern)){
+                $text=$pattern.DocumentRange.GetText(32001)
+            }else{
+                $texts=$node.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                    [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text))
+                $text=(@($texts | ForEach-Object {$_.Current.Name}) -join '')
+            }
+            if(!$text){$text=$c.Name -replace '^(Preview queued message \d+:\s*|预览排队消息\s*\d+[：:]\s*)',''}
+            $row=@{id=$id;text=$text.Trim();actions=(New-Object 'System.Collections.Generic.List[object]')}
+            $items.Add($row)
+        }elseif($c.ControlType -eq $CT::Edit){$row=$null}
+        elseif($row -and $c.ControlType -eq $CT::Button){
+            $operation=''
+            if($c.Name -match '^(删除.*(排队|队列).*消息|删除排队消息|Delete queued message)$'){$operation='delete'}
+            elseif($c.Name -match '^(引导|Steer|立即发送|Send now|重试|Retry)$'){$operation='steer'}
+            elseif($c.Name -match '^(排队.*消息.*操作|队列.*消息.*操作|Queued message actions)$'){$operation='edit'}
+            if($operation){$row.actions.Add(@{id=(($node.GetRuntimeId() -join '.')+'|'+$operation);operation=$operation;
+                enabled=[bool]($c.IsEnabled -and !$c.IsOffscreen);element=$node})}
+        }
+    }
+    foreach($entry in $items){$entry.actions=$entry.actions.ToArray()}
+    # Pause text and Resume are adjacent in the native queue header.
+    if($items.Count){
+        foreach($node in $snapshot.tree.nodes){
+            if($node.Cached.ControlType -eq $CT::Button -and $node.Cached.Name -match '^(继续|恢复队列|Resume)$' -and
+                $node.Cached.IsEnabled -and !$node.Cached.IsOffscreen){
+                $parent=$rawWalker.GetParent($node)
+                for($depth=0;$parent -and $depth -lt 4;$depth++){
+                    if($parent.Current.Name -match '(队列.*暂停|Queue paused because you interrupted)'){$paused=$true;break}
+                    $labels=$parent.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                        [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text))
+                    if(@($labels | Where-Object {$_.Current.Name -match '(队列.*暂停|Queue paused because you interrupted)'}).Count){$paused=$true;break}
+                    $parent=$rawWalker.GetParent($parent)
+                }
+                if($paused){$actions.Add(@{id=(($node.GetRuntimeId() -join '.')+'|resume');operation='resume';enabled=$true;element=$node});break}
+            }
+        }
+    }
+    foreach($node in $snapshot.tree.nodes){
+        if($node.Cached.ControlType -eq $CT::Button -and $node.Cached.Name -match '^(停止|停止生成|停止流式传输|Stop|Stop generating|Stop streaming)$' -and
+            $node.Cached.IsEnabled -and !$node.Cached.IsOffscreen -and
+            (Test-PrimaryDocument $node ($snapshot.tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'))){
+            $actions.Add(@{id=(($node.GetRuntimeId() -join '.')+'|stop');operation='stop';enabled=$true;element=$node})
+        }
+    }
+    return @{ok=$true;identity=$snapshot.identity;items=$items.ToArray();actions=$actions.ToArray();paused=$paused;
+        hasDraft=[bool]$snapshot.draft;snapshot=$snapshot}
+}
+
+function Export-Queue($queue) {
+    $items=@($queue.items | ForEach-Object {
+        @{id=$_.id;text=$_.text;actions=@($_.actions | ForEach-Object {@{id=$_.id;operation=$_.operation;enabled=$_.enabled}})}
+    })
+    return @{ok=$true;identity=$queue.identity;paused=$queue.paused;hasDraft=$queue.hasDraft;items=$items;
+        actions=@($queue.actions | ForEach-Object {@{id=$_.id;operation=$_.operation;enabled=$_.enabled}})}
+}
+
+function Invoke-Queue($request) {
+    $script:controlTree=$null
+    $queue=Read-Queue $request.hwnd
+    if($queue.identity -cne $request.identity){throw 'queue changed'}
+    $choices=@($queue.actions | ForEach-Object {@{row=$null;action=$_}})
+    foreach($row in $queue.items){foreach($a in $row.actions){$choices+=@{row=$row;action=$a}}}
+    $matches=@($choices | Where-Object {$_.action.id -ceq $request.target -and $_.action.operation -ceq $request.action -and $_.action.enabled -and
+        ((!$_.row -and !$request.item) -or ($_.row.id -ceq $request.item -and $_.row.text -ceq $request.text))})
+    if($matches.Count -ne 1){throw 'queue changed'}
+    $choice=$matches[0];$element=$choice.action.element;$pattern=$null
+    if($request.action -eq 'edit' -and $queue.hasDraft){throw 'queue draft exists'}
+    if(!$element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){throw 'queue unavailable'}
+    $pattern.Invoke()
+    try{
+        if($request.action -eq 'edit'){
+            Start-Sleep -Milliseconds 120
+            $check=Read-Window $request.hwnd $false $false $true
+            if($check.identity -cne $request.identity){throw 'queue pending'}
+            $menuItems=$check.tree.root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::MenuItem))
+            $edit=@($menuItems | Where-Object {$_.Current.Name -match '^(编辑消息|编辑|Edit message)$' -and $_.Current.IsEnabled -and !$_.Current.IsOffscreen})
+            if($edit.Count -ne 1){throw 'queue pending'}
+            $pattern=$null
+            if(!$edit[0].TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){throw 'queue pending'}
+            $pattern.Invoke()
+            Start-Sleep -Milliseconds 120
+            $check=Read-Window $request.hwnd $false $false $true
+            if($check.identity -cne $request.identity -or $null -eq $check.draft -or !$check.composer){throw 'queue pending'}
+            return @{ok=$true;edited=$true;identity=$check.identity;text=$check.draft;title=$check.title;truncated=$false}
+        }
+        Start-Sleep -Milliseconds 120
+        return @{ok=$true}
+    }catch{throw 'queue pending'}
 }
 
 function Get-OptionMenu($node) {
@@ -248,23 +549,48 @@ function Get-OptionMenu($node) {
     return $null
 }
 
+function Confirm-WindowIdentity($handle, $current, $identity) {
+    $wait=[Diagnostics.Stopwatch]::StartNew();$previous=''
+    while($current.identity -cne $identity) {
+        # Chromium briefly omits history nodes while replacing a role heading.
+        # Refresh discovery instead of treating an incomplete tree as a switch.
+        $incomplete=$current.identity.EndsWith('|')
+        if($wait.ElapsedMilliseconds -ge 500 -or (!$incomplete -and $previous -ceq $current.identity)){throw 'conversation changed'}
+        $previous=$current.identity;$script:controlTree=$null
+        Start-Sleep -Milliseconds 40
+        $current=Read-Window $handle $false $false $true
+    }
+    return $current
+}
+
 function Get-ComposerAttachments($snapshot) {
     if(!$snapshot.composer){return @{count=0;names=@();ready=$false}}
-    $r=$snapshot.composer.Cached.BoundingRectangle;$removed=0;$images=0;$names=New-Object 'System.Collections.Generic.HashSet[string]'
+    $r=$snapshot.composer.Cached.BoundingRectangle;$removed=0;$images=0;$busy=$false;$names=New-Object 'System.Collections.Generic.HashSet[string]'
     $documentId=if($snapshot.tree.document){$snapshot.tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
-    foreach($node in $snapshot.tree.nodes){
-        $c=$node.Cached;$b=$c.BoundingRectangle
-        if($c.IsOffscreen -or $b.IsEmpty -or $b.Bottom -lt $r.Top-300 -or $b.Top -gt $r.Bottom+30 -or $b.Left -lt $r.Left-30 -or $b.Right -gt $r.Right+70){continue}
+    $scope=$null;$parent=$snapshot.composer;$bodyFound=$false
+    for($depth=0;$depth -lt 7;$depth++){
+        $parent=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($parent,$script:parentCache)
+        if(!$parent -or $parent.Cached.ControlType -eq $CT::Document){break}
+        $class=$parent.Cached.ClassName
+        if($class -match '(^|\s)composer-layout(\s|$)'){$scope=$parent;break}
+        if($class -match '_ComposerLayoutBody_'){$bodyFound=$true}
+        if($bodyFound -and $class -match '(^|\s)flex-col(\s|$)' -and $class -match '(^|\s)gap-2(\s|$)'){$scope=$parent;break}
+    }
+    $nodes=if($scope){$scope.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)}else{$snapshot.tree.nodes}
+    foreach($node in $nodes){
+        $c=$node.Current;$b=$c.BoundingRectangle
+        if($c.IsOffscreen -or $b.IsEmpty){continue}
+        if(!$scope -and ($b.Bottom -lt $r.Top-300 -or $b.Top -gt $r.Bottom+30 -or $b.Left -lt $r.Left-30 -or $b.Right -gt $r.Right+70)){continue}
+        if($scope -and ($c.ControlType -eq $CT::ProgressBar -or ($c.ControlType -eq $CT::StatusBar -and $c.Name -match '(?i)上传中|正在上传|uploading|processing'))){$busy=$true}
         if($c.ControlType -eq $CT::Button -and $c.Name -match '(?i)^(移除|删除|Remove|Delete)(\s|附件|文件|图片|attachment|file|image|$)' -and
-            (Test-PrimaryDocument $node $documentId)){$removed++}
+            ($scope -or (Test-PrimaryDocument $node $documentId))){$removed++}
         elseif($c.ControlType -eq $CT::Image -and $c.ClassName -match '(?i)object-cover|attachment|preview' -and $b.Width -ge 40 -and $b.Height -ge 40){$images++}
         elseif($c.ControlType -in @($CT::Text,$CT::Button) -and $c.Name.Length -le 180 -and $c.Name -notmatch '(?i)^(移除|删除|Remove|Delete)(\s|附件|文件|图片)' -and $c.Name -match '(?i)^[^\\/\r\n]+\.(png|jpe?g|gif|webp|pdf|txt|md|docx?|xlsx?|csv|pptx?|zip|json|py|js|html|svg|heic)$'){
             [void]$names.Add($c.Name)
         }
     }
-    # A remove action scopes this to composer attachments rather than a nearby
-    # historical image. Unnamed thumbnails alone never confirm a new paste.
-    return @{count=$removed;names=@($names);images=$images;ready=($removed -gt 0)}
+    $count=if($scope){[Math]::Max($removed,[Math]::Max($images,$names.Count))}else{$removed}
+    return @{count=$count;names=@($names);images=$images;ready=($count -gt 0 -and !$busy)}
 }
 
 $script:rootDocumentCache=@{}
@@ -458,7 +784,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     $request = $null
     try {
         $request = $line | ConvertFrom-Json
-        if ($request.operation -in @('composer','composer_invoke','composer_dismiss','composer_surface')) {
+        if($request.operation -in @('queue','queue_invoke')){
+            if($request.operation -eq 'queue'){$script:controlTree=$null;$reply=Export-Queue (Read-Queue $request.hwnd)}
+            else{$reply=Invoke-Queue $request}
+            $reply.request_id=$request.request_id
+        } elseif ($request.operation -in @('composer','composer_invoke','composer_dismiss','composer_surface')) {
             $options=$null
             if($request.operation -eq 'composer_invoke' -and !$request.context -and $request.item.kind -in @('model','permission','tools','effort')) {
                 $options=Get-ComposerRoot (Read-Window $request.hwnd $true)
@@ -537,15 +867,30 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 }
             }
         } else {
-        $snapshot = Read-Window $request.hwnd ($request.operation -eq 'identity') ($request.operation -eq 'read')
-        if ($request.operation -eq 'identity') {
+        $compact=$request.operation -in @('observe','identity','prepare','input_ready','submit','draft','clear_draft','attachments','attachment_focus')
+        # Paste may create a new Send control; discover it before read-back.
+        if($request.operation -eq 'input_ready' -or $request.fresh){$script:controlTree=$null}
+        $snapshot = Read-Window $request.hwnd ($request.operation -eq 'identity') ($request.operation -eq 'read') $compact
+        if ($request.operation -eq 'observe') {
+            $rootOptions=Get-ComposerRoot $snapshot $true
+            $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity;selectedTitle=$snapshot.selectedTitle;
+                generating=$snapshot.generating;queue=(Export-Queue (Read-Queue $request.hwnd $snapshot));composer=@{available=($null -ne $snapshot.composer -and $null -ne $snapshot.draft);
+                hasDraft=($null -ne $snapshot.draft -and $snapshot.draft.Length -gt 0);options=$(if($rootOptions){Export-ComposerOptions $rootOptions}else{$null})}}
+        } elseif ($request.operation -eq 'identity') {
             $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity}
         } elseif ($request.operation -in @('attachment_focus','attachments')) {
             if($snapshot.identity -cne $request.identity){throw 'conversation changed'}
             if(!$snapshot.composer){throw 'composer unavailable'}
             if($request.operation -eq 'attachment_focus'){
                 $snapshot.composer.SetFocus()
-                if(!$snapshot.composer.Current.HasKeyboardFocus){throw 'composer focus rejected'}
+                $focusWait=[Diagnostics.Stopwatch]::StartNew()
+                while(!$snapshot.composer.Current.HasKeyboardFocus){
+                    if($focusWait.ElapsedMilliseconds -ge 500){throw 'composer focus rejected'}
+                    Start-Sleep -Milliseconds 15
+                    $snapshot=Read-Window $request.hwnd $false $false $true
+                    $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
+                    if(!$snapshot.composer){throw 'composer unavailable'}
+                }
             }
             $reply=@{ok=$true;request_id=$request.request_id;attachments=(Get-ComposerAttachments $snapshot)}
         } elseif ($request.operation -eq 'draft') {
@@ -565,7 +910,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             }
             $confirmed = $false
             for ($attempt=0; $attempt -lt 8; $attempt++) {
-                $check = Read-Window $request.hwnd $false $false
+                $check = Read-Window $request.hwnd $false $false $true
                 if ($check.identity -cne $request.identity) { throw 'clear not confirmed' }
                 if ($null -ne $check.draft -and $check.draft.Length -eq 0) { $confirmed=$true; break }
                 Start-Sleep -Milliseconds 50
@@ -573,29 +918,50 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             if (!$confirmed) { throw 'clear not confirmed' }
             $reply = @{ok=$true; request_id=$request.request_id}
         } elseif ($request.operation -eq 'prepare') {
-            if ($snapshot.identity -cne $request.identity) { throw 'conversation changed' }
+            $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
             if ($null -eq $snapshot.composer -or $null -eq $snapshot.draft) { throw 'composer unavailable' }
             if ($snapshot.draft.Length -gt 0) { throw 'draft exists' }
             $snapshot.composer.SetFocus()
             # Focus can synchronously change the page; inspect again before input.
-            $check = Read-Window $request.hwnd $false $false
-            if ($check.identity -cne $request.identity) { throw 'conversation changed' }
+            $focusWait=[Diagnostics.Stopwatch]::StartNew()
+            do {
+            $check = Read-Window $request.hwnd $false $false $true
+            $check=Confirm-WindowIdentity $request.hwnd $check $request.identity
             if ($null -eq $check.composer -or $null -eq $check.draft) { throw 'composer unavailable' }
             if ($check.draft.Length -gt 0) { throw 'draft exists' }
-            if (!$check.composer.Current.HasKeyboardFocus) { throw 'composer focus rejected' }
+            if($check.composer.Current.HasKeyboardFocus){break}
+            if($focusWait.ElapsedMilliseconds -ge 500){throw 'composer focus rejected'}
+            Start-Sleep -Milliseconds 15
+            } while($true)
             $reply = @{ok=$true; request_id=$request.request_id;generating=$check.generating}
-        } elseif ($request.operation -eq 'submit') {
+        } elseif ($request.operation -in @('submit','input_ready')) {
             $ready = $false
-            for ($attempt = 0; $attempt -lt 10; $attempt++) {
-                if ($snapshot.identity -cne $request.identity) { throw 'conversation changed' }
+            $readyState=$null
+            $inputWait=[Diagnostics.Stopwatch]::StartNew()
+            $expectedText=Normalize-Message $request.text
+            do {
+                $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
                 if ($null -eq $snapshot.composer -or $null -eq $snapshot.draft) { throw 'composer unavailable' }
-                if ((Normalize-Message $snapshot.draft) -ceq (Normalize-Message $request.text) -and
-                    $snapshot.senders.Count -eq 1) { $ready = $true; break }
+                $actualText=Normalize-Message $snapshot.draft
+                if ($actualText -ceq $expectedText -and
+                    ($snapshot.senders.Count -eq 1 -or ($request.operation -eq 'input_ready' -and !$request.submit))) {
+                    $state=([string]$snapshot.generating)+'|'+($snapshot.senders | ForEach-Object {$_.Current.Name})
+                    # Chromium exposes new editor text before its queue/button
+                    # metadata catches up. Read two settled states before a
+                    # keyboard submission so a new reply uses native queuing.
+                    if($request.operation -ne 'input_ready' -or $readyState -ceq $state){$ready=$true;break}
+                    $readyState=$state
+                } else {$readyState=$null}
+                if($actualText -cne $expectedText -and !$expectedText.StartsWith($actualText,[StringComparison]::Ordinal)) { throw 'draft changed' }
+                if($inputWait.ElapsedMilliseconds -ge 3000){break}
                 Start-Sleep -Milliseconds 70
-                $snapshot = Read-Window $request.hwnd $false $false
-            }
+                $snapshot = Read-Window $request.hwnd $false $false $true
+            } while($true)
             if ((Normalize-Message $snapshot.draft) -cne (Normalize-Message $request.text)) { throw 'draft changed' }
             if (!$ready) { throw 'send button unavailable' }
+            if($request.operation -eq 'input_ready') {
+                $reply=@{ok=$true;request_id=$request.request_id;generating=$snapshot.generating}
+            } else {
             $invoke = $null
             if (!$snapshot.senders[0].TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) {
                 throw 'send button unavailable'
@@ -607,10 +973,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             # Keep the mutating call short. A new first message legitimately
             # changes the role-marker identity. Read-back recovery is separate.
             Start-Sleep -Milliseconds 60
-            $check = Read-Window $request.hwnd $false $false
+            $check = Read-Window $request.hwnd $false $false $true
             $confirmed = $null -ne $check.draft -and !(Normalize-Message $check.draft)
             $reply = @{ok=$true; request_id=$request.request_id; invoked=$true; confirmed=[bool]$confirmed;
                 submission=$(if(!$confirmed){'submitted'}elseif($queueButton -or ($wasGenerating -and $check.generating)){'queued'}else{'sent'})}
+            }
         } elseif ($request.operation -eq 'read') {
             $rootOptions=Get-ComposerRoot $snapshot $true
             $reply = @{ok=$true; request_id=$request.request_id; nodes=$snapshot.records;
@@ -625,6 +992,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $reason = $_.Exception.Message
         if ($reason -notin @('conversation changed','composer unavailable','draft exists','reply in progress','composer focus rejected',
             'draft changed','send button unavailable','send not confirmed','navigation changed','navigation unavailable',
+            'queue changed','queue unavailable','queue pending','queue draft exists',
             'clear unavailable','clear not confirmed')) {
             $reason = 'reader unavailable'
         }

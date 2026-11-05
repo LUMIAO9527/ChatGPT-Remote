@@ -9,7 +9,7 @@ from ctypes import wintypes as wt
 import threading
 
 PANEL_SIZE = (312, 458)
-PANEL_SIZES = dict.fromkeys(('home', 'settings', 'support', 'support-qr', 'update'), PANEL_SIZE)
+PANEL_SIZES = dict.fromkeys(('home', 'settings', 'support', 'support-qr', 'update', 'install', 'uninstall', 'first-use'), PANEL_SIZE)
 
 
 def popup_position(icon, work, monitor, size, gap=8, margin=8):

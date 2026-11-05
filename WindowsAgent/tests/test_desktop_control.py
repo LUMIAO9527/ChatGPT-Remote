@@ -43,10 +43,10 @@ class DesktopTests(unittest.TestCase):
     def raw(self, packet):
         with Client(pipe_address(self.folder), family='AF_PIPE') as connection:
             connection.send_bytes(_wire(packet))
-            self.assertTrue(connection.poll(3))
             try:
+                self.assertTrue(connection.poll(3))
                 return json.loads(connection.recv_bytes(65536))
-            except EOFError:
+            except (EOFError, BrokenPipeError):
                 return None
 
     def test_dpapi_key_is_persistent_encrypted_and_not_silently_rotated(self):

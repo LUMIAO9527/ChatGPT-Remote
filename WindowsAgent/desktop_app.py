@@ -14,8 +14,7 @@ import threading
 import traceback
 
 sys.dont_write_bytecode=True
-HERE=Path(__file__).resolve().parent
-RUNTIME=HERE.parent/'_wip/desktop-runtime'
+from app_paths import HERE, ROOT, RUNTIME, DATA, FROZEN, launch_command, child_environment
 sys.path.insert(0,str(RUNTIME/'libs'))
 
 
@@ -32,7 +31,7 @@ class Signals:
             ('WaitForMultipleObjects',[wintypes.DWORD,ctypes.POINTER(wintypes.HANDLE),wintypes.BOOL,wintypes.DWORD],wintypes.DWORD),
             ('CloseHandle',[wintypes.HANDLE],wintypes.BOOL)]:
             function=getattr(self.kernel,name);function.argtypes=args;function.restype=result
-        identity=hashlib.sha256(str(HERE).casefold().encode()).hexdigest()[:24]
+        identity=hashlib.sha256(str(ROOT if FROZEN else HERE).casefold().encode()).hexdigest()[:24]
         prefix=f'Local\\ChatGPTRemote.{identity}.{role}'
         self.handles=[];self.mutex=None;self.existing=False
         if not sender:
@@ -110,6 +109,9 @@ def window_main(args):
         from desktop_platform import NativePanel,initial_theme,PANEL_SIZES
         from desktop_ui import render_html
         manager=DesktopManager();theme=initial_theme(manager.preferences())
+        if args.update_ack:
+            if os.environ.get('CHATGPTREMOTE_RESTORE_SERVICE')=='1':manager.service('start')
+            manager.update_ack=(args.update_ack,args.update_token)
         html=render_html(theme)
         class Bridge:
             def call(self,action,payload=None):return manager.call(action,payload)
@@ -131,18 +133,24 @@ def window_main(args):
                 if event==0:panel.show() if signals.wants_visible() else panel.hide()
                 elif event==1:panel.close()
         log.info('window_start pid=%s',os.getpid())
-        update_timer=threading.Timer(12,manager.updates.start);update_timer.daemon=True;update_timer.start()
+        if not args.setup:
+            update_timer=threading.Timer(12,manager.updates.start);update_timer.daemon=True;update_timer.start()
         webview.start(events,gui='edgechromium',debug=False,private_mode=False,
                       storage_path=str(RUNTIME/'webview'),icon=str(HERE/'desktop.ico'))
         log.info('window_closed pid=%s',os.getpid())
-    finally:signals.set_visible(False);signals.dispose()
+    finally:
+        signals.set_visible(False);signals.dispose()
+        if 'manager' in locals() and manager.relaunch_executable:
+            from desktop_installation import Installation
+            Installation.open_installed(manager.relaunch_executable)
 
 
 class PanelHost:
     """Warm once; deliver each visibility request once, including during startup."""
-    def __init__(self,anchor,notify,identity=lambda:None):
+    def __init__(self,anchor,notify,identity=lambda:None,update_args=()):
         self.anchor,self.notify=anchor,notify
         self.identity=identity
+        self.update_args=update_args
         self.child=None;self.pending=None;self.opened=False;self.lock=threading.RLock()
 
     def prepare(self):
@@ -150,12 +158,13 @@ class PanelHost:
             sender=Signals.connect('Window')
             if sender:sender.dispose();return
             if self.child is not None and self.child.poll() is None:return
-            arguments=[str(Path(sys.executable).with_name('pythonw.exe')),'-B',str(HERE/'desktop_app.py'),'--window']
+            arguments=launch_command('window')
+            arguments+=list(self.update_args)
             rect=self.anchor()
             if rect:arguments+=['--anchor',*[str(value) for value in rect]]
             identity=self.identity()
             if identity:arguments+=['--tray-window',str(identity[0]),'--tray-id',str(identity[1])]
-            self.child=subprocess.Popen(arguments,cwd=HERE,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+            self.child=subprocess.Popen(arguments,cwd=ROOT,env=child_environment(),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
                                         stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
 
     def request(self,visible=True):
@@ -178,6 +187,7 @@ class PanelHost:
 
     def poll(self):
         with self.lock:
+            if self.update_args and Path(self.update_args[1]).is_file():self.update_args=[]
             if self.child is not None and self.child.poll() is not None:
                 failed=bool(self.child.returncode)
                 self.child=None
@@ -220,11 +230,13 @@ def tray_main(args):
                 {'label':'退出管理程序','action':stop}]
     panel_host=PanelHost(lambda:icon.rect() if icon else None,
                          lambda:icon.notify('连接面板启动失败，点击重新打开。','ChatGPT Remote',action=open_window),
-                         identity=lambda:icon.identity() if icon else None)
-    icon=TrayIcon(str(HERE/'desktop.ico'),'ChatGPT Remote · Rm',panel_host.toggle,menu,log=log)
+                         identity=lambda:icon.identity() if icon else None,
+                         update_args=['--update-ack',args.update_ack,'--update-token',args.update_token] if args.update_ack else [])
+    icon=TrayIcon({theme:str(HERE/('desktop-'+theme+'.ico')) for theme in ('light','dark')},
+                  'ChatGPT Remote · Rm',panel_host.toggle,menu,log=log)
     icon.run_detached();log.info('tray_ready pid=%s',os.getpid())
     panel_host.prepare()
-    if args.show or not args.background:open_window()
+    if args.show or not args.background or args.update_ack:open_window()
     try:
         while not stopped.is_set():
             event=signals.wait()
@@ -235,8 +247,12 @@ def tray_main(args):
 
 
 def main():
+    from desktop_runtime import ensure_desktop_runtime
+    ensure_desktop_runtime()
     parser=argparse.ArgumentParser();parser.add_argument('--window',action='store_true')
     parser.add_argument('--background',action='store_true');parser.add_argument('--show',action='store_true')
+    parser.add_argument('--setup',action='store_true')
+    parser.add_argument('--update-ack');parser.add_argument('--update-token')
     parser.add_argument('--anchor',nargs=4,type=int)
     parser.add_argument('--tray-window',type=int);parser.add_argument('--tray-id',type=int,default=1)
     args=parser.parse_args()

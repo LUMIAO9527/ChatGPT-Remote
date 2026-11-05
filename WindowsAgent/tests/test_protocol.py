@@ -29,6 +29,48 @@ from windows_control import WindowTracker, window_matches
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_queue_controls_require_pairing_and_reject_stale_or_frozen_actions(self):
+        self.assertEqual(self.req('GET','/api/queue')[0],401)
+        self.pair();epoch=self.select()['epoch']
+        self.backend.queued_messages=[{'id':'native-queue-a','text':'测试排队消息'}]
+        self.backend.queue_paused=True
+        status,_,body=self.req('GET','/api/queue',authorized=True)
+        self.assertEqual(status,200);queue=json.loads(body)
+        self.assertTrue(queue['paused'])
+        delete=next(a for a in queue['items'][0]['actions'] if a['operation']=='delete')
+        command={'kind':'queue','queueKey':queue['key'],'targetId':delete['id'],'epoch':epoch-1}
+        self.assertEqual(self.req('POST','/api/action',command,authorized=True)[0],409)
+        command['epoch']=epoch
+        status,_,body=self.req('POST','/api/action',command,authorized=True)
+        self.assertEqual(status,200);self.assertEqual(json.loads(body)['queue']['items'],[])
+        self.assertEqual(self.req('POST','/api/action',command,authorized=True)[0],409)
+        self.backend.freeze(0,'manual')
+        command['epoch']=self.backend.tracker.epoch
+        self.assertEqual(self.req('POST','/api/action',command,authorized=True)[0],409)
+
+    def test_pending_attachment_is_inspected_without_repeating_the_paste(self):
+        self.pair();epoch=self.select()['epoch'];key=self.backend.read_conversation()['key']
+        item=self.state.uploads.receive(self.token,'phone.txt',3,io.BytesIO(b'abc'))
+        calls={'paste':0,'inspect':0}
+        def attach(paths,conversation_key,requested_epoch):
+            calls['paste']+=1
+            error=TargetError('readback pending');error.attachment_before={'identity':'native','count':0}
+            raise error
+        def ready(before,count,requested_epoch):
+            calls['inspect']+=1;self.assertEqual(count,1);self.assertEqual(requested_epoch,epoch)
+            return calls['inspect']>=2
+        from windows_control import TargetError
+        self.backend.attach_files=attach;self.backend.attached_files_ready=ready
+        payload={'ids':[item['id']],'conversationKey':key,'epoch':epoch}
+        status,_,body=self.req('POST','/api/uploads/attach',payload,authorized=True)
+        self.assertEqual(status,200);self.assertEqual(json.loads(body)['state'],'attaching')
+        self.assertEqual(json.loads(self.req('POST','/api/uploads/status',payload,authorized=True)[2])['state'],'attaching')
+        self.assertEqual(json.loads(self.req('POST','/api/uploads/status',payload,authorized=True)[2])['state'],'attached')
+        self.assertEqual(json.loads(self.req('POST','/api/uploads/attach',payload,authorized=True)[2])['state'],'attached')
+        self.assertEqual(calls,{'paste':1,'inspect':2})
+        other=self.state.tokens.issue('other')
+        self.assertEqual(self.req('POST','/api/uploads/status',payload,headers={'Authorization':'Bearer '+other})[0],409)
+
     def test_send_receipt_recovers_lost_response_and_is_bound_to_paired_device(self):
         self.pair();epoch=self.select()['epoch'];snapshot=self.backend.read_conversation()
         command={'kind':'message','text':'继续','submit':True,'epoch':epoch,
@@ -942,7 +984,7 @@ class AccessAndProxyTests(unittest.TestCase):
     def test_access_key_required_and_cookie_exchange(self):
         status, _, body = self.req("GET", "/")
         self.assertEqual(status, 401)
-        self.assertIn("需要访问密钥", body.decode("utf-8"))
+        self.assertIn("扫描二维码", body.decode("utf-8"))
         status, _, _ = self.req("GET", "/?k=wrong")
         self.assertEqual(status, 401)
 
@@ -980,6 +1022,45 @@ class AccessAndProxyTests(unittest.TestCase):
         status, _, _ = self.req("GET", "/api/health",
                                 headers={"X-Access-Key": "wrong"})
         self.assertEqual(status, 401)
+
+    def test_finished_rm_icons_are_available_on_the_entry_page_without_api_access(self):
+        from PIL import Image
+        for path, content_type in (('/icon.svg?v=rm3', 'image/svg+xml'),
+                                   ('/icon.png?v=rm3', 'image/png'), ('/favicon.ico', 'image/x-icon')):
+            status, headers, body = self.req('GET', path)
+            self.assertEqual(status, 200)
+            self.assertIn(content_type, headers['Content-Type'])
+            if path.startswith('/icon.svg'):
+                self.assertIn(b'fill="#171717"', body)
+                self.assertIn(b'prefers-color-scheme:dark', body)
+                self.assertIn(b'#rm-tile{fill:#fff', body)
+                self.assertIn(b'#rm-letters{stroke:#171717}', body)
+                self.assertIn(b'M6.5 22V9.4H10.5', body)
+            elif path.startswith('/icon.png'):
+                with Image.open(io.BytesIO(body)) as icon:
+                    self.assertEqual(icon.size, (256, 256))
+                    self.assertLess(max(icon.convert('RGB').getpixel((128, 24))), 50)
+        for theme, tile, letters in (('light', b'fill="#ffffff"', b'stroke="#171717"'),
+                                     ('dark', b'fill="#171717"', b'stroke="#ffffff"')):
+            status, _, body = self.req('GET', '/icon.svg?theme=' + theme)
+            self.assertEqual(status, 200)
+            self.assertIn(tile, body)
+            self.assertIn(letters, body)
+            self.assertNotIn(b'prefers-color-scheme', body)
+        self.assertEqual(self.req('GET', '/api/health')[0], 401)
+
+    def test_connection_cover_is_static_and_computer_name_is_observed(self):
+        import xml.etree.ElementTree as ET
+        status, headers, body = self.req('GET', '/computer-cover.svg?v=rm2')
+        self.assertEqual(status, 200)
+        self.assertIn('image/svg+xml', headers['Content-Type'])
+        cover=ET.fromstring(body)
+        self.assertEqual(cover.attrib['viewBox'], '0 0 280 190')
+        self.assertIn(b'M6.5 22V9.4H10.5', body)
+        status, _, body = self.req('GET', '/api/health', headers={'X-Access-Key':self.ACCESS_KEY})
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(body)['computerName'],socket.gethostname())
+        self.assertEqual(self.state.info()['computerName'],socket.gethostname())
 
     def test_access_key_query_is_not_logged(self):
         output = io.StringIO()

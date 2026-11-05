@@ -1,38 +1,43 @@
 # ChatGPT Remote
 
-<img src="WindowsAgent/assets/rm-mark.svg" width="64" alt="Rm">
+<picture><source media="(prefers-color-scheme: dark)" srcset="WindowsAgent/assets/rm-mark-dark.svg"><img src="WindowsAgent/assets/rm-mark-light.svg" width="64" alt="Rm"></picture>
 
 通过手机浏览器连接电脑上的 ChatGPT，继续查看对话、发送消息和操作窗口。Windows 端常驻 **Rm** 托盘。
 
-当前版本：**v0.16.1**。
+公开下载版本以 [GitHub Releases](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest) 为准。
 
+本地维护版本：**v0.18.1**。手机队列提供原生引导、编辑、删除、继续及停止入口；操作前核对当前对话和队列项，操作后回读结果。公开过程说明直接显示，内部审查任务不进入对话目录，同一对话重连保留阅读位置。独立程序保留首次选择位置、版本更新、卸载和旧版配对导入。
 - 紧凑主面板直接显示二维码、配对码、连接地址、窗口与设备。
 - 点击托盘图标展开，再次点击收起；每次展开回到首页，展开时置顶。
-- 312×458 面板、16px 圆角、深浅配色与原生磨砂玻璃，界面结构与设计令牌参考 ChatGPTnx。
+- 312×458 面板、16px 外壳圆角、ChatGPTnx 的深浅配色与原生磨砂玻璃。
+- Rm 标识提供白底黑字与黑底白字两套；面板随应用配色，托盘随 Windows 任务栏配色切换。
+- 首次配对使用主电脑连接页；已配对手机直接进入当前对话，设置和项目通过手机返回键回到对话，保留正在编辑的消息。
 - 手机优先显示对话文字，按需切换画面；支持项目和对话切换、回复中排队、手机文件上传。
 - 设置提供开机自启、外观、版本更新和联系与支持。
 
-## 下载
+## 程序与源码
 
-[GitHub Releases](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest) 提供可运行源码包和离线界面预览。
+- `ChatGPTRemote.exe`：Windows 独立程序，日常使用无需安装 Python。
+- `ChatGPT-Remote-v0.18.1-source.zip`：源码、构建脚本和开发说明。
+- `ChatGPT-Remote-Preview.html`：使用示例数据的离线界面预览。
+- `SHA256SUMS.txt`：发布文件的校验和。
 
-解压后打开 `ChatGPT-Remote-Preview.html` 可查看同一套界面。预览使用示例设备和配对码。
+本地构建与 GitHub 已发布版本分别记录；[Releases](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest) 当前公开版本见页面。
 
-## 运行
+## 第一次使用
 
-需要 64 位 Windows 10/11、64 位 Python 3.10 或更新版本、PowerShell 7、Microsoft Edge WebView2，以及已打开的 ChatGPT 桌面应用。
+1. 打开独立程序，选择程序文件夹。程序与配对数据保存在这里，安装后会登记到 Windows 的“已安装的应用”。
+2. 电脑和手机登录同一 Tailscale 网络；电脑打开 ChatGPT 并登录。
+3. 打开 Remote 首页，启动服务。首次启用会配置当前用户的后台任务。
+4. 手机扫描二维码并输入配对码，选择要控制的 ChatGPT 窗口。
 
-在项目文件夹打开 PowerShell 7：
+需要 64 位 Windows 10/11 和 Microsoft Edge WebView2。外网连接仍需配置 Tailscale HTTPS 入口，步骤见 `WindowsAgent/setup_funnel_windows.bat`。
 
-```powershell
-.\WindowsAgent\setup_desktop.ps1 -InstallDependencies
-```
+[首次使用、更新、卸载和数据说明](docs/LIFECYCLE.md)
 
-然后双击生成的 `ChatGPT Remote.lnk`。首次点击主页“启动服务”会安装当前用户的后台任务。
+## 从源码运行
 
-外网连接需要已登录的 Tailscale。先运行 `WindowsAgent/setup_funnel_windows.bat` 配置 8443 入口，再从 Rm 面板扫码；在手机网页输入面板上的配对码。已有配对继续使用原链接。
-
-设备可直接改名、移除；多个窗口直接在主页选择。退出托盘管理程序后远程后台继续运行；服务启停也可使用 `WindowsAgent/manage_background.ps1`。
+需要 64 位 Python 3.10 或更新版本、PowerShell 7。先执行 `WindowsAgent/setup_desktop.ps1 -InstallDependencies`，再打开生成的快捷方式。源码运行数据在 `WindowsAgent/data`，依赖和缓存放在 `_wip`。源码更新使用源码包或 Git；内置程序替换只适用于独立 EXE。
 
 ## 开发与检查
 
@@ -49,7 +54,9 @@ python -B build_desktop.py --preview
 
 ## 数据
 
-配对、窗口选择和访问密钥保存在 `WindowsAgent/data/`；依赖、运行缓存及手机上传文件位于项目 `_wip/`。更新时保留这两个目录。对话正文不写入程序日志；发布包不包含本机配对、密钥或运行数据。
+独立程序的配对、窗口选择和访问密钥保存在所选程序文件夹的 `_data/`；源码模式保存在 `WindowsAgent/data/`。运行缓存与更新恢复材料位于 `_wip/`，独立程序的手机上传文件属于 `_data/`。更新保留配对和设置。对话正文不写入程序日志；发布包不包含本机配对、密钥或运行数据。
+
+本机 Codex 对话从原有 `.codex/state_*.sqlite`、`thread_history_*.sqlite` 和 `queue_*.sqlite` 只读取得，保留原生角色、消息编号和轮次状态；项目重复打开复用网页内缓存。公开思考摘要和工作记录折叠，正文按 Markdown 段落、列表、标题和代码显示。输入、发送及附件附加通过桌面原生控件完成；其它可访问界面继续使用辅助功能读取。
 
 ## 联系与支持
 

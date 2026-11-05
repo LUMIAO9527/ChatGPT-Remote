@@ -1,8 +1,12 @@
 # 来源与第三方组件
 
-原生托盘、窗口停靠、磨砂玻璃、圆角、设计令牌、设置写入和动效的部分实现适配自同一作者的 [ChatGPTnx v1.6.0](https://github.com/LUMIAO9527/ChatGPTnx/tree/v1.6.0)。
+原生托盘、窗口停靠、磨砂玻璃、圆角、设计令牌、设置写入、动效、更新事务、卸载与本地文件保护的部分实现适配自同一作者的 [ChatGPTnx v1.6.0](https://github.com/LUMIAO9527/ChatGPTnx/tree/v1.6.0)。
+
+手机连接首页的布局与电脑插画适配自同一作者的 DSH Connect 原生连接界面（`ConnectionViews.ets`、`computer_cover.svg`），并使用 ChatGPT Remote 的 Rm 标识。
 
 Copyright (c) 2026 ChatGPTnx. 保留所有权利 / All rights reserved.
+
+更新与卸载沿用同一作者 ChatGPTnx 的范围检查、独立辅助程序和启动确认方法，按 Remote 的配对数据、后台任务及三类进程适配。
 
 相关实现位于 `desktop_tray.py`、`desktop_platform.py`、`desktop_material.py`、`native_backdrop.cpp` 和 `WindowsAgent/assets/`。保留原有代码说明与署名，按本项目 LICENSE 发布。
 

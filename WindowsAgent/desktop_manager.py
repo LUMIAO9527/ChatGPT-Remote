@@ -19,14 +19,14 @@ import webbrowser
 
 from desktop_control import DesktopClient, DesktopControl, DesktopControlError
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-RUNTIME = ROOT / '_wip' / 'desktop-runtime'
-PREFERENCES = HERE / 'data' / 'desktop_settings.json'
+from app_paths import HERE, ROOT, RUNTIME, DATA, FROZEN, EXECUTABLE
+PREFERENCES = DATA / 'desktop_settings.json'
 sys.path.insert(0, str(RUNTIME / 'libs'))
 
 
 def powershell() -> str:
+    if FROZEN:
+        return str(Path(os.environ.get('WINDIR', r'C:\Windows'))/'System32/WindowsPowerShell/v1.0/powershell.exe')
     command = shutil.which('pwsh')
     if command:
         return command
@@ -40,11 +40,14 @@ def powershell() -> str:
 
 
 def task_command(action: str, *, enabled: bool | None = None) -> dict:
-    if action not in {'Status', 'Install', 'Start', 'Stop', 'AutoStart', 'Recovery'}:
+    if action == 'Remove' and not FROZEN:raise DesktopControlError('源码模式请使用项目的移除说明。')
+    if action not in {'Status', 'Install', 'Start', 'Stop', 'AutoStart', 'Recovery', 'Remove'}:
         raise DesktopControlError('不支持的服务操作')
-    args = [powershell(), '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
-            str(HERE / 'manage_background.ps1'), '-Action', action, '-Json']
-    if action == 'Install':
+    args = [powershell(), '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+            str(HERE / ('manage_frozen.ps1' if FROZEN else 'manage_background.ps1')), '-Action', action]
+    if FROZEN: args += ['-InstallRoot',str(ROOT)]
+    else: args += ['-Json']
+    if action == 'Install' and not FROZEN:
         args += ['-PythonPath', sys.executable.replace('pythonw.exe', 'python.exe')]
     if enabled is not None:
         args += ['-Enabled', '1' if enabled else '0']
@@ -102,11 +105,15 @@ def copy_text(value: str) -> None:
 
 class DesktopManager:
     def __init__(self, folder: Path | None = None):
-        self.client = DesktopClient(folder or HERE / 'data')
+        self.client = DesktopClient(folder or DATA)
         self.operation_lock = threading.Lock()
         self.preference_lock = threading.Lock()
         self.window = None
         self.settings_path = PREFERENCES
+        from desktop_installation import Installation
+        self.installation = Installation()
+        self.relaunch_executable = None
+        self.update_ack = None
         self.last_status = None
         self.panel = None
         from agent import VERSION
@@ -121,7 +128,7 @@ class DesktopManager:
         if not isinstance(value, dict):
             value = {}
         return {'theme': value.get('theme') if value.get('theme') in ('system', 'light', 'dark') else 'system',
-                'autoHide': value.get('autoHide') if type(value.get('autoHide')) is bool else True,
+                'autoHide': False if self.installation.status()['firstRun'] else value.get('autoHide') if type(value.get('autoHide')) is bool else True,
                 'material': value.get('material') if value.get('material') in ('glass','solid') else 'glass',
                 'motion': value.get('motion') if type(value.get('motion')) is bool else True}
 
@@ -175,8 +182,36 @@ class DesktopManager:
             return {'ok': False, 'error': '操作未完成，请重试'}
 
     def _call(self, action: str, payload: dict) -> dict:
+        if self.installation.status()['firstRun'] and action not in ('status','installation.choose','installation.install','window.ready','window.appearance','window.page','window.close','window.minimize','window.interaction'):
+            raise DesktopControlError('请先选择程序位置并完成首次使用。')
         if action == 'status':
-            return {**self.status(), 'computerName':socket.gethostname(), 'preferences': self.preferences(), 'update': self.updates.snapshot()}
+            requested = None
+            request = DATA/'uninstall-request.json'
+            if request.is_file():
+                try:
+                    if json.loads(request.read_text(encoding='utf-8')).get('schema') == 1: requested = 'uninstall'
+                    request.unlink()
+                except (OSError,ValueError,AttributeError): pass
+            return {'installation':self.installation.status(),'requestedPage':requested,**self.status(), 'computerName':socket.gethostname(), 'preferences': self.preferences(), 'update': self.updates.snapshot()}
+        if action == 'installation.choose':
+            import webview
+            selected=self.window.create_file_dialog(webview.FileDialog.FOLDER,directory=self.installation.status()['suggested'])
+            return {'path':selected[0] if selected else ''}
+        if action == 'installation.install':
+            with self.operation_lock:
+                try: result=self.installation.install(payload.get('path'))
+                except (ValueError,OSError) as error: raise DesktopControlError(str(error)) from None
+                self.relaunch_executable=result['executable']
+                threading.Timer(.3,self.window.destroy).start()
+                return result
+        if action == 'installation.import':
+            import webview
+            from legacy_migration import import_legacy
+            if self.status().get('running'):raise DesktopControlError('请先停止当前服务，再导入旧版。')
+            selected=self.window.create_file_dialog(webview.FileDialog.FOLDER)
+            if not selected:return {'imported':0}
+            try:return import_legacy(selected[0])
+            except (OSError,ValueError) as error:raise DesktopControlError(str(error)) from None
         if action == 'settings.get':
             return {'preferences': self.preferences(), 'autoStart': bool(task_command('Status').get('AutoStart'))}
         if action in ('settings.theme', 'settings.autohide', 'settings.material', 'settings.motion'):
@@ -199,6 +234,45 @@ class DesktopManager:
             return {'preferences': self.preferences()}
         if action == 'updates.check':
             return {'update':self.updates.check(force=True)}
+        if action == 'updates.download':
+            result=self.updates.download()
+            if not result.get('ok'):raise DesktopControlError(result.get('error','下载未开始'))
+            return {'update':self.updates.snapshot()}
+        if action == 'updates.cancel':
+            self.updates.cancel.set()
+            return {'update':self.updates.snapshot()}
+        if action in ('updates.install','uninstall'):
+            from lifecycle_processes import application_pids
+            from app_paths import EXECUTABLE
+            if not FROZEN:raise DesktopControlError('此操作适用于独立程序。源码模式请使用项目维护说明。')
+            with self.operation_lock:
+                running=bool(self.status().get('running'))
+                task_info=task_command('Status')
+                if task_info.get('State')=='Running' and not running:
+                    raise DesktopControlError('后台尚未响应，请恢复连接后重试维护。')
+                token=self.client.request('maintenance.prepare',timeout=30)['token'] if running else None
+                try:
+                    pids=application_pids(EXECUTABLE)
+                    if action=='updates.install':
+                        result=self.updates.install(os.getppid(),extra_pids=pids,restart_service=running)
+                        if not result.get('ok'):raise DesktopControlError(result.get('error','更新未开始'))
+                        task_command('Stop') if task_info.get('Installed') else None
+                    else:
+                        from desktop_uninstall import prepare,commit
+                        batch,nonce=prepare(payload.get('keep',True),pids=pids)
+                        commit(batch,nonce)
+                    def close():
+                        from desktop_app import Signals
+                        sender=Signals.connect('Tray')
+                        if sender:sender.signal(close=True);sender.dispose()
+                        if self.window:self.window.destroy()
+                    timer=threading.Timer(.4,close);timer.daemon=True;timer.start()
+                    return {}
+                except Exception:
+                    if token:
+                        try:self.client.request('maintenance.cancel',{'token':token})
+                        except DesktopControlError:pass
+                    raise
         if action == 'support.copy':
             from desktop_updates import CONTACT_QQ
             copy_text(CONTACT_QQ)
@@ -260,6 +334,11 @@ class DesktopManager:
             return {}
         if action == 'window.ready':
             if self.panel:self.panel.present()
+            if self.update_ack:
+                from desktop_updates import startup_ack
+                ack,token=self.update_ack
+                startup_ack(ROOT,EXECUTABLE,ack,token)
+                self.update_ack=None
             return {}
         if action == 'window.appearance':
             if payload.get('theme') not in ('light','dark'):raise DesktopControlError('外观无效')

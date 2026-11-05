@@ -14,6 +14,7 @@ WM_LBUTTONUP, WM_LBUTTONCLK, WM_RBUTTONUP, WM_CONTEXTMENU = 0x0202, 0x0203, 0x02
 WM_DESTROY = 0x0002
 WM_NULL = 0x0000
 WM_TIMER = 0x0113
+WM_SETTINGCHANGE, WM_THEMECHANGED, WM_DPICHANGED = 0x001A, 0x031A, 0x02E0
 ICON_RETRY_TIMER, ICON_RETRY_MS = 1, 2000
 MF_STRING, MF_GRAYED, MF_CHECKED = 0x0000, 0x0001, 0x0008
 TPM_RIGHTBUTTON, TPM_RETURNCMD = 0x0002, 0x0100
@@ -56,6 +57,17 @@ def _load_hicon(path, target):
     return user32.LoadImageW(None,str(path),1,target,target,0x10)
 
 
+def taskbar_theme():
+    """The taskbar can use a different appearance from application windows."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') as key:
+            return 'light' if winreg.QueryValueEx(key, 'SystemUsesLightTheme')[0] else 'dark'
+    except OSError:
+        return 'light'
+
+
 def tray_rect(hwnd, uid=1):
     """Read Explorer's current coordinates from the stable notification identity."""
     if not hwnd:return None
@@ -77,6 +89,8 @@ class TrayIcon:
         self._user32 = ctypes.windll.user32
         self._shell = ctypes.windll.shell32
         self._icon_path, self._tip = icon_path, title
+        self._loaded_icon_path = None
+        self._icon_size = 16
         self._default_action, self._menu_provider = default_action, menu_provider
         self._log = log
         self._hwnd = self._hicon = None
@@ -172,9 +186,35 @@ class TrayIcon:
                 self._log.warning('tray_icon_registration_pending source=%s', source)
         return bool(added)
 
+    def _refresh_icon(self, source):
+        theme = taskbar_theme() if isinstance(self._icon_path, dict) else 'standard'
+        path = (self._icon_path.get(theme) or self._icon_path.get('dark')) if isinstance(self._icon_path, dict) else self._icon_path
+        try:
+            size = max(16, round(16 * (self._user32.GetDpiForSystem() or 96) / 96))
+        except (AttributeError, OSError):
+            size = 16
+        if self._hicon and self._loaded_icon_path == path and self._icon_size == size:
+            return False
+        handle = _load_hicon(path, size)
+        if not handle:
+            return False
+        previous = self._hicon
+        self._hicon, self._loaded_icon_path, self._icon_size = handle, path, size
+        if getattr(self, '_log', None):
+            self._log.info('tray_icon_appearance theme=%s pixels=%s', theme, size)
+        if self._hwnd:
+            self._register_icon(source)
+        if previous:
+            self._user32.DestroyIcon(previous)
+        return True
+
     def _wndproc(self, hwnd, message, wparam, lparam):
         if self._taskbar_created and message == self._taskbar_created:
-            self._register_icon('taskbar')
+            if not self._refresh_icon('taskbar'):
+                self._register_icon('taskbar')
+            return 0
+        if message in (WM_SETTINGCHANGE, WM_THEMECHANGED, WM_DPICHANGED):
+            self._refresh_icon('theme')
             return 0
         if message == WM_TIMER and wparam == ICON_RETRY_TIMER:
             self._register_icon('retry')
@@ -280,11 +320,7 @@ class TrayIcon:
         if not user32.RegisterClassW(ctypes.byref(wc)):
             self._ready.set()
             return
-        try:
-            dpi = user32.GetDpiForSystem() or 96
-        except Exception:
-            dpi = 96
-        self._hicon = _load_hicon(self._icon_path, max(16, round(16 * dpi / 96)))
+        self._refresh_icon('startup')
         self._hwnd = user32.CreateWindowExW(0, CLASS_NAME, 'ChatGPT Remote Tray', 0x80000000,
                                             0, 0, 0, 0, None, None, wc.hInstance, None)
         if not self._hwnd:

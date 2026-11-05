@@ -4,6 +4,8 @@ File bytes never enter JSON, logs, conversation polling or the control socket.
 """
 from __future__ import annotations
 import base64
+import atexit
+import os
 import hashlib
 import json
 from pathlib import Path
@@ -20,6 +22,10 @@ MAX_DEVICE = 50 * 1024 * 1024
 
 class UploadError(Exception):
     pass
+
+
+class ClipboardUnavailable(UploadError):
+    """The input callback has not run; a text input route can still be chosen."""
 
 
 class UploadStore:
@@ -123,54 +129,171 @@ class UploadStore:
 _CLIPBOARD = r'''
 $ErrorActionPreference='Stop';[Console]::InputEncoding=New-Object Text.UTF8Encoding($false);[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type 'using System;using System.Runtime.InteropServices;public static class ClipSeq {[DllImport("user32.dll")]public static extern uint GetClipboardSequenceNumber();}'
-$saved=New-Object System.Windows.Forms.DataObject;$old=[Windows.Forms.Clipboard]::GetDataObject()
-if($old){foreach($format in $old.GetFormats($false)){$saved.SetData($format,$false,$old.GetData($format,$false))}}
-$request=[Console]::ReadLine()|ConvertFrom-Json
-$files=New-Object Collections.Specialized.StringCollection;foreach($path in $request.paths){[void]$files.Add([string]$path)}
+Add-Type 'using System;using System.Runtime.InteropServices;public static class ClipSeq {[DllImport("user32.dll")]public static extern uint GetClipboardSequenceNumber();[DllImport("user32.dll")]static extern bool OpenClipboard(IntPtr h);[DllImport("user32.dll")]static extern bool CloseClipboard();[DllImport("user32.dll")]static extern int CountClipboardFormats();public static int FormatCount(){if(!OpenClipboard(IntPtr.Zero))throw new ExternalException("Clipboard busy");try{return CountClipboardFormats();}finally{CloseClipboard();}}}'
+function Invoke-Clipboard([scriptblock]$action) {
+ $timer=[Diagnostics.Stopwatch]::StartNew()
+ while($true){
+  try{return ,(& $action)}catch{
+   if($_.Exception.GetBaseException() -isnot [Runtime.InteropServices.ExternalException] -or $timer.ElapsedMilliseconds -ge 1200){throw}
+   [Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 30
+  }
+ }
+}
+while($null -ne ($line=[Console]::ReadLine())) {
+$sequence=$null;$ready=$false;$stop=$false;$stage='snapshot';$restored=$false
 try {
- $drop=New-Object Windows.Forms.DataObject;$drop.SetFileDropList($files)
- [Windows.Forms.Clipboard]::SetDataObject($drop,$true);$sequence=[ClipSeq]::GetClipboardSequenceNumber()
+ $request=$line|ConvertFrom-Json
+ $snapshotTimer=[Diagnostics.Stopwatch]::StartNew()
+ do{
+  $before=[ClipSeq]::GetClipboardSequenceNumber()
+  $count=Invoke-Clipboard {[ClipSeq]::FormatCount()}
+  $saved=New-Object System.Windows.Forms.DataObject
+  $old=Invoke-Clipboard {$value=[Windows.Forms.Clipboard]::GetDataObject();if($null -eq $value -and $count -gt 0){throw (New-Object Runtime.InteropServices.ExternalException('Clipboard busy'))};$value}
+  if($old){foreach($format in $old.GetFormats($false)){$data=Invoke-Clipboard {$old.GetData($format,$false)};$saved.SetData($format,$false,$data)}}
+  $consistent=$before -eq [ClipSeq]::GetClipboardSequenceNumber()
+  if(!$consistent -and $snapshotTimer.ElapsedMilliseconds -ge 1500){throw 'clipboard changed'}
+ }while(!$consistent)
+ $stage='write'
+ $drop=New-Object Windows.Forms.DataObject
+ if($null -ne $request.text){$drop.SetText([string]$request.text,[Windows.Forms.TextDataFormat]::UnicodeText)}
+ else{$files=New-Object Collections.Specialized.StringCollection;foreach($path in $request.paths){[void]$files.Add([string]$path)};$drop.SetFileDropList($files)}
+ [void](Invoke-Clipboard {[Windows.Forms.Clipboard]::SetDataObject($drop,$true)});$sequence=[ClipSeq]::GetClipboardSequenceNumber()
+ $ready=$true
  [Console]::WriteLine('{"ready":true}');[Console]::Out.Flush()
  $wait=[Console]::In.ReadLineAsync();$timer=[Diagnostics.Stopwatch]::StartNew()
- while(!$wait.IsCompleted -and $timer.ElapsedMilliseconds -lt 12000){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 20}
+ while(!$wait.IsCompleted -and $timer.ElapsedMilliseconds -lt 20000){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 10}
+ if(!$wait.IsCompleted){$stop=$true}
+} catch {
+ # A failed snapshot is reported before any native input. Keep the helper alive.
 } finally {
- $restored=$false
- if([ClipSeq]::GetClipboardSequenceNumber() -eq $sequence){
-  if($old){[Windows.Forms.Clipboard]::SetDataObject($saved,$true)}else{[Windows.Forms.Clipboard]::Clear()}
-  $restored=$true
- }
- [Console]::WriteLine(('{"restored":'+$restored.ToString().ToLower()+'}'));[Console]::Out.Flush()
+ try{
+  if($null -ne $sequence -and [ClipSeq]::GetClipboardSequenceNumber() -eq $sequence){
+   if($old){[void](Invoke-Clipboard {[Windows.Forms.Clipboard]::SetDataObject($saved,$true)})}else{[void](Invoke-Clipboard {[Windows.Forms.Clipboard]::Clear()})}
+   $restored=$true
+  }
+ }catch{$stop=$true}
+ if($ready){[Console]::WriteLine(('{"restored":'+$restored.ToString().ToLower()+'}'))}
+ else{[Console]::WriteLine(('{"ready":false,"stage":"'+$stage+'"}'))}
+ [Console]::Out.Flush()
+}
+$request=$null;$saved=$null;$old=$null;$drop=$null;$line=$null;$data=$null
+if($stop){break}
 }
 '''
 
 
 def paste_files(paths: list[Path], paste) -> dict:
     """Keep the previous clipboard in memory, paste once, restore if still ours."""
-    script=base64.b64encode(_CLIPBOARD.encode('utf-16-le')).decode()
-    process=subprocess.Popen(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-Sta','-EncodedCommand',script],
-        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,encoding='utf-8',creationflags=subprocess.CREATE_NO_WINDOW)
-    replies=queue.Queue()
-    def read():
+    return _paste({'paths': [str(p) for p in paths]}, paste)
+
+
+def paste_text(text: str, paste):
+    return _paste({'text': text.replace('\r\n', '\n').replace('\r', '\n')}, paste)
+
+
+def _paste(payload: dict, paste):
+    return _bridge.paste(payload, paste)
+
+
+class ClipboardBridge:
+    """Reuse one STA helper; each paste owns and restores its own clipboard."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.process = None
+        self.replies = queue.Queue()
+        self.last_restored = None
+
+    def _start(self):
+        if self.process and self.process.poll() is None:
+            return
+        self._close()
+        shell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        script = base64.b64encode(_CLIPBOARD.encode('utf-16-le')).decode()
+        from app_paths import RUNTIME
+        runtime = RUNTIME.parent / 'clipboard-runtime'
+        runtime.mkdir(parents=True, exist_ok=True)
+        environment = {**os.environ, 'TEMP': str(runtime), 'TMP': str(runtime)}
+        self.process = subprocess.Popen([str(shell), '-NoLogo', '-NoProfile', '-NonInteractive', '-Sta', '-EncodedCommand', script],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, encoding='utf-8', creationflags=subprocess.CREATE_NO_WINDOW, env=environment)
+        self.replies = queue.Queue()
+        process, replies = self.process, self.replies
+        def read():
+            try:
+                for line in process.stdout:
+                    replies.put(json.loads(line))
+            except (OSError, ValueError):
+                pass
+            finally:
+                replies.put(None)
+        threading.Thread(target=read, name='clipboard-bridge', daemon=True).start()
+
+    def paste(self, payload, paste):
+        with self.lock:
+            self.last_restored = None
+            ready = False
+            rejected = False
+            invoked = False
+            try:
+                self._start()
+                self.process.stdin.write(json.dumps(payload) + '\n')
+                self.process.stdin.flush()
+                reply = self.replies.get(timeout=5)
+                if not reply or not reply.get('ready'):
+                    rejected=isinstance(reply,dict) and reply.get('ready') is False
+                    raise ClipboardUnavailable('电脑剪贴板暂不可用，请稍后再试')
+                ready = True
+                invoked = True
+                return paste()
+            except (queue.Empty, OSError):
+                if invoked:raise
+                raise ClipboardUnavailable('电脑剪贴板暂不可用，手机草稿已保留') from None
+            finally:
+                try:
+                    if ready and self.process and self.process.poll() is None:
+                        self.process.stdin.write('done\n')
+                        self.process.stdin.flush()
+                        restored = self.replies.get(timeout=3)
+                        self.last_restored = restored.get('restored') if isinstance(restored, dict) else None
+                        if not restored or 'restored' not in restored:
+                            self._close()
+                    elif not rejected:
+                        self._close()
+                except (queue.Empty, OSError):
+                    self._close()
+
+    def _close(self):
+        process, self.process = self.process, None
+        if not process:
+            return
         try:
-            for line in process.stdout:replies.put(json.loads(line))
-        except (OSError,ValueError):pass
-        finally:replies.put(None)
-    threading.Thread(target=read,daemon=True).start()
-    invoked=False
-    try:
-        process.stdin.write(json.dumps({'paths':[str(p) for p in paths]})+'\n');process.stdin.flush()
-        ready=replies.get(timeout=5)
-        if not ready or not ready.get('ready'):raise UploadError('暂时无法附加文件，请稍后再试')
-        invoked=True;result=paste()
-        return result
-    except queue.Empty:
-        raise UploadError('附加结果未确认，请检查电脑输入框；没有自动重试' if invoked else '电脑剪贴板暂不可用，请稍后再试') from None
-    finally:
-        try:
-            if process.poll() is None:
-                process.stdin.write('done\n');process.stdin.flush();process.wait(timeout=3)
-        except (OSError,subprocess.TimeoutExpired):
-            process.terminate();process.wait(timeout=2)
-        for pipe in (process.stdin,process.stdout):
-            if pipe:pipe.close()
+            process.stdin.close()
+            process.wait(timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            process.terminate()
+            process.wait(timeout=2)
+        finally:
+            process.stdout.close()
+
+    def close(self):
+        with self.lock:
+            self._close()
+
+    def warm(self):
+        with self.lock:
+            try:
+                self._start()
+            except OSError:
+                self._close()
+
+
+_bridge = ClipboardBridge()
+atexit.register(_bridge.close)
+
+
+def close_clipboard():
+    _bridge.close()
+
+
+def warm_clipboard():
+    _bridge.warm()

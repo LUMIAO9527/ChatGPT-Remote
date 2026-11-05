@@ -1,0 +1,110 @@
+﻿param([Parameter(Mandatory=$true)][string]$Plan)
+$ErrorActionPreference='Stop'
+function Full([string]$value) { [System.IO.Path]::GetFullPath($value).TrimEnd('\') }
+function Plain([string]$path) {
+    $current=Full $path
+    while($current) {
+        if(Test-Path -LiteralPath $current) {
+            $item=Get-Item -LiteralPath $current -Force
+            if($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw 'redirected_path' }
+        }
+        $parent=[System.IO.Path]::GetDirectoryName($current)
+        if($parent -eq $current) { break }
+        $current=$parent
+    }
+}
+function RemoveOwned([string]$path) {
+    $resolved=Full $path
+    if(-not $resolved.StartsWith($script:root+'\',[System.StringComparison]::OrdinalIgnoreCase)) { throw 'outside_application' }
+    Plain $path
+    if(-not (Test-Path -LiteralPath $path)) { return }
+    $item=Get-Item -LiteralPath $path -Force
+    if($item.PSIsContainer) {
+        foreach($child in Get-ChildItem -LiteralPath $path -Force) { RemoveOwned $child.FullName }
+    }
+    Remove-Item -LiteralPath $path -Force
+}
+function Digest([string]$path) {
+    $sha=[System.Security.Cryptography.SHA256]::Create()
+    $stream=[System.IO.File]::OpenRead($path)
+    try { return [System.BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','') }
+    finally { $stream.Dispose();$sha.Dispose() }
+}
+try {
+    $stage='validate'
+    $document=Get-Content -LiteralPath $Plan -Raw -Encoding UTF8 | ConvertFrom-Json
+    if($document.schema -ne 1 -or $document.keep -isnot [bool] -or $document.token -notmatch '^[a-f0-9]{32}$') { throw 'invalid_plan' }
+    $script:root=Full $document.root
+    if($script:root -eq [System.IO.Path]::GetPathRoot($script:root).TrimEnd('\')) { throw 'invalid_root' }
+    $executable=Full $document.executable
+    if($executable -ne (Join-Path $script:root 'ChatGPTRemote.exe')) { throw 'invalid_executable' }
+    $allowed=@($executable,(Join-Path $script:root '_wip\desktop-runtime'),(Join-Path $script:root '_wip\update'),(Join-Path $script:root '_wip\clipboard-runtime'))
+    if(-not $document.keep) { $allowed+=@((Join-Path $script:root '_data'),(Join-Path $script:root '.chatgptremote-install.json')) }
+    if($document.targets.Count -ne $allowed.Count) { throw 'invalid_targets' }
+    for($i=0;$i -lt $allowed.Count;$i++) { if((Full $document.targets[$i]) -ne (Full $allowed[$i])) { throw 'invalid_target' } }
+    $batch=Full (Split-Path -Parent $Plan)
+    if((Split-Path -Parent $batch) -ne (Join-Path $script:root '_wip\uninstall') -or $batch -ne (Full $PSScriptRoot)) { throw 'invalid_worker' }
+    Plain $Plan
+    Plain $script:root
+    foreach($target in $allowed) { Plain $target }
+    if((Digest $executable) -ne $document.sha256) { throw 'program_changed' }
+    $record=Get-Content -LiteralPath (Join-Path $script:root '.chatgptremote-install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if($record.app -ne 'lumiao.chatgpt.remote' -or $record.root -ne $script:root -or $record.id -ne $document.id){throw 'invalid_ownership'}
+    & (Join-Path $PSScriptRoot 'manage_frozen.ps1') -InstallRoot $script:root -Action Status | Out-Null
+    $stage='prepare'
+    $prepared=@{token=$document.token;pid=$PID} | ConvertTo-Json -Compress
+    [System.IO.File]::WriteAllText((Join-Path $batch 'prepared.json'),$prepared,[System.Text.UTF8Encoding]::new($false))
+    $deadline=[DateTime]::UtcNow.AddSeconds(20)
+    $accepted=$false
+    while([DateTime]::UtcNow -lt $deadline) {
+        $commit=Join-Path $batch 'commit.json'
+        if(Test-Path -LiteralPath $commit) {
+            Plain $commit
+            try { $accepted=(Get-Content -LiteralPath $commit -Raw -Encoding UTF8 | ConvertFrom-Json).token -eq $document.token } catch { $accepted=$false }
+            if($accepted) { break }
+        }
+        Start-Sleep -Milliseconds 50
+    }
+    if(-not $accepted) { throw 'handoff_not_confirmed' }
+    $stage='tasks'
+    & (Join-Path $PSScriptRoot 'manage_frozen.ps1') -InstallRoot $script:root -Action Remove | Out-Null
+    $stage='wait'
+    foreach($processId in $document.pids) {
+        if($processId -isnot [int] -or $processId -le 0 -or $processId -eq $PID) { throw 'invalid_process' }
+        $process=Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if($process) { $process.WaitForExit(60000) | Out-Null; if(-not $process.HasExited) { throw 'application_still_running' } }
+    }
+    Plain $executable
+    if((Digest $executable) -ne $document.sha256) { throw 'program_changed' }
+    $stage='files'
+    foreach($target in $allowed) { RemoveOwned $target }
+    $stage='registration'
+    $key='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ChatGPTRemote'
+    if(Test-Path -LiteralPath $key) {
+        $registered=Get-ItemProperty -LiteralPath $key
+        if((Full $registered.InstallLocation) -eq $script:root) { Remove-Item -LiteralPath $key -Force }
+    }
+    $run='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $command=(Get-ItemProperty -LiteralPath $run -Name ChatGPTRemote -ErrorAction SilentlyContinue).ChatGPTRemote
+    if($command -eq ('"'+$executable+'"')) { Remove-ItemProperty -LiteralPath $run -Name ChatGPTRemote -Force }
+    if(-not $document.quiet -and $stage -notin @('validate','prepare')) {
+        Add-Type -AssemblyName System.Windows.Forms
+        $message=if($document.keep){'ChatGPTRemote 已卸载，配对与设置已保留。'}else{'ChatGPTRemote 及此设备保存的配对与设置已卸载。'}
+        [System.Windows.Forms.MessageBox]::Show($message,'ChatGPTRemote') | Out-Null
+    }
+    $stage='worker'
+    $uninstall=Split-Path -Parent $batch
+    RemoveOwned $batch
+    foreach($folder in @($uninstall,(Join-Path $script:root '_wip'),$script:root)) {
+        if((Test-Path -LiteralPath $folder) -and -not (Get-ChildItem -LiteralPath $folder -Force | Select-Object -First 1)) { Remove-Item -LiteralPath $folder -Force }
+    }
+} catch {
+    $failure=Join-Path (Split-Path -Parent $Plan) 'result.json'
+    $reason=if($_.Exception.Message -match '^[a-z_]+$'){$_.Exception.Message}else{$_.Exception.GetType().Name}
+    @{ok=$false;stage=$stage;reason=$reason} | ConvertTo-Json | Set-Content -LiteralPath $failure -Encoding UTF8
+    if(-not $document.quiet -and $stage -notin @('validate','prepare')) {
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.MessageBox]::Show('卸载未完成，请重新打开 ChatGPTRemote 后重试。','ChatGPTRemote') | Out-Null
+    }
+    exit 1
+}

@@ -713,6 +713,8 @@ class WindowsBackend:
         if self.conversation_reader is None:
             from conversation import ConversationReader
             self.conversation_reader = ConversationReader()
+            from attachments import warm_clipboard
+            threading.Thread(target=warm_clipboard, name='clipboard-warmup', daemon=True).start()
         return self.conversation_reader
 
     def read_conversation(self) -> dict[str, Any]:
@@ -740,6 +742,18 @@ class WindowsBackend:
             if self.mode != "window" or self.tracker.epoch != epoch or self.tracker.current_id != target:
                 raise TargetError("目标窗口已经变化，请刷新项目与对话列表")
             return {**result, "epoch": epoch}
+
+    def queue(self) -> dict[str, Any]:
+        with self.lock:
+            if self.mode != 'window':
+                raise TargetError('请返回窗口模式后管理队列')
+            target, epoch = self._resolve_target(), self.tracker.epoch
+            reader = self._reader()
+        result = reader.queue(target)
+        with self.lock:
+            if self.mode != 'window' or self.tracker.epoch != epoch or self.tracker.current_id != target:
+                raise TargetError('目标窗口已变化，请刷新队列')
+            return {**result, 'epoch': epoch}
 
     def read_draft(self) -> dict[str, Any]:
         with self.lock:
@@ -795,6 +809,8 @@ class WindowsBackend:
     def close(self) -> None:
         if self.conversation_reader:
             self.conversation_reader.close()
+        from attachments import close_clipboard
+        close_clipboard()
 
     def attach_files(self, paths, conversation_key: str, epoch: int) -> dict:
         from attachments import paste_files, UploadError
@@ -812,11 +828,20 @@ class WindowsBackend:
                     if int(self.u32.GetForegroundWindow() or 0)!=target:raise TargetError('电脑焦点已变化，文件尚未附加')
                     invoked=True
                     self._key_chord(0x11,0x56)
-                    return self._reader().confirm_attachments(target,before,[path.name for path in paths])
+                    try:return self._reader().confirm_attachments(target,before,[path.name for path in paths])
+                    except TargetError as exc:
+                        exc.attachment_before=before
+                        raise
                 return paste_files(paths,paste)
             except (TargetError,UploadError) as exc:
                 if not invoked:exc.code='attachment_not_started'
                 raise
+
+    def attached_files_ready(self, before: dict, count: int, epoch: int) -> bool:
+        with self.lock:
+            if self.mode!='window' or epoch!=self.tracker.epoch:raise TargetError('电脑窗口已切换，请返回附加文件的窗口','attachment_context_changed')
+            target=self._resolve_target()
+            return self._reader().attachments_ready(target,before,count)
 
     def _focus(self, hwnd: int) -> None:
         if self.mode == "desktop":
@@ -856,6 +881,9 @@ class WindowsBackend:
 
     def action(self, command: dict[str, Any]) -> dict | None:
         kind = command.get("kind")
+        if kind == 'queue' and (not isinstance(command.get('queueKey'), str) or not command['queueKey']
+                or not isinstance(command.get('targetId'), str) or not command['targetId']):
+            raise InputError('队列操作参数无效，请刷新队列')
         if kind == "draft" and (command.get("operation") != "clear"
                 or not isinstance(command.get("conversationKey"), str)
                 or not isinstance(command.get("draftRevision"), str) or not command["draftRevision"]):
@@ -891,6 +919,13 @@ class WindowsBackend:
             x, y, w, h = self._rect()
             if command.get("epoch") != self.tracker.epoch:
                 raise TargetError("目标窗口已经变化，已阻止旧指令；请刷新画面后重试")
+            if kind == 'queue':
+                if self.mode != 'window':
+                    raise TargetError('请返回窗口模式后管理队列')
+                result = self._reader().queue_action(self.tracker.current_id, command['queueKey'], command['targetId'])
+                for field in ('queue', 'queueDraft'):
+                    if field in result: result[field]['epoch'] = self.tracker.epoch
+                return result
             if kind == "composer":
                 if self.mode != "window":
                     raise TargetError("请返回窗口模式后调整对话选项")
@@ -938,13 +973,10 @@ class WindowsBackend:
             if use_composer:
                 if self.mode != "window":
                     raise TargetError("请返回窗口模式后发送消息")
-                self._focus(self.tracker.current_id)
                 if command.get("draftRevision"):
                     self._reader().clear_draft(self.tracker.current_id, command["conversationKey"],
                                                command["draftRevision"], for_send=command.get("submit", False))
-                conversation_key = self._reader().prepare(self.tracker.current_id, command.get("conversationKey"))
-                if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
-                    raise TargetError("电脑焦点已变化，请稍后重试")
+                return self._compose_message(command, text, submit_method)
             elif self.mode != "desktop":
                 self._focus(self.tracker.current_id)
             if kind in ("tap", "right"):
@@ -973,17 +1005,7 @@ class WindowsBackend:
                 self.u32.SetCursorPos(x + w // 2, y + h // 2)
                 self._mouse_input(MOUSEEVENTF_WHEEL, delta)
             elif kind in ("text", "message"):
-                if text or command.get('attachmentsOnly'):
-                    native_queue = use_composer and getattr(self._reader(), 'prepared_generating', False)
-                    keyboard_submit = command.get("submit", False) and submit_method != "button" and not native_queue and not command.get('attachmentsOnly')
-                    try:
-                        self._unicode_text(text, submit=keyboard_submit, submit_key=submit_method if keyboard_submit else "ENTER")
-                    except (TargetError, Win32Error):
-                        if keyboard_submit and use_composer:
-                            raise TargetError('正在确认发送', 'send_pending') from None
-                        raise
-                    if command.get("submit") and (submit_method == "button" or native_queue or command.get('attachmentsOnly')):
-                        return {"submission": self._reader().submit(self.tracker.current_id, conversation_key, text)}
+                self._unicode_text(text, submit=command.get("submit", False), submit_key=submit_method)
             elif kind == "key":
                 name = str(command.get("key", "")).upper()
                 simple = {"ENTER": 0x0D, "ESC": 0x1B, "TAB": 0x09, "BACKSPACE": 0x08}
@@ -1002,6 +1024,47 @@ class WindowsBackend:
                     raise InputError("未授权的快捷键")
             else:
                 raise InputError("不支持的操作")
+
+    def _compose_message(self, command: dict, text: str, submit_method: str):
+        def enter_text(use_clipboard=False):
+            self._focus(self.tracker.current_id)
+            reader = self._reader()
+            key = reader.prepare(self.tracker.current_id, command.get("conversationKey"))
+            if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
+                # Focusing an accessibility control can move the foreground.
+                # No text has been entered: restore once and recheck both the
+                # conversation and empty draft before taking any input action.
+                self._focus(self.tracker.current_id)
+                key=reader.prepare(self.tracker.current_id,key)
+                if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
+                    raise TargetError("电脑焦点已变化，手机草稿已保留")
+            if text:
+                if use_clipboard:self._key_chord(0x11, 0x56)
+                else:self._unicode_text(text)
+                reader.confirm_input(self.tracker.current_id, key, text, submit=command.get("submit", False))
+            if not command.get("submit"):
+                return
+            if submit_method == "button" or reader.prepared_generating or command.get('attachmentsOnly'):
+                return {"submission": reader.submit(self.tracker.current_id, key, text)}
+            if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
+                raise TargetError("电脑焦点已变化，手机草稿已保留")
+            try:
+                self._unicode_text("", submit=True, submit_key=submit_method)
+            except (TargetError, Win32Error):
+                raise TargetError('正在确认发送', 'send_pending') from None
+        if len(text)>1024 and not self.u32.GetOpenClipboardWindow():
+            from attachments import ClipboardUnavailable, paste_text
+            invoked=False
+            def paste_once():
+                nonlocal invoked
+                invoked=True
+                return enter_text(True)
+            try:return paste_text(text,paste_once)
+            except ClipboardUnavailable:
+                if invoked:raise
+                # No input has occurred. Use one native Unicode input batch.
+                return enter_text()
+        return enter_text()
 
     def _send(self, inp: _INPUT) -> None:
         result = self.u32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
@@ -1067,4 +1130,4 @@ class WindowsBackend:
             inputs[index].type=1;inputs[index].u.ki=_KEYBDINPUT(vk,0,flags,0,0)
         if self.u32.SendInput(4,inputs,ctypes.sizeof(_INPUT))!=4:
             self._key(modifier,False)
-            raise TargetError('文件附加指令未完整接收，请在画面中检查')
+            raise TargetError('电脑未完整接收粘贴操作')

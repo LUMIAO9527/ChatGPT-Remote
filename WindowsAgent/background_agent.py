@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / '_wip' / 'deskto
 
 def run():
     from agent import VERSION, main
-    folder = Path(__file__).resolve().parent / 'data'
+    from app_paths import DATA
+    folder = DATA
     folder.mkdir(exist_ok=True)
     log = logging.getLogger('harmony.lifecycle')
     log.setLevel(logging.INFO)

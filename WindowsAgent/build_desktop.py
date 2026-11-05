@@ -50,7 +50,8 @@ def build_preview():
           'windows':[{'id':1,'title':'ChatGPT · 项目工作区','selected':True}],
           'devices':[{'id':'demo-phone','name':'手机','created':1793836800}],
           'preferences':{'theme':'light','material':'glass','autoHide':True},
-          'update':{'status':'idle','version':VERSION,'notes':''}}
+          'installation':{'firstRun':False,'sourceMode':False,'installed':True},
+          'update':{'status':'idle','version':VERSION,'notes':'','installable':True,'message':'检查是否有新版本'}}
     bridge='''window.REMOTE_PREVIEW=true;
 const previewData=DEMO_DATA;let previewAuto=true;
 window.pywebview={api:{call:async(action,payload={})=>{
@@ -61,7 +62,7 @@ window.pywebview={api:{call:async(action,payload={})=>{
  if(action.startsWith('settings.')){const key=action.slice(9);previewData.preferences[key]=payload[key];if(key==='material')document.documentElement.dataset.material=payload[key];return {ok:true,preferences:{...previewData.preferences}};}
  if(action==='device.rename'){previewData.devices.find(d=>d.id===payload.id).name=payload.name;return {ok:true};}
  if(action==='device.remove'){previewData.devices=previewData.devices.filter(d=>d.id!==payload.id);return {ok:true};}
- if(action==='updates.check'){previewData.update={status:'current',version:previewData.version,notes:''};return {ok:true,update:previewData.update};}
+ if(action==='updates.check'){previewData.update={status:'current',version:previewData.version,notes:'',message:'当前已是最新版本'};return {ok:true,update:previewData.update};}
  if(action==='links.open'){const paths={github:'',issues:'/issues/new/choose',releases:'/releases/latest'};window.open('https://github.com/LUMIAO9527/ChatGPT-Remote'+paths[payload.page],'_blank','noopener');}
  if(action==='link.copy'||action==='support.copy'){try{await navigator.clipboard.writeText(action==='link.copy'?previewData.phoneUrl:'210037309');}catch{return {ok:false,error:'请手动复制'};}}
  return {ok:true};

@@ -6,18 +6,23 @@
 <meta name="referrer" content="no-referrer">
 <meta name="format-detection" content="telephone=no">
 <meta name="theme-color" content="#ffffff">
-<meta name="color-scheme" content="light">
-<title>ChatGPT Remote · 手机控制台</title>
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/svg+xml" href="/icon.svg?v=rm3">
+<link rel="apple-touch-icon" href="/icon.png?v=rm3">
+<title>ChatGPT Remote</title>
 <style>
 :root{
-  --bg:#f5f6f7;
+  --bg:#f7f8fa;
+  --surface-alt:#f1f3f7;
   --card:#ffffff;
-  --ink:#13211d;
-  --muted:#5f726c;
-  --line:#d9e4e0;
-  --accent:#243d34;
-  --accent-ink:#172b23;
-  --accent-soft:#e3f1ec;
+  --ink:#171717;
+  --muted:#686868;
+  --line:#e8e8e8;
+  --accent:#181818;
+  --accent-ink:#171717;
+  --accent-soft:#ebebeb;
+  --action-ink:#fff;
+  --connection:#4d6bfe;
   --warn:#8a5a0c;
   --warn-bg:#fbf1dd;
   --warn-line:#ecd7a8;
@@ -64,11 +69,11 @@ h1{font-size:17px;line-height:1.3;letter-spacing:-.2px;font-weight:700;white-spa
 .meta{margin-top:3px;font-size:12px;color:var(--muted)}
 .top-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:28px}
 .chip{font-size:11px;font-weight:600;padding:5px 9px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
-.chip[data-tone="accent"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip[data-tone="accent"]{background:var(--accent);border-color:var(--accent);color:var(--card)}
 .badge{
   display:inline-flex;align-items:center;gap:6px;
   font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;
-  background:#e6ebe9;color:#42524e;border:1px solid #d7dfdc;white-space:nowrap;
+  background:#e6ebe9;color:var(--ink);border:1px solid #d7dfdc;white-space:nowrap;
 }
 .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.8}
 .badge[data-tone="good"]{background:var(--accent-soft);color:var(--accent-ink);border-color:#c4e0d7}
@@ -95,44 +100,51 @@ main{
 label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px}
 input,select,textarea{
   width:100%;font-family:inherit;font-size:16px;line-height:1.5;color:var(--ink);
-  background:#fff;border:1px solid #cddad5;border-radius:11px;padding:11px 12px;
+  background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 12px;
 }
 textarea{resize:vertical;min-height:78px}
-input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid #6fb3a3;outline-offset:2px}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 select{min-height:44px}
-::placeholder{color:#93a39e}
+::placeholder{color:var(--muted)}
 
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
   min-height:44px;padding:0 15px;
-  border:1px solid #cddad5;border-radius:11px;background:#fff;color:var(--ink);
+  border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);
   font-family:inherit;font-size:14px;font-weight:600;line-height:1.2;
   cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
   transition:background .12s ease,border-color .12s ease,opacity .12s ease;
 }
-.btn:not(:disabled):hover{background:#f4f8f6}
+.btn:not(:disabled):hover{background:var(--surface-alt)}
 .btn:not(:disabled):active{background:#e9f1ee}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--card)}
 .btn.primary:not(:disabled):hover{background:var(--accent-ink)}
-.btn.primary:not(:disabled):active{background:#08463d}
-.btn.ghost{color:var(--muted);background:#fff}
+.btn.primary:not(:disabled):active{background:#405ce5}
+.btn.ghost{color:var(--muted);background:var(--card)}
 .btn.small{min-height:42px;padding:0 11px;font-size:12.5px;border-radius:10px}
 .btn.block{width:100%;margin-top:10px}
-.btn.danger-ghost{color:var(--danger);border-color:var(--danger-line);background:#fff}
+.btn.danger-ghost{color:var(--danger);border-color:var(--danger-line);background:var(--card)}
 .btn.danger-ghost:not(:disabled):hover{background:var(--danger-bg)}
-.btn:disabled{opacity:.48;cursor:not-allowed;background:#f1f4f3;border-color:#e0e7e4;color:#7d8b87}
-.btn.primary:disabled{background:#9dbfb7;border-color:#9dbfb7;color:#f2fbf8}
+.btn:disabled{opacity:.48;cursor:not-allowed;background:var(--surface-alt);border-color:var(--line);color:var(--muted)}
+.btn.primary:disabled{background:#b5c2ff;border-color:#b5c2ff;color:#f2fbf8}
 .btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .btn-row .btn{flex:1 1 0;min-width:0}
 
-.pair-view{display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:min(7vh,58px)}
-.pair-card{width:100%;max-width:420px}
-.pair-card{padding:28px 24px;border-radius:22px;box-shadow:0 12px 40px #17261c08}
-.pair-card h2{font-size:25px;letter-spacing:-.5px}
-.pair-card .sub{margin:8px 0 22px;font-size:14px}
-#pairForm{margin-top:6px}
-#pairForm label{font-size:13px;margin-top:16px}
-#pairForm .btn{min-height:48px;border-radius:12px;font-size:15px}
+.pair-view{display:flex;flex-direction:column;align-items:center;padding-top:clamp(0px,5vh,48px)}
+.pair-card{width:100%;max-width:480px;padding:clamp(24px,6vw,40px);border-radius:26px;box-shadow:0 8px 40px #20232904}
+.pair-brand{display:flex;align-items:center;gap:11px;font-size:16px;font-weight:650;letter-spacing:-.02em;margin-bottom:32px}
+.pair-brand img{width:36px;height:36px;flex-shrink:0}
+.pair-card h2{font-size:28px;letter-spacing:-.04em;font-weight:650;margin-bottom:24px}
+#pairForm{display:grid;gap:8px}
+#pairForm label{font-size:14px;margin:10px 0 0}
+#pairForm input{min-height:48px;border-color:var(--line);background:var(--bg);color:var(--ink);border-radius:12px}
+#pairForm .btn{min-height:48px;border-radius:18px;font-size:16px;margin-top:16px;background:var(--accent);border-color:var(--accent);color:var(--card)}
+#pairForm .btn:not(:disabled):hover{background:#405ce5}
+#pairForm .btn:disabled{opacity:.65}
+#pairForm input:focus-visible,#pairForm button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+body:not(.remote-mode){padding-top:env(safe-area-inset-top)}
+body:not(.remote-mode)>.topbar{display:none}
+@media(prefers-color-scheme:dark){body:not(.remote-mode){--bg:#15171b;--card:#202329;--ink:#f2f4f8;--muted:#a0a6b2;--line:#323741;background:var(--bg);color:var(--ink);color-scheme:dark}}
 #pin{
   font-size:23px;font-weight:600;letter-spacing:.32em;text-align:center;
   padding:12px 10px 12px 18px;font-variant-numeric:tabular-nums;
@@ -151,7 +163,7 @@ select{min-height:44px}
 .banner-warn{background:var(--warn-bg);border-color:var(--warn-line);color:#6b4708}
 .banner strong{font-size:13px;white-space:nowrap}
 .banner span{font-size:12.5px;flex:1 1 180px;line-height:1.5}
-.banner .btn{min-height:40px;background:#fff;border-color:var(--warn-line);color:#6b4708}
+.banner .btn{min-height:40px;background:var(--card);border-color:var(--warn-line);color:#6b4708}
 
 .layout{display:block}
 .screen-card{padding:14px}
@@ -283,142 +295,167 @@ select{min-height:44px}
   *{transition:none!important;animation:none!important}
 }
 .view-switch{display:flex;gap:4px;margin:0 0 12px;padding:4px;background:#e8ecea;border-radius:12px}
-.view-switch .btn{flex:1;min-height:36px;background:transparent;border-color:transparent;color:#61706a}
-.view-switch .btn[aria-pressed="true"]{background:#fff;color:#18231f;box-shadow:0 1px 4px #17282015}
+.view-switch .btn{flex:1;min-height:36px;background:transparent;border-color:transparent;color:var(--muted)}
+.view-switch .btn[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 4px #17282015}
 .conversation-card{min-width:0}
 .conversation-card .card-head>div{min-width:0;flex:1}
 #conversationTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-messages{height:58vh;min-height:240px;overflow-y:auto;overscroll-behavior:contain;padding:18px 4px;scrollbar-gutter:stable;user-select:text;overflow-anchor:none}
 .chat-message{margin:0 auto 16px;max-width:740px}
-.chat-message-foot{display:flex;align-items:center;gap:6px;margin-top:3px;color:#929b95;min-height:28px}
+.chat-message-foot{display:flex;align-items:center;gap:6px;margin-top:3px;color:var(--muted);min-height:28px}
 .chat-timestamp{font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.chat-duration{font-size:11px;color:#92979c;line-height:1.5}
-.chat-copy{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border:0;background:transparent;color:#8b9091;padding:6px;min-width:28px;min-height:28px;cursor:pointer;border-radius:6px}
-.chat-copy:hover{background:#f0f1f2;color:#202526}
-.chat-copy:focus-visible{outline:2px solid #60877a;outline-offset:1px}
+.chat-copy{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border:0;background:transparent;color:var(--muted);padding:6px;min-width:28px;min-height:28px;cursor:pointer;border-radius:6px}
+.chat-copy:hover{background:var(--surface-alt);color:var(--ink)}
+.chat-copy:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .chat-copy-icon{position:relative;display:block;width:14px;height:14px}
 .chat-copy-icon::before,.chat-copy-icon::after{content:'';position:absolute;width:8px;height:9px;border:1.3px solid currentColor;border-radius:2px}
 .chat-copy-icon::before{left:1px;top:1px;border-right:0;border-bottom:0}
 .chat-copy-icon::after{left:4px;top:4px;background:inherit}
 .chat-message[data-role="user"]{width:fit-content;max-width:min(88%,650px);margin-left:auto;margin-right:0}
 .chat-message[data-role="user"] .chat-message-foot{justify-content:flex-end;padding-right:4px}
-.chat-message[data-role="user"] .chat-message-body{padding:12px 16px;border-radius:20px 20px 6px 20px;background:#f1f2f3}
-.chat-message-body{overflow-wrap:anywhere;font-size:16px;line-height:1.7;color:#232729}
+.chat-message[data-role="user"] .chat-message-body{padding:12px 16px;border-radius:20px 20px 6px 20px;background:var(--surface-alt)}
+.chat-message-body{overflow-wrap:anywhere;font-size:16px;line-height:1.7;color:var(--ink)}
 .chat-message-body p{white-space:pre-wrap;margin:0 0 10px}
 .chat-message-body p:last-child,.chat-message-body ul:last-child,.chat-message-body pre:last-child{margin-bottom:0}
+.chat-message-body strong{font-weight:650}
+.chat-message-body a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.chat-message-body :not(pre)>code{padding:2px 5px;border-radius:5px;background:var(--surface-alt);font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}
 .chat-message-body ul{padding-left:23px;margin:6px 0 10px}
 .chat-message-body li{white-space:pre-wrap;padding-left:3px;margin:4px 0}
 .chat-message-body h3{font-size:17px;line-height:1.6;margin:16px 0 8px;font-weight:650;white-space:pre-wrap}
 .chat-message-body h3:first-child{margin-top:0}
-.chat-message-body pre{white-space:pre;overflow:auto;max-width:100%;margin:10px 0 12px;padding:15px;border:1px solid #e5e7e9;border-radius:12px;background:#f6f7f8;font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4}
+.chat-message-body pre{white-space:pre;overflow:auto;max-width:100%;margin:10px 0 12px;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--surface-alt);font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4}
 .chat-attachments{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 9px}
-.chat-attachment{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 9px;border:1px solid #e3e5e8;border-radius:9px;background:#f6f7f8;color:#777e85;font-size:12px;line-height:1.5}
+.chat-attachment{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface-alt);color:var(--muted);font-size:12px;line-height:1.5}
 .chat-attachment .icon{width:16px;height:16px}
 .chat-attachment span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chat-message-body:has(>.chat-attachments:only-child) .chat-attachments{margin-bottom:0}
-.chat-message[data-phase="activity"]{margin-bottom:12px}
-.chat-message[data-phase="activity"] .chat-message-body{font-size:13px;line-height:1.6;color:#72777c;padding-left:12px;border-left:2px solid #e8e9eb}
-.chat-message[data-phase="activity"] .chat-message-body p{margin-bottom:5px}
-.chat-message[data-phase="activity"] .chat-message-foot{min-height:16px;margin-top:2px}
-.chat-message[data-phase="activity"] .chat-copy{display:none}
-.chat-process{margin:9px 0 12px;color:#747980;font-size:13px;line-height:1.6}
-.chat-process summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;min-height:30px}
+.chat-message:is([data-phase="activity"],[data-phase="reasoning"]){margin-bottom:12px}
+.chat-message:is([data-phase="activity"],[data-phase="reasoning"]) .chat-message-body{font-size:13px;line-height:1.6;color:var(--muted)}
+.chat-message:is([data-phase="activity"],[data-phase="reasoning"]) .chat-message-foot{display:none}
+.chat-message:is([data-phase="activity"],[data-phase="reasoning"]) .chat-copy{display:none}
+.chat-message:is([data-phase="activity"],[data-phase="reasoning"]) .chat-process{margin:0}
+.chat-process{margin:9px 0 12px;color:var(--muted);font-size:13px;line-height:1.6}
+.chat-process summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;min-height:36px;width:fit-content;max-width:100%;border-radius:8px;-webkit-tap-highlight-color:transparent;font-variant-numeric:tabular-nums}
 .chat-process summary::-webkit-details-marker{display:none}
-.chat-process summary::before{content:'';width:6px;height:6px;border-right:1.4px solid currentColor;border-bottom:1.4px solid currentColor;transform:rotate(-45deg);flex-shrink:0;margin-right:2px}
-.chat-process[open] summary::before{transform:rotate(45deg)}
-.chat-process-content{border-left:2px solid #e8e9eb;padding:5px 0 3px 12px;margin-top:4px}
+.chat-process summary::after{content:'';width:6px;height:6px;border-right:1.4px solid currentColor;border-bottom:1.4px solid currentColor;transform:rotate(-45deg);flex-shrink:0;margin-right:3px;transition:transform .15s ease}
+.chat-process[open] summary::after{transform:rotate(45deg)}
+.chat-process summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.chat-process summary:active{color:var(--ink)}
+.chat-process,.chat-work-status{border-bottom:1px solid var(--line);padding-bottom:4px}
+.chat-work-status{margin:0 0 14px;min-height:36px;display:flex;align-items:center;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.chat-process-content{padding:4px 0 8px;margin-top:0;color:var(--muted);font-size:14px;line-height:1.65}
+.chat-process-reasoning{color:var(--muted);font-size:13px}
+.chat-process-search{display:flex;align-items:flex-start;gap:7px;font-size:12px}
+.chat-process-search .icon{width:15px;height:15px;flex-shrink:0;margin-top:2px}
 .chat-process-content h3{font-size:14px}
 .chat-process-content pre{font-size:12px}
 .chat-process-content p{margin-bottom:6px}
-.queued-strip{margin:0 0 6px;padding:0 2px 6px;border-bottom:1px solid #e7e8ea}
-.queued-toggle{display:flex;align-items:center;gap:7px;width:100%;min-height:30px;padding:3px 0;border:0;background:transparent;color:#777d83;text-align:left;font:inherit;font-size:12px;cursor:pointer}
+.queued-strip{margin:0 0 6px;padding:0 2px 6px;border-bottom:1px solid var(--line)}
+.queued-toggle{display:flex;align-items:center;gap:7px;width:100%;min-height:30px;padding:3px 0;border:0;background:transparent;color:var(--muted);text-align:left;font:inherit;font-size:12px;cursor:pointer}
 .queued-toggle .icon{width:15px;height:15px}
 .queued-preview{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.queued-count{white-space:nowrap;font-size:11px;color:#9a9fa4}
+.queued-count{white-space:nowrap;font-size:11px;color:var(--muted)}
 .queued-list{max-height:24vh;overflow:auto;overscroll-behavior:contain;padding:4px 0}
-.queued-item{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;color:#72777c;padding:7px 9px;background:#f0f1f3;border-radius:9px;margin-bottom:5px}
+.queued-item{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;color:var(--muted);padding:7px 9px;background:var(--line);border-radius:9px;margin-bottom:5px}
+.queue-card{padding:6px 10px;border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
+.queue-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:32vh;overflow:auto;font-size:14px;line-height:1.65}
+.queue-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.queue-actions button{min-height:44px;min-width:64px}
+.queue-row{display:flex;align-items:center;gap:8px}
+.queue-row>.queue-text{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;border:0;background:transparent;text-align:left;color:inherit;padding:8px 0;cursor:pointer}
+.queue-row>.queue-actions{flex:none;flex-wrap:nowrap;gap:2px;margin:0}
+.queue-row>.queue-actions .btn{min-width:44px;padding:0 8px;border:0;background:transparent;box-shadow:none;font-size:14px;font-weight:500;white-space:nowrap}
+.queue-actions .queue-icon{min-width:44px;width:44px;padding:0;display:grid;place-items:center}
+.queue-actions .queue-icon .icon{width:18px;height:18px}
+.queue-menu{display:flex;justify-content:flex-end;margin-top:4px}
+.queue-menu .btn{min-height:44px}
+.queue-full{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.65;padding:10px 0 0;border-top:1px solid var(--line)}
+.queue-status{margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.6}
+.queue-edit-hint{font-size:12px;color:var(--muted);padding:4px 0 8px}
 .phone-files{display:flex;gap:7px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:thin}
-.phone-file{display:flex;align-items:center;gap:7px;min-width:130px;max-width:220px;flex-shrink:0;padding:8px 10px;border:1px solid #e1e4e7;border-radius:11px;background:#fff;color:#535c66;font-size:12px}
+.phone-file{display:flex;align-items:center;gap:7px;min-width:130px;max-width:220px;flex-shrink:0;padding:8px 10px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:#535c66;font-size:12px}
 .phone-file-name{display:block;max-width:170px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.phone-file-status{display:block;color:#999fa6;font-size:11px;margin-top:2px}
+.phone-file-status{display:block;color:var(--muted);font-size:11px;margin-top:2px}
 .phone-file[data-state="unknown"],.phone-file[data-state="error"]{border-color:#e6b7b7}
-.phone-file-action{border:0;background:transparent;color:#8a919a;font:inherit;font-size:11px;padding:4px;cursor:pointer}
-.chat-empty{padding:50px 20px;text-align:center;color:#737b77;line-height:1.8}
+.phone-file-action{border:0;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:4px;cursor:pointer}
+.chat-empty{padding:50px 20px;text-align:center;color:var(--muted);line-height:1.8}
 .chat-error{color:#a13340;margin:8px 16px;line-height:1.6;padding:10px 12px;background:#fff1f2;border-radius:10px;max-height:110px;overflow:auto;font-size:13px}
-.chat-status{font-size:11.5px;line-height:1.6;color:#8a908c;margin-top:3px}
+.chat-status{font-size:11.5px;line-height:1.6;color:var(--muted);margin-top:3px}
 .settings-backdrop{position:fixed;inset:0;z-index:60;background:#14211b55;border:0;width:100%;height:100%;backdrop-filter:blur(3px)}
-.mobile-panel{position:fixed;inset:calc(12px + var(--safe-top)) auto calc(12px + var(--safe-bottom)) 50%;transform:translateX(-50%);z-index:66;width:min(520px,calc(100% - 24px));display:flex;flex-direction:column;min-height:0;border:1px solid #e8ece9;border-radius:20px;background:#fff;box-shadow:0 18px 70px #0003;overflow:hidden}
-.panel-head{display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:62px;padding:8px 14px 8px 22px;border-bottom:1px solid #f0f2f1}
+.mobile-panel{position:fixed;inset:calc(12px + var(--safe-top)) auto calc(12px + var(--safe-bottom)) 50%;transform:translateX(-50%);z-index:66;width:min(520px,calc(100% - 24px));display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:20px;background:var(--card);box-shadow:0 18px 70px #0003;overflow:hidden}
+.panel-head{display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:62px;padding:8px 14px 8px 22px;border-bottom:1px solid var(--line)}
 .panel-head h2{flex:1;min-width:0;margin:0;font-size:18px;font-weight:650;color:#26382f}
 .panel-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:40px;height:40px;min-height:40px;padding:9px;border:0;border-radius:12px;background:transparent;color:#6d7871;cursor:pointer}
 .panel-icon:hover{background:#f0f3f1}
-.panel-icon:focus-visible{outline:2px solid #60877a;outline-offset:-2px}
+.panel-icon:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .panel-icon .icon{width:20px;height:20px}
 .panel-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 20px 24px}
 .settings-body{background:#f7f8f7;padding:6px 16px 24px}
 .settings-group{margin-top:18px}
-.settings-group>h3{margin:0 8px 8px;color:#7a857e;font-size:12px;font-weight:500}
-.settings-surface{padding:4px 14px;border:1px solid #e8ece9;border-radius:15px;background:#fff}
+.settings-group>h3{margin:0 8px 8px;color:var(--muted);font-size:12px;font-weight:500}
+.settings-surface{padding:4px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}
 .setting-row{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:58px;font-size:14px}
-.setting-row+.setting-row{border-top:1px solid #f0f2f0}
-.setting-row label{margin:0;font:inherit;color:#34453a}
-.setting-row select{max-width:58%;width:auto;min-width:140px;margin:0;padding:8px 28px 8px 10px;min-height:38px;font-size:12px;background-color:#f6f8f6;border-color:#e8ece9}
+.setting-row+.setting-row{border-top:1px solid var(--line)}
+.setting-row label{margin:0;font:inherit;color:var(--ink)}
+.setting-row select{max-width:58%;width:auto;min-width:140px;margin:0;padding:8px 28px 8px 10px;min-height:38px;font-size:12px;background-color:var(--surface-alt);border-color:var(--line)}
 .settings-surface .btn{min-height:36px;padding:7px 11px;font-size:12px;border-radius:9px}
 .settings-surface .screen-stats{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 12px}
-.settings-surface .stat{font-size:11px;background:#f5f7f5;border:0}
+.settings-surface .stat{font-size:11px;background:var(--surface-alt);border:0}
 .settings-window{padding:6px 0 12px}
 .settings-window select{margin:10px 0;font-size:13px;min-height:42px}
-.settings-window .state-line{margin:0;color:#7b877f;font-size:12px;line-height:1.5}
-.settings-shortcuts summary{padding:16px 0;cursor:pointer;font-size:14px;color:#34453a}
+.settings-window .state-line{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.settings-shortcuts summary{padding:16px 0;cursor:pointer;font-size:14px;color:var(--ink)}
 .settings-shortcuts .key-grid{padding-bottom:10px}
 .settings-shortcuts .scroll-row{padding-bottom:12px}
-.settings-version{margin:20px 0 0;text-align:center;font-size:11px;color:#9aa39d}
+.settings-version{margin:20px 0 0;text-align:center;font-size:11px;color:var(--muted)}
 .navigation-panel{padding:0}
 .navigation-content{display:flex;flex:1;min-height:0;flex-direction:column;padding:4px 16px 16px}
 .navigation-panel h2{font-size:16px;font-weight:650}
-.navigation-panel .navigation-search{flex-shrink:0;margin:0 0 8px;background:#f5f5f6;border-color:transparent;border-radius:11px;font-size:14px;min-height:44px;padding:10px 12px}
+.navigation-panel .navigation-search{flex-shrink:0;margin:0 0 8px;background:var(--surface-alt);border-color:transparent;border-radius:11px;font-size:14px;min-height:44px;padding:10px 12px}
 .navigation-filters{display:flex;gap:4px;flex-shrink:0;padding:0 0 4px}
-.navigation-filter{min-height:32px;border:0;border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;background:transparent;color:#777e86;cursor:pointer}
-.navigation-filter[aria-pressed="true"]{background:#eceef0;color:#333940;font-weight:600}
+.navigation-filter{min-height:32px;border:0;border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;background:transparent;color:var(--muted);cursor:pointer}
+.navigation-filter[aria-pressed="true"]{background:var(--surface-alt);color:var(--ink);font-weight:600}
 .navigation-panel .error-text{margin:4px 0;min-height:0;flex-shrink:0}
 .navigation-panel .error-text:empty{display:none}
 .navigation-list{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0}
-.navigation-empty{margin:20px 8px;color:#858b92;text-align:center;font-size:13px}
+.navigation-empty{margin:20px 8px;color:var(--muted);text-align:center;font-size:13px}
 .navigation-group{margin:0 0 4px;padding:0;background:transparent;border:0}
-.navigation-item{display:flex;align-items:center;gap:8px;border:0;border-radius:10px;background:transparent;width:100%;min-height:44px;padding:10px;text-align:left;color:#545b63;font:inherit;font-size:13px;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
-.navigation-item:hover{background:#f5f5f6}
+.navigation-item{display:flex;align-items:center;gap:8px;border:0;border-radius:10px;background:transparent;width:100%;min-height:44px;padding:10px;text-align:left;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+.navigation-item:hover{background:var(--surface-alt)}
 .navigation-item:disabled{opacity:.5;cursor:wait}
-.navigation-item[data-kind="project"]{font-weight:600;font-size:14px;color:#282e34}
-.navigation-item[data-kind="thread"]{padding-left:30px;color:#68717b}
-.navigation-item[data-kind="more"]{padding-left:30px;color:#858b92;font-size:12px}
-.navigation-item[data-active="true"]{background:#eff0f2;color:#252a30}
+.navigation-item[data-kind="project"]{font-weight:600;font-size:14px;color:var(--ink)}
+.navigation-item[data-kind="thread"]{padding-left:30px;color:var(--muted)}
+.navigation-item[data-kind="more"]{padding-left:30px;color:var(--muted);font-size:12px}
+.navigation-project-empty{margin:0;padding:4px 10px 12px 30px;font-size:12px;color:var(--muted)}
+.navigation-item[data-active="true"]{background:var(--surface-alt);color:var(--ink)}
 .navigation-item .navigation-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.navigation-icon,.navigation-chevron{display:flex;align-items:center;flex-shrink:0;color:#92979d}
+.navigation-icon,.navigation-chevron{display:flex;align-items:center;flex-shrink:0;color:var(--muted)}
 .navigation-icon{width:18px}
 .navigation-icon .icon,.navigation-chevron .icon{width:17px;height:17px}
 .navigation-project-head{display:flex;align-items:center;gap:0}
 .navigation-project-head>.navigation-item{flex:1;min-width:0}
-.navigation-project-new{flex-shrink:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:transparent;color:#727981;cursor:pointer}
-.navigation-project-new:hover{background:#f1f2f4;color:#30363c}
-.navigation-project-new:focus-visible{outline:2px solid #60877a;outline-offset:-2px}
+.navigation-project-new{flex-shrink:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;border-radius:10px;background:transparent;color:var(--muted);cursor:pointer}
+.navigation-project-new:hover{background:var(--surface-alt);color:var(--ink)}
+.navigation-project-new:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .navigation-project-new .icon{width:20px;height:20px}
 .navigation-new{width:44px;height:44px}
 .navigation-item[aria-busy="true"] .navigation-icon,.navigation-project-new[aria-busy="true"] .icon{display:none}
-.send-progress{display:flex;align-items:center;gap:7px;padding:0 14px 6px;color:#7a827e;font-size:12px;line-height:1.5}
+.send-progress{display:flex;align-items:center;gap:7px;padding:0 14px 6px;color:var(--muted);font-size:12px;line-height:1.5}
 .send-progress .control-spinner{display:inline-block}
 .options-panel{inset:auto auto calc(12px + var(--safe-bottom)) 50%;max-height:76vh}
 .options-list{display:grid;gap:3px}
-.option-row{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:12px;border:0;border-radius:11px;text-align:left;background:transparent;font:inherit;font-size:14px;color:#33483a;cursor:pointer}
-.option-row:hover,.option-row[data-selected="true"]{background:#eef4ef}
+.option-row{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:12px;border:0;border-radius:11px;text-align:left;background:transparent;font:inherit;font-size:14px;color:var(--ink);cursor:pointer}
+.option-row:hover,.option-row[data-selected="true"]{background:var(--surface-alt)}
 .option-row:disabled{opacity:.45;cursor:default}
 .option-row .option-title{flex:1;min-width:0;overflow-wrap:anywhere}
-.option-caption{display:block;color:#8b988f;font-size:11px;line-height:1.5;margin-top:3px}
-.option-mark{width:20px;flex-shrink:0;color:#7e9585;text-align:center}
+.option-caption{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:3px}
+.option-mark{width:20px;flex-shrink:0;color:var(--muted);text-align:center}
 .option-error{margin:6px 0 12px;font-size:12px;line-height:1.6;color:#a13340}
-.option-empty{margin:16px 8px;color:#849087;font-size:13px;line-height:1.6}
-.option-screen{width:100%;margin-top:12px;border:1px solid #e6ebe7;border-radius:12px;background:#f8faf8;color:#687e6d;min-height:42px;font:inherit;font-size:12px;cursor:pointer}
+.option-empty{margin:16px 8px;color:var(--muted);font-size:13px;line-height:1.6}
+.option-screen{width:100%;margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-alt);color:var(--muted);min-height:42px;font:inherit;font-size:12px;cursor:pointer}
 .option-surface{display:block;width:100%;height:auto;border-radius:14px;touch-action:none;cursor:pointer;margin:6px 0 10px}
-.remote-mode #composerOptionsBtn{flex-shrink:0;width:32px;min-width:32px;min-height:38px;padding:6px 2px;border:0;background:transparent;color:#7b8a80;border-radius:10px}
+.remote-mode #composerOptionsBtn{flex-shrink:0;width:32px;min-width:32px;min-height:38px;padding:6px 2px;border:0;background:transparent;color:var(--muted);border-radius:10px}
 .remote-mode #composerOptionsBtn .icon{width:21px;height:21px}
 @media(max-width:600px){.mobile-panel{inset:0 0 auto;transform:none;width:100%;height:var(--app-height,100dvh);border:0;border-radius:0;padding-top:var(--safe-top);padding-bottom:var(--safe-bottom)}.panel-head{padding-left:20px;min-height:58px}.options-panel{inset:auto 0 0;height:auto;max-height:78vh;border-radius:22px 22px 0 0;padding-top:0}.draft-panel{inset:0;transform:none;width:100%;max-height:none}}
 .setting-choice{width:100%;display:flex;align-items:center;gap:12px;min-height:56px;padding:12px 0;border:0;background:transparent;color:#292d32;font:inherit;font-size:14px;text-align:left;cursor:pointer}
@@ -426,87 +463,87 @@ select{min-height:44px}
 .setting-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:13px;color:#858a90}
 .setting-choice .icon{width:16px;height:16px;color:#a2a6ab;transition:transform .15s}
 .setting-choice[aria-expanded="true"] .icon{transform:rotate(90deg)}
-.setting-choices{padding:0 0 8px;border-top:1px solid #f0f1f3}
-.setting-option{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 8px;border:0;border-radius:9px;background:transparent;font:inherit;font-size:13px;color:#656b72;text-align:left;cursor:pointer}
+.setting-choices{padding:0 0 8px;border-top:1px solid var(--line)}
+.setting-option{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 8px;border:0;border-radius:9px;background:transparent;font:inherit;font-size:13px;color:var(--ink);text-align:left;cursor:pointer}
 .setting-option>span{flex:1;overflow-wrap:anywhere}
-.setting-option[aria-checked="true"]{color:#20242a;background:#f0f1f3}
-.setting-option:hover,.setting-choice:hover{background:#f7f7f8}
-.setting-switch{position:relative;flex-shrink:0;width:40px;height:24px;min-height:24px;border:0;padding:0;border-radius:20px;background:#dadddf;cursor:pointer}
-.setting-switch .switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .15s}
-.setting-switch[aria-checked="true"]{background:#272b31}
+.setting-option[aria-checked="true"]{color:var(--ink);background:var(--line)}
+.setting-option:hover,.setting-choice:hover{background:var(--surface-alt)}
+.setting-switch{position:relative;flex-shrink:0;width:40px;height:24px;min-height:24px;border:0;padding:0;border-radius:20px;background:var(--line);cursor:pointer}
+.setting-switch .switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px #0002;transition:transform .15s}
+.setting-switch[aria-checked="true"]{background:var(--ink)}
 .setting-switch[aria-checked="true"] .switch-thumb{transform:translateX(16px)}
-.settings-surface{border-color:#e9eaec;border-radius:14px}
-.settings-body{background:#f7f7f8}
+.settings-surface{border-color:var(--line);border-radius:14px}
+.settings-body{background:var(--surface-alt)}
 .settings-surface .setting-switch{padding:0;min-height:24px}
-.panel-head h2{color:#24282d}
-.option-row{color:#30363c;min-height:54px}
-.option-row:hover,.option-row[data-selected="true"]{background:#f1f2f4}
-.option-mark{display:flex;align-items:center;justify-content:center;color:#8c939a}
+.panel-head h2{color:var(--ink)}
+.option-row{color:var(--ink);min-height:54px}
+.option-row:hover,.option-row[data-selected="true"]{background:var(--surface-alt)}
+.option-mark{display:flex;align-items:center;justify-content:center;color:var(--muted)}
 .option-mark .icon{width:19px;height:19px}
-.option-caption{color:#9399a0;font-size:12px}
-.option-row[data-pending="true"]{opacity:1;background:#f3f4f6}
+.option-caption{color:var(--muted);font-size:12px}
+.option-row[data-pending="true"]{opacity:1;background:var(--surface-alt)}
 .control-spinner{display:inline-block;width:15px;height:15px;border:1.7px solid #cbd0d5;border-top-color:#535c65;border-radius:50%;animation:control-spin .65s linear infinite}
 @keyframes control-spin{to{transform:rotate(360deg)}}
-button:focus-visible,summary:focus-visible{outline:2px solid #747c86;outline-offset:2px}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.setting-switch .switch-thumb,.setting-choice .icon{transition:none}}
-.remote-toolbar{display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:54px;padding:calc(7px + var(--safe-top)) 14px 7px;border-bottom:1px solid #f0f2f1}
+.remote-toolbar{display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:54px;padding:calc(7px + var(--safe-top)) 14px 7px;border-bottom:1px solid var(--line)}
 .context-picker{display:flex;align-items:center;gap:7px;flex:1;min-width:0;min-height:38px;padding:4px 2px;border:0;background:transparent;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
 #currentContextTitle{font-size:14px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
-.context-arrow{color:#8a958f;font-size:14px;flex-shrink:0}
+.context-arrow{color:var(--muted);font-size:14px;flex-shrink:0}
 .icon-compose{fill:currentColor!important;stroke:none!important}
 .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
-.composer-tools{display:flex;align-items:center;gap:8px;font-size:11px;color:#8a958f}
-.composer-tools .btn{min-height:28px;padding:0 6px;border:0;background:transparent;font-size:11px;font-weight:500;color:#74837a}
+.composer-tools{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.composer-tools .btn{min-height:28px;padding:0 6px;border:0;background:transparent;font-size:11px;font-weight:500;color:var(--muted)}
 .composer-tools:has(>button:not([hidden])){margin-bottom:3px}
 .composer-tools .btn[data-has-draft="true"]{color:#946019}
 #recoveredUndoBtn{margin-left:auto}
 .draft-panel{inset:calc(30px + var(--safe-top)) auto auto 50%;transform:translateX(-50%);width:min(520px,calc(100% - 28px));max-height:calc(var(--app-height,100dvh) - 60px - var(--safe-top) - var(--safe-bottom));overflow:auto;overscroll-behavior:contain}
 .draft-panel .card-head{gap:8px}
 .draft-panel .draft-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 0 0}
-.draft-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:25vh;overflow:auto;margin:8px 0 12px;padding:13px;border:1px solid #e4e9e6;border-radius:12px;background:#f7f9f7;color:#34463a;font:inherit;font-size:13px;line-height:1.7}
-.draft-label{font-size:11px;color:#829087}
+.draft-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:25vh;overflow:auto;margin:8px 0 12px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-alt);color:var(--ink);font:inherit;font-size:13px;line-height:1.7}
+.draft-label{font-size:11px;color:var(--muted)}
 .draft-actions{display:grid;gap:8px;margin-top:12px}
 .draft-actions .btn{min-height:42px;font-size:13px}
 .draft-actions .danger{color:#a13340;border-color:#efc9cd}
 .draft-panel .navigation-footer{margin-top:12px}
 .draft-panel .error-text{margin:8px 0 0;font-size:12px}
-body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;background:#fff;display:flex;flex-direction:column}
+body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;background:var(--card);display:flex;flex-direction:column}
 .remote-mode .topbar{display:none}
 .remote-mode .badge{position:absolute;right:3px;top:3px;width:7px;height:7px;min-width:7px;padding:0;border:0;border-radius:50%;font-size:0;overflow:hidden;background:#aab4af;color:#aab4af}
 .remote-mode .badge::before{display:none}
 .remote-mode .badge[data-tone="good"]{background:#44956a}
 .remote-mode .badge[data-tone="warn"]{background:#d89b39}
 .remote-mode .badge[data-tone="bad"]{background:#c85b64}
-.remote-mode #settingsToggleBtn{position:relative;border:0;background:transparent;min-height:36px;width:34px;padding:0;border-radius:10px;color:#6f7b75;flex-shrink:0}
+.remote-mode #settingsToggleBtn{position:relative;border:0;background:transparent;min-height:36px;width:34px;padding:0;border-radius:10px;color:var(--muted);flex-shrink:0}
 .remote-mode #remoteView{width:100%;max-width:860px;padding:0 0 var(--safe-bottom);flex:1;min-height:0;display:flex;flex-direction:column}
-.remote-mode .view-switch{flex-shrink:0;width:106px;margin:0;padding:3px;background:#f1f3f2;border-radius:10px}
+.remote-mode .view-switch{flex-shrink:0;width:106px;margin:0;padding:3px;background:var(--surface-alt);border-radius:10px}
 .remote-mode .view-switch .btn{min-height:30px;padding:0 8px;font-size:12px;border-radius:8px}
 .remote-mode .layout{display:flex;flex-direction:column;flex:1;min-height:0;gap:0}
 .remote-mode .conversation-card{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none}
-.remote-mode #conversationTitle{font-size:13px;font-weight:550;color:#636b67}
-.remote-mode #chatLatestBtn{position:absolute;right:20px;bottom:12px;min-height:34px;width:34px;font-size:19px;padding:0;border:1px solid #e7eae8;border-radius:50%;background:#fff;color:#78817c;box-shadow:0 2px 8px #173d2010}
+.remote-mode #conversationTitle{font-size:13px;font-weight:550;color:var(--muted)}
+.remote-mode #chatLatestBtn{position:absolute;right:20px;bottom:12px;min-height:34px;width:34px;font-size:19px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--muted);box-shadow:0 2px 8px #173d2010}
 .remote-mode .chat-messages{height:auto;min-height:0;flex:1;padding:20px 20px 6px}
 .remote-mode .chat-empty{flex:1;display:grid;place-content:center;min-height:0}
 .remote-mode .conversation-card>.tip{display:none}
 .remote-mode .side{display:contents}
-.remote-mode .composer-card{flex:0 0 auto;width:calc(100% - 28px);max-width:760px;align-self:center;margin:6px 14px 10px;padding:8px 10px 8px 14px;border:1px solid #e2e5e4;border-radius:23px;background:#f9faf9;box-shadow:0 3px 14px #17282006}
+.remote-mode .composer-card{flex:0 0 auto;width:calc(100% - 28px);max-width:760px;align-self:center;margin:6px 14px 10px;padding:8px 10px 8px 14px;border:1px solid var(--line);border-radius:23px;background:var(--surface-alt);box-shadow:0 3px 14px #17282006}
 .remote-mode .composer-card h2{display:none}
 .composer-input{display:flex;align-items:flex-end;gap:10px}
 .remote-mode #message{flex:1;min-width:0;display:block;resize:none;min-height:40px;max-height:150px;padding:7px 0;border:0;border-radius:0;background:transparent;line-height:1.6}
 .remote-mode #message:focus-visible{outline:none}
 .remote-mode .composer-card:focus-within{border-color:#bfc4ca;box-shadow:0 0 0 2px #e9ebee80}
-.remote-mode #sendEnterBtn{flex-shrink:0;width:38px;min-width:38px;min-height:38px;padding:0;margin:0 0 1px;border-radius:50%;background:#252a30;border-color:#252a30;color:#fff}
+.remote-mode #sendEnterBtn{flex-shrink:0;width:38px;min-width:38px;min-height:38px;padding:0;margin:0 0 1px;border-radius:50%;background:var(--ink);border-color:var(--ink);color:var(--card)}
 .remote-mode #sendEnterBtn:disabled{background:#dadde1;border-color:#dadde1}
 .remote-mode .banner{margin:0 12px 6px;flex-shrink:0;padding:8px 10px}
 .remote-mode .screen-card{display:flex;flex-direction:column;flex:1;min-height:0;padding:10px 14px 0;border:0;border-radius:0;box-shadow:none;overflow:auto}
 .remote-mode .screen-card>.card-head{display:none}
-.remote-mode .screen-card h2{font-size:13px;font-weight:550;color:#636b67}
-.remote-mode .screen-card .sub{font-size:11px;color:#8a908c}
+.remote-mode .screen-card h2{font-size:13px;font-weight:550;color:var(--muted)}
+.remote-mode .screen-card .sub{font-size:11px;color:var(--muted)}
 .remote-mode .screen-stats{gap:4px}
-.remote-mode .screen-stats .stat{font-size:10px;padding:4px 6px;border:0;border-radius:8px;background:#f3f6f4}
-.remote-mode .screen-stats .btn{min-height:30px;border:0;background:#f3f6f4;font-size:11px;padding:0 8px;border-radius:8px}
+.remote-mode .screen-stats .stat{font-size:10px;padding:4px 6px;border:0;border-radius:8px;background:var(--surface-alt)}
+.remote-mode .screen-stats .btn{min-height:30px;border:0;background:var(--surface-alt);font-size:11px;padding:0 8px;border-radius:8px}
 .remote-mode .screen-shell:not(.immersive){flex:1;min-height:130px;aspect-ratio:auto;max-height:none;margin-top:0;border-radius:14px}
-.remote-mode #fullscreenBtn{position:absolute;z-index:4;right:10px;top:10px;width:34px;min-height:34px;padding:0;border:0;border-radius:9px;background:#fffdf8dd;color:#35443c}
+.remote-mode #fullscreenBtn{position:absolute;z-index:4;right:10px;top:10px;width:34px;min-height:34px;padding:0;border:0;border-radius:9px;background:#fffdf8dd;color:var(--ink)}
 .remote-mode .screen-shell.immersive #fullscreenBtn{display:none}
 .remote-mode .screen-foot{flex-shrink:0;padding:8px 4px 2px;gap:3px;margin-top:0}
 .remote-mode .screen-foot .tip{font-size:10.5px;color:#8a958e}
@@ -514,6 +551,109 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
 .remote-mode .gate-line,.remote-mode .error-line{font-size:12px}
 @media(max-width:380px){.remote-toolbar{gap:6px;padding-left:12px;padding-right:10px}.remote-mode .chat-messages{padding-left:16px;padding-right:16px}.chat-message-body{font-size:15.5px}}
 @media(max-width:600px){.mobile-panel.draft-panel{inset:0;transform:none;width:100%;height:var(--app-height,100dvh);max-height:none;border-radius:0}}
+/* Shared connection language, from DSH Connect's native connection screens. */
+body{background:var(--bg);color:var(--ink)}
+body.remote-mode{background:var(--bg)}
+.pair-card{border-color:var(--line);border-radius:24px}
+.pair-view{padding-left:24px;padding-right:24px}
+#pairForm .btn{min-height:50px;border-radius:15px}
+#pairError:empty{display:none}
+#pairForm #pin{font-size:23px;letter-spacing:7px;font-variant-numeric:tabular-nums}
+.pair-name{margin-top:8px;color:var(--muted);font-size:13px}.pair-name summary{padding:8px 0;cursor:pointer;list-style:none}.pair-name summary::before{content:'+';margin-right:8px}.pair-name[open] summary::before{content:'−'}.pair-name input{letter-spacing:normal}
+.remote-toolbar{border:0;background:var(--bg);padding-left:16px;padding-right:16px;min-height:58px}
+.remote-mode .view-switch{background:var(--surface-alt);border-radius:13px;padding:4px}
+.remote-mode .view-switch .btn{border-radius:9px}
+.remote-mode .view-switch .btn[aria-pressed="true"]{background:var(--card);color:var(--ink)}
+.remote-mode #settingsToggleBtn,.context-arrow,.composer-tools,.composer-tools .btn{color:var(--muted)}
+.remote-mode .conversation-card{background:var(--bg)}
+.remote-mode .chat-messages{padding:12px 16px 4px}
+.chat-message[data-role="assistant"][data-phase="answer"] .chat-message-body{padding:0;background:transparent}
+.chat-message[data-role="user"] .chat-message-body{background:var(--surface-alt);border-radius:20px 20px 6px 20px}
+.chat-message-body{color:var(--ink)}.chat-process,.chat-process-content,.chat-timestamp{color:var(--muted)}
+.remote-mode .composer-card{background:var(--card);border-color:var(--line);border-radius:24px;box-shadow:0 3px 18px #20232904}
+.remote-mode .composer-card:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px #4d6bfe12}
+.remote-mode #sendEnterBtn{background:var(--accent);border-color:var(--accent);border-radius:14px}
+.btn.primary,#pairForm .btn,.remote-mode #sendEnterBtn{color:#fff}
+.remote-mode #sendEnterBtn:disabled{background:var(--line);border-color:var(--line);color:var(--muted)}
+.remote-mode #composerOptionsBtn{color:var(--muted)}
+.mobile-panel,.settings-body{background:var(--bg)}
+.panel-head{background:var(--bg);border-color:var(--line)}.panel-head h2{color:var(--ink)}
+.panel-icon{color:var(--ink);border-radius:12px}
+.settings-group>h3,.settings-shortcuts summary,.setting-value,.option-caption,.option-mark{color:var(--muted)}
+.settings-surface{background:var(--card);border:1px solid var(--line);border-radius:20px}
+.setting-choice,.setting-row,.setting-row label,.setting-option,.option-row{color:var(--ink)}
+.setting-choice:hover,.setting-option:hover,.option-row:hover,.option-row[data-selected="true"]{background:var(--surface-alt)}
+.setting-switch[aria-checked="true"]{background:var(--accent)}
+.setting-switch .switch-thumb{background:#fff}
+.navigation-content{padding-top:8px;background:var(--bg)}
+.navigation-panel .navigation-search{border:1px solid var(--line);background:var(--card);border-radius:13px}
+.navigation-filters{padding-bottom:8px}.navigation-filter{color:var(--muted);border-radius:11px}
+.navigation-filter[aria-pressed="true"]{background:var(--card);color:var(--accent)}
+.navigation-group{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:3px;margin-bottom:10px}
+.navigation-item,.navigation-item[data-kind="project"]{color:var(--ink)}
+.navigation-item[data-kind="thread"],.navigation-item[data-kind="more"]{color:var(--muted)}
+.navigation-item[data-active="true"]{background:var(--accent-soft);color:var(--accent)}
+.navigation-project-new,.navigation-icon,.navigation-chevron{color:var(--muted)}
+.options-list{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:4px}
+.draft-preview{border-color:var(--line);background:var(--card);color:var(--ink)}
+@media(prefers-color-scheme:dark){:root,body:not(.remote-mode){--bg:#15171b;--card:#202329;--surface-alt:#2b2f37;--ink:#f2f4f8;--muted:#a0a6b2;--line:#363b43;--accent:#657fff;--accent-ink:#8fa3ff;--accent-soft:#28324c;color-scheme:dark}}
+/* Shared Nx controls, scaled for touch; connection hierarchy follows DSH Connect. */
+.btn.primary,.remote-mode #sendEnterBtn{color:var(--action-ink)}
+button,a,summary{-webkit-tap-highlight-color:transparent}
+.context-picker{min-height:44px;padding:5px 8px;border-radius:14px;box-shadow:none;touch-action:manipulation;transition:background .12s}
+.context-picker .context-arrow{width:16px;height:16px;flex:none;stroke-width:1.7}
+.context-picker:focus:not(:focus-visible){outline:none}
+.context-picker:active{background:var(--surface-alt)}
+@media(hover:hover){.context-picker:hover{background:var(--surface-alt)}}
+@media(prefers-reduced-motion:reduce){.context-picker{transition:none}}
+.setting-switch[aria-checked="true"] .switch-thumb{background:var(--action-ink)}
+.settings-shortcuts summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer}
+.settings-shortcuts summary::-webkit-details-marker{display:none}
+.settings-shortcuts summary::after{content:'';width:6px;height:6px;flex:none;margin:0 3px;border-top:1.5px solid currentColor;border-right:1.5px solid currentColor;transform:rotate(45deg);transition:transform .15s}
+.settings-shortcuts[open] summary::after{transform:rotate(135deg)}
+@media(prefers-reduced-motion:reduce){.settings-shortcuts summary::after{transition:none}}
+.connection-page{width:100%;max-width:480px;margin:0 auto;padding:calc(24px + var(--safe-top)) max(24px,var(--safe-right)) calc(28px + var(--safe-bottom)) max(24px,var(--safe-left))}
+.connection-header{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;margin-bottom:28px}
+.connection-brand{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:650;letter-spacing:-.4px;white-space:nowrap}
+.connection-brand img{flex:none;border-radius:10px}
+.connection-header .panel-icon{flex:none;width:40px;height:40px;border-radius:15px}
+.connection-help{position:relative;flex:none;font-size:12px;color:var(--muted)}
+.connection-help summary{list-style:none;cursor:pointer;padding:12px 0 12px 10px}
+.connection-help summary::-webkit-details-marker{display:none}
+.connection-help p{position:absolute;right:0;top:42px;width:244px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--ink);box-shadow:0 6px 24px #0001;z-index:2;line-height:1.65}
+.connection-eyebrow{font-size:12px;color:var(--muted);margin-bottom:12px}
+.connection-hero{font-size:29px;line-height:1.4;font-weight:700;letter-spacing:-.8px}
+.connection-title{font-size:27px;line-height:1.3;font-weight:700;letter-spacing:-.7px}
+.connection-subtitle{font-size:13px;line-height:1.75;color:var(--muted);margin-top:14px}
+.home-subtitle{margin-top:6px}
+.computer-cover{margin-top:20px;padding:18px 18px 20px;border:1px solid var(--line);border-radius:27px;background:var(--card)}
+.cover-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.connection-status{padding:3px 8px;border-radius:8px;background:var(--surface-alt);color:var(--muted);font-size:10px}
+.connection-status[data-ready="true"]{color:#218652;background:#e8f5ee}
+.computer-illustration{display:block;width:100%;height:184px;object-fit:contain;margin:10px auto 0}
+.cover-note{text-align:center;color:var(--muted);font-size:11px;margin-top:2px}
+.intro-cover{margin-top:24px;padding-bottom:17px}.intro-cover .computer-illustration{height:156px;margin-top:8px}
+.cover-identity{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 2px}
+.cover-identity>div{min-width:0}.cover-identity h3{margin:0;font-size:21px;line-height:1.35;font-weight:650;overflow-wrap:anywhere;letter-spacing:-.5px}
+.cover-identity p{margin-top:4px;font-size:12px;line-height:1.5;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cover-identity>img{flex:none}
+.connection-primary{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;min-height:50px;margin-top:16px;border:0;border-radius:15px;background:var(--connection);color:white;font-size:15px;font-weight:600;box-shadow:none}
+.connection-primary:not(:disabled):hover{background:#405ce5}.connection-primary .icon{width:18px;height:18px}
+.connection-footnote{font-size:12px;color:var(--muted);margin-top:18px}
+.connection-page-title{display:flex;align-items:center;gap:8px;margin:0 0 18px -8px}.connection-page-title h2{font-size:23px;font-weight:650}
+.connection-page .pair-card{width:100%;max-width:none;padding:22px;border-radius:24px;box-shadow:none}
+.connection-page #pairForm label{margin-top:0}.connection-page #pairForm .btn{background:var(--connection);color:white;border-color:transparent}
+.connection-page #pairForm #pin{width:100%;min-width:0;letter-spacing:7px}
+.connection-resume{margin-top:18px;padding:0 16px;border:1px solid var(--line);border-radius:20px;background:var(--card)}
+.resume-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:78px;padding:13px 0}
+.resume-row+.resume-row{border-top:1px solid var(--line)}
+.resume-row strong{font-size:13px;font-weight:500}.resume-row p{font-size:11px;color:var(--muted);margin-top:3px}.resume-row>span{font-size:11px;color:var(--muted);white-space:nowrap}
+.resume-row .setting-switch{flex:none;min-height:28px;width:46px;height:28px;padding:3px;border-radius:11px}.resume-row .switch-thumb{width:22px;height:22px;border-radius:8px}
+body.home-mode{background:var(--bg)}body.home-mode .topbar{display:none}
+@media(prefers-color-scheme:dark){
+  :root,body:not(.remote-mode){--bg:#1d1d1d;--surface-alt:#303030;--card:#262626;--ink:#f0f0f0;--muted:#9b9b9b;--line:#343434;--accent:#f0f0f0;--accent-ink:#f0f0f0;--accent-soft:#303030;--action-ink:#171717;--connection:#657fff}
+  .connection-status[data-ready="true"]{color:#75d8a8;background:#223b30}.connection-primary:not(:disabled):hover{background:#7890ff}
+}
 </style>
 </head>
 <body>
@@ -526,20 +666,38 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   </div>
 </header>
 
-<main id="pairView" class="pair-view">
-  <section class="card pair-card" aria-labelledby="pairTitle">
-    <h2 id="pairTitle">连接电脑</h2>
-    <p class="sub">输入电脑上显示的配对码</p>
+<main id="pairView" class="connection-page">
+  <header class="connection-header"><div class="connection-brand"><img src="/icon.svg?v=rm3" width="32" height="32" alt="">ChatGPT Remote</div><details class="connection-help"><summary>帮助</summary><p>在电脑任务栏打开 Rm，扫描二维码，再输入面板上的六位配对码。</p></details></header>
+  <section id="pairIntro" aria-labelledby="pairIntroTitle">
+    <p class="connection-eyebrow">连接你的主电脑</p><h2 class="connection-hero" id="pairIntroTitle">把电脑，<br>带在身边。</h2>
+    <p class="connection-subtitle">连接电脑上的 ChatGPT。<br>配对一次，随时继续。</p>
+    <div class="computer-cover intro-cover"><div class="cover-heading"><span>你的主电脑</span><span class="connection-status">等待配对</span></div><img class="computer-illustration" src="/computer-cover.svg?v=rm3" width="280" height="190" alt=""><p class="cover-note">电脑保持运行，手机随时接入。</p></div>
+    <button class="btn connection-primary" id="pairStartBtn" type="button">输入配对码</button>
+    <p class="connection-footnote">配对码在电脑托盘 Rm 面板中。</p>
+  </section>
+  <section id="pairEntry" hidden aria-labelledby="pairTitle">
+    <div class="connection-page-title"><button class="panel-icon" id="pairBackBtn" type="button" aria-label="返回连接首页"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="pairTitle">配对电脑</h2></div>
+    <div class="card pair-card">
     <form id="pairForm" novalidate>
-      <label for="pin">6 位配对码</label>
+      <label for="pin">配对码</label>
       <input id="pin" name="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-             autocomplete="one-time-code" autofocus placeholder="000000">
-      <label for="deviceName">设备名称</label>
+             autocomplete="one-time-code" placeholder="000000">
+      <details class="pair-name"><summary>设备名称（选填）</summary><label class="sr-only" for="deviceName">设备名称</label>
       <input id="deviceName" name="deviceName" type="text" maxlength="60" value="手机"
-             autocomplete="off" spellcheck="false">
+             autocomplete="off" spellcheck="false"></details>
       <div class="error-text" id="pairError" role="alert"></div>
       <button class="btn primary block" type="submit" id="pairBtn">连接电脑</button>
     </form>
+    </div>
+  </section>
+</main>
+
+<main id="homeView" class="connection-page" hidden>
+  <header class="connection-header"><div class="connection-brand"><img src="/icon.svg?v=rm3" width="32" height="32" alt="">ChatGPT Remote</div><button class="panel-icon" id="homeSettingsBtn" type="button" aria-label="设置" aria-controls="settingsPanel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3h5l.6 2.3 2 1.2 2.3-.6 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.3-.6-2 1.2-.6 2.2h-5l-.6-2.2-2-1.2-2.3.6-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.3.6 2-1.2L9.5 3Z"/><circle cx="12" cy="13" r="3.2"/></svg></button></header>
+  <section aria-labelledby="homeTitle"><h2 class="connection-title" id="homeTitle">我的主电脑</h2><p class="connection-subtitle home-subtitle">已保存的连接，随时继续。</p>
+    <div class="computer-cover"><div class="cover-heading"><span>主电脑</span><span class="connection-status" id="homeStatus" role="status">正在连接</span></div><img class="computer-illustration" src="/computer-cover.svg?v=rm3" width="280" height="190" alt=""><div class="cover-identity"><div><h3 id="homeComputerName">我的电脑</h3><p id="homeWindowName">正在读取连接状态…</p></div><img src="/icon.svg?v=rm3" width="30" height="30" alt=""></div></div>
+    <button class="btn connection-primary" id="homeOpenBtn" type="button"><span id="homeOpenLabel">返回对话</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+    <div class="connection-resume"><div class="resume-row"><div><strong>重新打开</strong><p>恢复上次对话或画面</p></div><button class="setting-switch" id="homeResumeBtn" type="button" role="switch" aria-checked="true" aria-label="自动恢复上次页面"><span class="switch-thumb"></span></button></div><div class="resume-row"><div><strong>从后台回来</strong><p>保留当前会话与输入内容</p></div><span>继续原位置</span></div></div>
   </section>
 </main>
 
@@ -553,14 +711,14 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   <div class="remote-toolbar">
     <button class="context-picker" type="button" id="navigationToggleBtn" aria-label="选择项目与对话" aria-controls="navigationPanel" aria-expanded="false">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
-      <span id="currentContextTitle">当前对话</span><span class="context-arrow" aria-hidden="true">⌄</span>
+      <span id="currentContextTitle">当前对话</span><svg class="icon context-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
     </button>
     <div class="view-switch" aria-label="查看方式">
       <button class="btn" type="button" id="chatViewBtn" aria-pressed="true">对话</button>
       <button class="btn" type="button" id="screenViewBtn" aria-pressed="false">画面</button>
     </div>
     <button class="btn ghost small" type="button" id="settingsToggleBtn" aria-label="设置" aria-controls="settingsPanel" aria-expanded="false">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.6 2.2-2 .9L4.4 5.5l-2 3.5L4 10.6v2.8L2.4 15l2 3.5 2-.6 2 .9L9 21h4l.6-2.2 2-.9 2 .6 2-3.5-1.6-1.6v-2.8L19.6 9l-2-3.5-2 .6-2-.9L13 3Z"/><circle cx="11" cy="12" r="3"/></svg>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3h5l.6 2.3 2 1.2 2.3-.6 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.3-.6-2 1.2-.6 2.2h-5l-.6-2.2-2-1.2-2.3.6-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.3.6 2-1.2L9.5 3Z"/><circle cx="12" cy="13" r="3.2"/></svg>
       <span class="badge" id="badge" role="status" aria-live="polite">未配对</span>
     </button>
   </div>
@@ -616,10 +774,12 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
           <div class="queued-list" id="queuedList" hidden></div>
         </div>
         <div class="composer-tools">
+          <button class="btn ghost" type="button" id="queueManagerBtn" aria-controls="queuePanel" aria-expanded="false">排队消息</button>
           <button class="btn ghost" type="button" id="computerDraftBtn" aria-controls="draftPanel" aria-expanded="false" hidden>电脑草稿</button>
           <button class="btn ghost" type="button" id="recoveredUndoBtn" hidden>恢复手机原稿</button>
         </div>
         <div class="send-progress" id="sendProgress" role="status" hidden><span class="control-spinner" aria-hidden="true"></span><span id="sendProgressText">发送中…</span></div>
+        <div class="queue-edit-hint" id="queueEditHint" role="status" hidden>正在编辑原排队消息，修改后点发送；附件保留在电脑输入框。</div>
         <div class="composer-input">
           <button class="btn" id="composerOptionsBtn" type="button" aria-label="对话选项" aria-controls="optionsPanel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
           <label class="sr-only" for="message">要发送到电脑的文字</label>
@@ -641,6 +801,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       <select id="submitMethod" aria-label="电脑端发送方式" hidden><option value="button">自动识别按钮</option><option value="CTRL+ENTER">Ctrl + Enter</option><option value="ENTER">Enter</option></select>
     </div></section>
     <section class="settings-group" aria-labelledby="connectionTitle"><h3 id="connectionTitle">连接</h3><div class="settings-surface">
+      <button class="setting-choice" id="computerHomeBtn" type="button"><span>我的主电脑</span><span class="setting-value" id="settingsComputerName"></span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
       <button class="setting-choice" id="windowChoiceBtn" type="button" aria-expanded="false" aria-controls="windowChoices"><span>电脑窗口</span><span class="setting-value" id="windowChoiceValue">选择窗口</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
       <div class="setting-choices" id="windowChoices" role="radiogroup" aria-label="电脑窗口" hidden></div>
       <select id="windowSelect" aria-label="可用窗口列表" hidden></select><button type="button" id="selectBtn" hidden>控制这个窗口</button>
@@ -675,7 +836,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   <header class="panel-head"><button class="panel-icon" type="button" id="navigationBackBtn" aria-label="返回项目与对话" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="navigationTitle">项目与对话</h2><button class="panel-icon navigation-new" type="button" id="navigationNewBtn" aria-label="新建对话" title="新建对话"><svg class="icon icon-compose" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-new-chat"/></svg></button><button class="panel-icon" type="button" id="navigationCloseBtn" aria-label="关闭项目与对话"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
   <div class="navigation-content">
     <label class="sr-only" for="navigationSearch">筛选项目或对话</label><input class="navigation-search" id="navigationSearch" type="search" placeholder="搜索项目或对话" autocomplete="off">
-    <div class="navigation-filters" id="navigationFilters" aria-label="对话范围"><button class="navigation-filter" type="button" data-filter="all" aria-pressed="true">全部</button><button class="navigation-filter" type="button" data-filter="projects" aria-pressed="false">项目</button><button class="navigation-filter" type="button" data-filter="recent" aria-pressed="false">最近</button></div>
+    <div id="navigationFilters" hidden></div>
     <p class="error-text" id="navigationError" role="status"></p><div class="navigation-list" id="navigationList" aria-label="项目与对话列表"></div>
   </div>
 </section>
@@ -704,6 +865,11 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   <header class="panel-head"><button class="panel-icon" type="button" id="optionsBackBtn" aria-label="返回对话选项" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="optionsTitle">对话选项</h2><button class="panel-icon" type="button" id="optionsRefreshBtn" aria-label="刷新选项"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></svg></button><button class="panel-icon" type="button" id="optionsCloseBtn" aria-label="关闭对话选项"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
   <div class="panel-body"><p class="option-error" id="optionsError" role="status" hidden></p><div class="options-list" id="optionsList" aria-label="电脑输入框选项"></div><button class="option-screen" id="optionsScreenBtn" type="button">在画面中操作</button></div>
 </section>
+<button class="settings-backdrop" id="queueBackdrop" type="button" aria-label="关闭排队消息" hidden></button>
+<section class="mobile-panel queue-panel" id="queuePanel" role="dialog" aria-modal="true" aria-labelledby="queueTitle" hidden>
+  <header class="panel-head"><h2 id="queueTitle">排队消息</h2><button class="panel-icon" type="button" id="queueRefreshBtn" aria-label="刷新队列"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6m2-13v7h-7"/></svg></button><button class="panel-icon" type="button" id="queueCloseBtn" aria-label="关闭排队消息"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+  <div class="panel-body"><p class="queue-status" id="queueStatus" role="status"></p><p class="option-error" id="queueError" role="alert" hidden></p><div class="queue-actions" id="queueActions"></div><div id="queueItems"></div><button class="option-screen" id="queueScreenBtn" type="button">查看电脑画面</button></div>
+</section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <noscript><p style="max-width:600px;margin:20px auto;padding:0 16px;color:#a13340">此页面需要启用 JavaScript 才能显示控制台。</p></noscript>
 
@@ -713,6 +879,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   var TOKEN_KEY = 'chatgpt-harmony-demo-token';
   var SUBMIT_KEY = 'chatgpt-harmony-submit-method';
   var DELIVERY_KEY = 'chatgpt-harmony-pending-send';
+  var SURFACE_KEY = 'chatgpt-remote-phone-surface';
   var LONG_PRESS_MS = 550;
   var CLICK_SLOP = 12;
   var WINDOW_REFRESH_MS = 5000;
@@ -745,7 +912,11 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     draftContext:$('draftContext'), draftNotice:$('draftNotice'), draftPreview:$('draftPreview'), draftPhoneLabel:$('draftPhoneLabel'),
     draftPhonePreview:$('draftPhonePreview'), draftError:$('draftError'), draftRecoverBtn:$('draftRecoverBtn'),
     draftClearBtn:$('draftClearBtn'), draftSendBtn:$('draftSendBtn'), draftRefreshBtn:$('draftRefreshBtn'),
-    pairView: $('pairView'), remoteView: $('remoteView'),
+    pairView: $('pairView'), remoteView: $('remoteView'), homeView:$('homeView'),
+    pairIntro:$('pairIntro'),pairEntry:$('pairEntry'),pairStartBtn:$('pairStartBtn'),pairBackBtn:$('pairBackBtn'),
+    homeSettingsBtn:$('homeSettingsBtn'),homeOpenBtn:$('homeOpenBtn'),homeResumeBtn:$('homeResumeBtn'),
+    homeStatus:$('homeStatus'),homeComputerName:$('homeComputerName'),homeWindowName:$('homeWindowName'),homeOpenLabel:$('homeOpenLabel'),
+    computerHomeBtn:$('computerHomeBtn'),settingsComputerName:$('settingsComputerName'),
     pairForm: $('pairForm'), pin: $('pin'), deviceName: $('deviceName'),
     pairBtn: $('pairBtn'), pairError: $('pairError'),
     badge: $('badge'), buildInfo: $('buildInfo'), modeChip: $('modeChip'),
@@ -762,6 +933,8 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     refreshBtn: $('refreshBtn'), desktopBtn: $('desktopBtn'), desktopTip: $('desktopTip'),
     message: $('message'), sendEnterBtn: $('sendEnterBtn'),
     queuedStrip:$('queuedStrip'),queuedToggleBtn:$('queuedToggleBtn'),queuedPreview:$('queuedPreview'),queuedCount:$('queuedCount'),queuedList:$('queuedList'),
+    queueManagerBtn:$('queueManagerBtn'),queuePanel:$('queuePanel'),queueBackdrop:$('queueBackdrop'),queueCloseBtn:$('queueCloseBtn'),
+    queueRefreshBtn:$('queueRefreshBtn'),queueStatus:$('queueStatus'),queueError:$('queueError'),queueActions:$('queueActions'),queueItems:$('queueItems'),queueScreenBtn:$('queueScreenBtn'),queueEditHint:$('queueEditHint'),
     phoneFileInput:$('phoneFileInput'),phoneFiles:$('phoneFiles'),
     submitChoiceBtn:$('submitChoiceBtn'),submitChoiceValue:$('submitChoiceValue'),submitChoices:$('submitChoices'),
     windowChoiceBtn:$('windowChoiceBtn'),windowChoiceValue:$('windowChoiceValue'),windowChoices:$('windowChoices'),
@@ -773,6 +946,11 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
 
   var state = {
     token: '',
+    homeActive:false,
+    homeRequested:false,
+    computerName:'',
+    autoResume:true,
+    lastSurface:'home',
     view: 'chat',
     submitMethod: 'button',
     panel: '',
@@ -793,6 +971,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     queuedExpanded:false,
     localQueued:[],
     queuedSignature:'',
+    queue:null,queueBusy:false,queueLoading:false,queueSequence:0,queueError:'',queueEdit:null,queueMenu:'',queueExpanded:{},
     phoneFiles:[],
     filesBusy:false,
     fileSequence:0,
@@ -808,6 +987,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     navigationNeedsRefresh:false,
     navigationNewDraft:false,
     navigationLoading: false,
+    navigationPromise: null,
     navigationBusy: false,
     activeNavigationId: '',
     activeChatTitle: '',
@@ -878,6 +1058,9 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   /* ---------- 基础工具 ---------- */
   function controlIcon(name){
     var paths={image:'M3 3h18v18H3ZM3 16l5-5 4 4 3-3 6 6M15 7h.01',file:'M5 3h9l5 5v13H5ZM14 3v6h5',folder:'M3 7V5h6l2 2h10v13H3Z',chat:'M4 4h16v13H8l-4 3Z',chevron:'m9 6 6 6-6 6',down:'m6 9 6 6 6-6',check:'m5 12 4 4L19 6',plus:'M12 5v14M5 12h14',model:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z',permission:'m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6Z',effort:'M4 7h16M4 17h16M9 4v6m6 4v6'};
+    paths.search='M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM16 16l5 5';
+    paths.trash='M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6';
+    paths.more='M5 12h.01M12 12h.01M19 12h.01';
     var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','icon');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
     if(name==='compose'){svg.setAttribute('class','icon icon-compose');var use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#icon-new-chat');svg.appendChild(use);return svg;}
     var path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',paths[name]||paths.plus);svg.appendChild(path);return svg;
@@ -902,6 +1085,63 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       if (token) localStorage.setItem(TOKEN_KEY, token);
       else localStorage.removeItem(TOKEN_KEY);
     } catch (e) { /* 隐私模式下忽略 */ }
+  }
+  function restorePhonePreferences(){
+    try {
+      var value=JSON.parse(localStorage.getItem(SURFACE_KEY)||'{}');
+      state.autoResume=value.autoResume!==false;
+      state.lastSurface='remote';
+      state.view=value.view==='screen'?'screen':'chat';
+      if(!state.autoResume)state.view='chat';
+    } catch(e) { state.autoResume=true;state.lastSurface='remote';state.view='chat'; }
+  }
+  function savePhoneSurface(surface){
+    state.lastSurface='remote';
+    try {localStorage.setItem(SURFACE_KEY,JSON.stringify({autoResume:state.autoResume,lastSurface:'remote',view:state.view}));}catch(e) { /* private browsing */ }
+  }
+  function renderConnectionHome(){
+    els.homeOpenLabel.textContent=state.view==='screen'?'返回画面':'返回对话';
+    els.homeComputerName.textContent=state.computerName||'我的电脑';
+    els.settingsComputerName.textContent=state.computerName;
+    var target=state.windows.find(function(item){return item.selected;});
+    var ready=state.live && !state.networkTrouble && isStatusAllowed(state.status);
+    var needsWindow=state.status==='ambiguous' || state.status==='not_selected';
+    els.homeStatus.textContent=ready?'已连接':state.networkTrouble?'正在重连':needsWindow?'选择窗口':state.status==='waiting'?'等待窗口':'正在连接';
+    els.homeStatus.setAttribute('data-ready',String(ready));
+    els.homeWindowName.textContent=target?target.title:state.networkTrouble?'正在重新连接电脑…':needsWindow?'在设置中选择电脑窗口':state.status==='waiting'?'在电脑打开 ChatGPT 后即可继续':'正在读取连接状态…';
+    els.homeResumeBtn.setAttribute('aria-checked',String(state.autoResume));
+    els.computerHomeBtn.hidden=state.homeActive;
+  }
+  function applyPhoneSurface(home,pause){
+    state.homeActive=home;
+    els.pairView.hidden=true;els.homeView.hidden=!home;els.remoteView.hidden=home;
+    document.body.classList.toggle('home-mode',home);
+    document.body.classList.toggle('remote-mode',!home);
+    if(home){document.body.classList.remove('chat-mode');setImmersive(false);}
+    render();
+    if(state.mediaStarted && !pause)startMedia();
+  }
+  function showConnectionHome(){
+    applyPhoneSurface(true);savePhoneSurface('home');
+    if(window.history && (!window.history.state || window.history.state.harmonyRemoteSurface!=='home'))window.history.pushState({harmonyRemoteSurface:'home'},'','#connection');
+  }
+  function openRemoteView(){
+    if(!state.token)return;
+    if(state.homeActive && window.history && window.history.state && window.history.state.harmonyRemoteSurface==='home')window.history.back();
+    applyPhoneSurface(false);savePhoneSurface('remote');
+  }
+  function returnToComputer(){
+    if(state.panelBackPending || state.pending.sendText || state.draftBusy || state.optionsBusy)return;
+    if(state.panel){
+      if(!setPanel(''))return;
+      if(state.panelBackPending){state.homeRequested=true;return;}
+    }
+    showConnectionHome();
+  }
+  function showPairEntry(open,push){
+    els.pairIntro.hidden=open;els.pairEntry.hidden=!open;
+    if(push && window.history)window.history.pushState({harmonyRemotePairEntry:true},'');
+    if(open)try{els.pin.focus({preventScroll:true});}catch(e){ /* optional focus */ }
   }
   function setDisabled(el, disabled){ if (el) el.disabled = !!disabled; }
   function setTone(el, tone){
@@ -1088,7 +1328,9 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       var data = await response.json();
       if (data && typeof data.version === 'string') state.version = data.version;
       if (data && typeof data.mock === 'boolean') state.mock = data.mock;
+      if (data && typeof data.computerName === 'string') state.computerName=data.computerName;
       updateBuildInfo();
+      renderConnectionHome();
       renderStats();
     } catch (err) { /* 健康检查失败不影响主流程 */ }
   }
@@ -1100,6 +1342,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     stopLive();
     state.token = '';
     writeToken('');
+    savePhoneSurface('home');
     resetRemote();
     showPairView(message || '');
   }
@@ -1196,6 +1439,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if (state.view === view) return;
     setImmersive(false);
     state.view = view;
+    savePhoneSurface(state.homeActive?'home':'remote');
     if (state.errorSource === 'conversation' || state.errorSource === 'frame') clearError();
     startMedia();
     render();
@@ -1203,7 +1447,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   }
   function renderConversation(){
     var visible = state.view === 'chat';
-    document.body.classList.toggle('chat-mode', visible);
+    document.body.classList.toggle('chat-mode', visible && !state.homeActive && !els.remoteView.hidden);
     els.settingsToggleBtn.hidden = els.remoteView.hidden;
     els.navigationToggleBtn.hidden = els.remoteView.hidden;
     els.conversationCard.hidden = !visible;
@@ -1227,7 +1471,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   }
   function messageBlocks(message){
     if (Array.isArray(message.blocks) && message.blocks.length && message.blocks.every(function(block){
-      return block && /^(paragraph|list|heading|code)$/.test(block.kind) && typeof block.text === 'string';
+      return block && /^(paragraph|list|heading|code|search)$/.test(block.kind) && typeof block.text === 'string';
     })) return message.blocks;
     return message.text.trim() ? message.text.split(/\n\s*\n/).map(function(text){ return { kind: 'paragraph', text: text }; }) : [];
   }
@@ -1235,12 +1479,22 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if(state.filesBusy || state.mode!=='window' || state.frozen.active)return;
     setPanel('');els.phoneFileInput.click();
   }
+  function phoneFileGate(){
+    if(state.filesBusy)return '文件正在上传…';
+    var key=state.chat?state.chat.key:state.activeChatKey;
+    for(var i=0;i<state.phoneFiles.length;i++){
+      var item=state.phoneFiles[i];
+      if(!/^(uploaded|attached|attaching|unknown)$/.test(item.state))return item.state==='error'?'请重新选择上传失败的文件。':'文件正在处理…';
+      if(item.state!=='uploaded' && (item.epoch!==state.epoch || item.key!==key))return '附件已附加到另一个对话，请返回原对话发送。';
+    }
+    return '';
+  }
   function renderPhoneFiles(){
     els.phoneFiles.hidden=!state.phoneFiles.length;els.phoneFiles.textContent='';
     state.phoneFiles.forEach(function(item){
       var chip=document.createElement('div');chip.className='phone-file';chip.setAttribute('data-state',item.state);chip.appendChild(controlIcon('file'));
       var text=document.createElement('div'),name=document.createElement('span'),status=document.createElement('span');name.className='phone-file-name';name.textContent=item.name;status.className='phone-file-status';
-      status.textContent=({uploading:'上传中…',uploaded:'待发送',attaching:'附加中…',attached:'已附加',unknown:'请检查电脑',error:'上传失败'})[item.state]||'';
+      status.textContent=({uploading:'上传中…',uploaded:'待发送',attaching:'附加中…',attached:'已附加',unknown:'正在确认…',error:'上传失败'})[item.state]||'';
       text.appendChild(name);text.appendChild(status);chip.appendChild(text);
       if(item.state==='unknown'||item.state==='attached'||item.state==='uploaded'||item.state==='error'){
         var inspect=item.state==='unknown'||item.state==='attached';
@@ -1277,16 +1531,32 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     }finally{if(sequence===state.fileSequence){state.filesBusy=false;renderControls();}}
   }
   async function attachPhoneFiles(key,epoch){
-    var batch=state.phoneFiles.filter(function(item){return item.state==='uploaded';});
-    if(!batch.length)return;
-    batch.forEach(function(item){item.state='attaching';});renderPhoneFiles();
+    var groups=[state.phoneFiles.filter(function(item){return item.state==='unknown'||item.state==='attaching';}),
+      state.phoneFiles.filter(function(item){return item.state==='uploaded';})];
     if(state.chatAbort)state.chatAbort.abort();if(state.frameAbort)state.frameAbort.abort();
-    try{
-      var result=await requestJson('/api/uploads/attach',{method:'POST',body:{ids:batch.map(function(item){return item.id;}),conversationKey:key,epoch:epoch},timeoutMs:20000});
-      if(result.state!=='attached')throw new ApiError('附加结果未确认，请在画面中检查。',409);
-      batch.forEach(function(item){item.state='attached';});
-    }catch(err){batch.forEach(function(item){item.state=err&&err.code==='attachment_not_started'?'uploaded':'unknown';});throw err;}
-    finally{renderPhoneFiles();}
+    for(var g=0;g<groups.length;g++){
+      var batch=groups[g];if(!batch.length)continue;
+      var needsPaste=batch[0].state==='uploaded';
+      batch.forEach(function(item){item.state='attaching';item.key=key;item.epoch=epoch;});renderPhoneFiles();
+      var body={ids:batch.map(function(item){return item.id;}),conversationKey:key,epoch:epoch},result=null,lastError=null;
+      try{
+        if(needsPaste){
+          try{result=await requestJson('/api/uploads/attach',{method:'POST',body:body,timeoutMs:20000});}
+          catch(err){if(err && (err.status===401 || err.code==='attachment_not_started'))throw err;lastError=err;}
+        }
+        var deadline=Date.now()+45000;
+        while(!result || result.state!=='attached'){
+          if(!state.live || !state.token)throw new ApiError('连接已结束。',401);
+          if(result && result.state==='uploaded')throw new ApiError('文件尚未附加，请重试发送。',409,'attachment_not_started');
+          if(Date.now()>=deadline)throw lastError||new ApiError('附件仍在处理，请稍后继续发送。',409,'attachment_pending');
+          try{result=await requestJson('/api/uploads/status',{method:'POST',body:body,timeoutMs:8000});lastError=null;}
+          catch(err){if(err && (err.status===401 || err.code==='attachment_context_changed' || (err.status>=400 && err.status<500)))throw err;lastError=err;}
+          if(!result || result.state!=='attached')await new Promise(function(resolve){setTimeout(resolve,400);});
+        }
+        batch.forEach(function(item){item.state='attached';});
+      }catch(err){batch.forEach(function(item){item.state=err&&err.code==='attachment_not_started'?'uploaded':'unknown';});throw err;}
+      finally{renderPhoneFiles();}
+    }
   }
   function renderMessageAttachments(body,items){
     if(!Array.isArray(items) || !items.length)return;
@@ -1307,7 +1577,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       return item.key===key && performance.now()-item.at<15000 && !native.some(function(row){return row.text.trim()===item.text.trim();})
         && !(chat && chat.messages.some(function(row){return row.role==='user' && row.text.trim()===item.text.trim();}));
     });
-    var items=native.concat(state.localQueued), signature=JSON.stringify(items.map(function(item){return item.text;}));
+    var items=native.concat(state.localQueued), signature=JSON.stringify(items.map(function(item){return [item.id||'',item.text];}));
     els.queuedStrip.hidden=!items.length;
     if(!items.length)state.queuedExpanded=false;
     els.queuedToggleBtn.setAttribute('aria-expanded',String(state.queuedExpanded));els.queuedList.hidden=!state.queuedExpanded;
@@ -1317,6 +1587,79 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       state.queuedSignature=signature;els.queuedList.textContent='';
       items.forEach(function(item){var row=document.createElement('div');row.className='queued-item';row.textContent=item.text;els.queuedList.appendChild(row);});
     }
+  }
+  async function openQueue(){
+    if(!setPanel('queue'))return;
+    await refreshQueue();
+  }
+  async function refreshQueue(){
+    if(state.queueBusy || state.panel!=='queue')return;
+    var sequence=++state.queueSequence,epoch=state.epoch;
+    state.queueLoading=true;state.queueError='';renderQueue();
+    try{
+      var snapshot=await requestJson('/api/queue');
+      if(sequence!==state.queueSequence || state.panel!=='queue' || epoch!==state.epoch)return;
+      if(snapshot.epoch!==state.epoch || typeof snapshot.key!=='string' || !Array.isArray(snapshot.items) || !Array.isArray(snapshot.actions))throw new ApiError('队列已变化，请刷新。',409);
+      state.queue=snapshot;
+    }catch(err){if(sequence===state.queueSequence && state.panel==='queue')state.queueError=err.message||'队列读取失败，请刷新。';}
+    finally{if(sequence===state.queueSequence){state.queueLoading=false;renderQueue();}}
+  }
+  function renderQueue(){
+    var snapshot=state.queue,busy=state.queueBusy||state.queueLoading;
+    els.queueError.textContent=state.queueError;els.queueError.hidden=!state.queueError;
+    els.queueStatus.textContent=state.queueLoading?'正在读取电脑队列…':snapshot?(snapshot.paused?'队列已暂停，可继续或逐条处理。':snapshot.items.length?'电脑当前有 '+snapshot.items.length+' 条排队消息。':'当前没有可读取的排队消息。'):'打开队列后，可查看并处理电脑上的排队消息。';
+    els.queueItems.textContent='';els.queueActions.textContent='';
+    els.queueRefreshBtn.disabled=busy;
+    function actionButton(action,item){
+      var button=document.createElement('button');button.type='button';button.className='btn '+(action.operation==='delete'?'danger':'ghost');
+      button.textContent=({steer:'引导',edit:'编辑',delete:'删除',resume:'继续队列',stop:'停止当前回复'})[action.operation]||'操作';
+      if(action.operation==='delete'){
+        button.textContent='';button.className='btn ghost queue-icon';button.setAttribute('aria-label','删除排队消息');button.appendChild(controlIcon('trash'));bindIconHint(button);
+      }
+      button.disabled=busy||!action.enabled||state.frozen.active||!snapshot||snapshot.epoch!==state.epoch;
+      button.addEventListener('click',function(){invokeQueue(action,item);});return button;
+    }
+    if(!snapshot)return;
+    snapshot.actions.forEach(function(action){els.queueActions.appendChild(actionButton(action,null));});
+    snapshot.items.forEach(function(item,index){
+      var card=document.createElement('section');card.className='queue-card';card.setAttribute('aria-label','排队消息 '+(index+1));
+      var line=document.createElement('div');line.className='queue-row';
+      var text=document.createElement('button');text.type='button';text.className='queue-text';text.textContent=item.text||'附件消息';text.setAttribute('aria-label','查看完整排队消息');text.setAttribute('aria-expanded',String(!!state.queueExpanded[item.id]));
+      text.addEventListener('click',function(){state.queueExpanded[item.id]=!state.queueExpanded[item.id];renderQueue();});line.appendChild(text);
+      var actions=document.createElement('div');actions.className='queue-actions';
+      (item.actions||[]).filter(function(action){return action.operation!=='edit';}).forEach(function(action){actions.appendChild(actionButton(action,item));});
+      var edit=(item.actions||[]).filter(function(action){return action.operation==='edit';})[0];
+      if(edit){
+        var more=document.createElement('button');more.type='button';more.className='btn ghost queue-icon';more.setAttribute('aria-label','排队消息操作');more.setAttribute('aria-expanded',String(state.queueMenu===item.id));more.appendChild(controlIcon('more'));more.disabled=busy||state.frozen.active;
+        more.addEventListener('click',function(){state.queueMenu=state.queueMenu===item.id?'':item.id;renderQueue();});bindIconHint(more);actions.appendChild(more);
+      }
+      line.appendChild(actions);card.appendChild(line);
+      if(state.queueExpanded[item.id]){var full=document.createElement('div');full.className='queue-full';full.textContent=item.text||'附件消息';card.appendChild(full);}
+      if(edit&&state.queueMenu===item.id){var menu=document.createElement('div');menu.className='queue-menu';menu.setAttribute('role','menu');var editButton=actionButton(edit,item);editButton.setAttribute('role','menuitem');menu.appendChild(editButton);card.appendChild(menu);}
+      els.queueItems.appendChild(card);
+    });
+  }
+  async function invokeQueue(action,item){
+    var snapshot=state.queue;
+    if(state.queueBusy||state.queueLoading||!snapshot||snapshot.epoch!==state.epoch||state.panel!=='queue'||!action.enabled)return false;
+    if(action.operation==='edit' && (els.message.value.trim()||state.phoneFiles.length||state.pending.sendText)){
+      state.queueError='手机还有未处理的消息或附件，请先处理后再编辑队列。';renderQueue();return false;
+    }
+    var phoneBefore=els.message.value,tokenBefore=state.token;
+    state.queueBusy=true;state.queueError='';renderQueue();renderControls();
+    try{
+      var outcome=null,ok=await sendAction({kind:'queue',queueKey:snapshot.key,targetId:action.id,epoch:snapshot.epoch},function(data){outcome=data;});
+      if(!state.live||state.token!==tokenBefore||state.epoch!==snapshot.epoch)return false;
+      if(!ok){state.queueError='操作未确认，请刷新队列并检查电脑画面。';state.queue=null;return false;}
+      if(outcome&&outcome.queue)state.queue=outcome.queue;
+      if(outcome&&outcome.queueDraft){
+        if(els.message.value!==phoneBefore){toast('排队消息已取回电脑输入框，手机新输入的文字已保留。');return true;}
+        state.queueEdit=outcome.queueDraft;
+        els.message.value=outcome.queueDraft.text;resizeComposer();setPanel('');
+        toast('已取回排队消息，修改后发送。');
+      }else{toast(action.operation==='delete'?'已处理删除操作':action.operation==='steer'?'已调用引导':action.operation==='resume'?'已调用继续队列':'已调用停止');}
+      return true;
+    }finally{state.queueBusy=false;renderQueue();renderControls();}
   }
   function draftStale(snapshot){
     return !snapshot || snapshot.epoch !== state.epoch || state.mode !== 'window'
@@ -1435,8 +1778,9 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     else if (state.panel === 'navigation') {state.navigationMode='browse';setPanel('');}
   }
   async function refreshNavigation(force){
-    if (state.navigationLoading) return;
+    if (state.navigationLoading) return state.navigationPromise;
     var sequence=++state.navigationSequence,epoch=state.epoch;
+    var finished;state.navigationPromise=new Promise(function(resolve){finished=resolve;});
     state.navigationLoading = true;
     els.navigationError.textContent = '';
     renderNavigation();
@@ -1450,7 +1794,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       acceptNavigation(snapshot,force===true);
       els.navigationError.textContent = snapshot.available ? '' : snapshot.notice;
     } catch (err) { if(sequence===state.navigationSequence)els.navigationError.textContent = err.message || '读取列表失败，请刷新重试。'; }
-    finally { if(sequence===state.navigationSequence){state.navigationLoading = false; renderNavigation();} }
+    finally { finished();if(sequence===state.navigationSequence){state.navigationLoading = false;state.navigationPromise=null;renderNavigation();} }
   }
   function acceptNavigation(snapshot,force){
     var previous=state.navigation;
@@ -1461,7 +1805,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       if(!force && !children.length && !project.expanded && previous){
         previous.items.filter(function(item){return item.project===id && /^(thread|more)$/.test(item.kind);}).forEach(function(item){items.push(item);});
       }
-      if(project.expanded || children.length)state.navigationLoaded[id]=true;
+      if(snapshot.complete || project.expanded || children.length)state.navigationLoaded[id]=true;
       else if(force){state.navigationLoaded[id]=false;state.navigationFold[id]=false;}
       if(!(id in state.navigationFold))state.navigationFold[id]=false;
     });
@@ -1472,16 +1816,22 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   function openNewChat(){
     state.navigationMode='create';els.navigationSearch.value='';setNavigation(true);renderNavigation();els.navigationBackBtn.focus({preventScroll:true});
   }
+  function projectCanToggle(item){
+    if(item.kind!=='project'||!state.navigation)return false;
+    var id=item.project||item.id;
+    return !!(state.navigationFold[id]||state.navigationLoaded[id]||state.navigation.complete||item.expanded||
+      state.navigation.items.some(function(row){return row.project===id&&row.kind==='thread';}));
+  }
   function renderNavigation(){
     var creating=state.navigationMode==='create';
     els.navigationTitle.textContent=creating?'新建对话':'项目与对话';
-    els.navigationBackBtn.hidden=!creating;els.navigationNewBtn.hidden=creating;els.navigationFilters.hidden=creating;
+    els.navigationBackBtn.hidden=!creating;els.navigationNewBtn.hidden=creating;els.navigationFilters.hidden=true;
     els.navigationSearch.placeholder=creating?'选择项目':'搜索项目或对话';
     els.navigationNewBtn.disabled=state.navigationBusy||state.pending.sendText||state.draftBusy;
     var catalog = state.navigation;
     var list = els.navigationList;
     function updateButtons(){state.navigationButtons.forEach(function(row){
-      row.button.disabled=state.navigationBusy||state.pending.sendText||state.draftBusy||(!row.local&&state.navigationLoading);
+      row.button.disabled=!projectCanToggle(row.item)&&(state.navigationBusy||state.pending.sendText||state.draftBusy||state.navigationLoading);
       var pending=state.navigationBusy&&row.item.id===state.navigationPendingId;row.button.setAttribute('aria-busy',String(pending));row.spinner.hidden=!pending;
     });}
     var signature=JSON.stringify([catalog&&catalog.items,!catalog&&state.navigationLoading,els.navigationSearch.value,state.navigationFilter,state.navigationFold,creating,state.activeNavigationId]);
@@ -1530,6 +1880,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       var expanded=id in state.navigationFold?state.navigationFold[id]:project.expanded!==false;
       children.forEach(function(item){grouped[item.id]=true;});
       if(expanded||query)children.filter(function(item){return query&&matches(project)?true:matches(item);}).forEach(function(item){add(item,group);});
+      if(expanded&&!children.length&&state.navigationLoaded[id]){var empty=document.createElement('p');empty.className='navigation-project-empty';empty.textContent='暂无对话';group.appendChild(empty);}
       list.appendChild(group);
     });
     catalog.items.filter(function(item){
@@ -1543,15 +1894,21 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     updateButtons();restorePosition();
   }
   async function navigateItem(item){
-    if (state.navigationBusy || state.pending.sendText || state.draftBusy || !state.navigation) return;
-    if(item.kind==='project'){
+    if(!state.navigation)return;
+    if(projectCanToggle(item)){
       var id=item.project||item.id,expanded=id in state.navigationFold?state.navigationFold[id]:item.expanded!==false;
-      if(expanded){state.navigationFold[id]=false;renderNavigation();return;}
-      state.navigationFold[id]=true;
-      if(state.navigationLoaded[id] || item.expanded || state.navigation.items.some(function(row){return row.project===id&&row.kind==='thread';})){state.navigationLoaded[id]=true;renderNavigation();return;}
+      state.navigationFold[id]=!expanded;renderNavigation();return;
     }
-    if(state.navigationLoading)return;
+    if(state.navigationBusy || state.pending.sendText || state.draftBusy)return;
+    if(state.navigationLoading||state.navigationNeedsRefresh){
+      await refreshNavigation();
+      if(!state.navigation||state.navigationBusy||state.pending.sendText||state.draftBusy||state.navigationNeedsRefresh)return;
+      item=state.navigation.items.find(function(row){return row.id===item.id;});
+      if(!item){renderNavigation();return;}
+      if(projectCanToggle(item)){await navigateItem(item);return;}
+    }
     if(state.filesBusy || state.phoneFiles.length){els.navigationError.textContent='请先发送或移除输入框中的附件，再切换对话。';return;}
+    if(item.kind==='project')state.navigationFold[item.project||item.id]=true;
     state.navigationBusy = true;
     state.navigationPendingId=item.id;
     renderControls(); renderNavigation();
@@ -1571,31 +1928,77 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       else await refreshNavigation();
     } finally { state.navigationBusy = false;state.navigationPendingId=''; renderNavigation(); render(); }
   }
-  function renderMessageBody(body, blocks, phase){
-    var open={};Array.prototype.forEach.call(body.children,function(node){if(node.tagName==='DETAILS')open[node.getAttribute('data-channel')]=node.open;});
+  function appendMessageText(node,block){
+    if(block.kind==='code' || !Array.isArray(block.runs) || !block.runs.length ||
+      block.runs.some(function(run){return !run || typeof run.text!=='string';}) ||
+      block.runs.map(function(run){return run.text;}).join('')!==block.text){node.textContent=block.text;return;}
+    block.runs.forEach(function(run){
+      var text=document.createElement('span');text.textContent=run.text;
+      if(run.inlineCode){var code=document.createElement('code');code.appendChild(text);text=code;}
+      if(run.emphasis){var em=document.createElement('em');em.appendChild(text);text=em;}
+      if(run.strong){var strong=document.createElement('strong');strong.appendChild(text);text=strong;}
+      if(typeof run.href==='string'){
+        try{
+          var href=new URL(run.href);
+          if(/^(https?:)$/.test(href.protocol) && !href.username && !href.password){
+            var link=document.createElement('a');link.href=href.href;link.target='_blank';link.rel='noopener noreferrer';link.appendChild(text);text=link;
+          }
+        }catch(_){}
+      }
+      node.appendChild(text);
+    });
+  }
+  function workLabel(message){
+    var work=message.work||{},time='';
+    if(typeof work.durationMs==='number' && Number.isFinite(work.durationMs) && work.durationMs>=0){
+      var seconds=Math.round(work.durationMs/1000),minutes=Math.floor(seconds/60);
+      time=(minutes?minutes+' 分钟'+(seconds%60?' '+seconds%60+' 秒':''):seconds+' 秒');
+    }
+    if(work.status==='working')return time?'已处理 '+time:'处理中';
+    if(work.status==='stopped')return time?'你在 '+time+' 后停止了':'已停止';
+    if(time)return '用时 '+time;
+    if(typeof message.duration==='string' && message.duration.trim())return message.duration.slice(0,100);
+    return message.complete===false?'处理中':'活动';
+  }
+  function renderMessageBody(body, blocks, phase, message){
+    message=message||{};
+    var open={},defaults={},processIndex=0;
+    Array.prototype.forEach.call(body.children,function(node){
+      if(node.tagName==='DETAILS'){var key=node.getAttribute('data-process');open[key]=node.open;defaults[key]=node.getAttribute('data-default-open')==='true';}
+    });
     body.textContent = '';
+    var processPhase=/^(reasoning|activity)$/.test(phase),hasProcess=blocks.some(function(block){return processPhase||/^(reasoning|activity)$/.test(block.channel);});
+    if(!hasProcess && (processPhase||message.work||message.duration)){
+      var status=document.createElement('div');status.className='chat-work-status';status.textContent=workLabel(message);body.appendChild(status);
+    }
     var list = null, destination=body, channel='answer';
     blocks.forEach(function(block){
-      var next=block.channel===phase && phase==='activity' ? 'answer' : (/^(reasoning|activity)$/.test(block.channel) ? block.channel : 'answer');
+      var blockChannel=/^(reasoning|activity)$/.test(block.channel) ? block.channel : (processPhase ? phase : 'answer');
+      var next=blockChannel==='answer'?'answer':'process';
       if(next!==channel){
         list=null;channel=next;destination=body;
         if(next!=='answer'){
-          var details=document.createElement('details');details.className='chat-process';details.setAttribute('data-channel',next);details.open=!!open[next];
-          var summary=document.createElement('summary');summary.textContent=next==='reasoning'?'思考过程':'工作记录';details.appendChild(summary);
+          var key='process-'+processIndex++,defaultOpen=message.complete===false;
+          var details=document.createElement('details');details.className='chat-process';details.setAttribute('data-process',key);details.setAttribute('data-default-open',String(defaultOpen));
+          details.open=key in open && open[key]!==defaults[key]?open[key]:defaultOpen;
+          var summary=document.createElement('summary');summary.textContent=workLabel(message);details.appendChild(summary);
           destination=document.createElement('div');destination.className='chat-process-content';details.appendChild(destination);body.appendChild(details);
         }
       }
       var node;
       if (block.kind === 'list') {
         if (!list) { list = document.createElement('ul'); destination.appendChild(list); }
-        node = document.createElement('li'); node.textContent = block.text; list.appendChild(node);
+        node = document.createElement('li');if(blockChannel==='reasoning')node.className='chat-process-reasoning';appendMessageText(node,block);list.appendChild(node);
         return;
       }
       list = null;
       node = document.createElement(block.kind === 'heading' ? 'h3' : (block.kind === 'code' ? 'pre' : 'p'));
+      if(blockChannel==='reasoning')node.className='chat-process-reasoning';
       if (block.kind === 'code') {
         var code = document.createElement('code'); code.textContent = block.text; node.appendChild(code);
-      } else node.textContent = block.text;
+      } else if(block.kind==='search'){
+        node.className='chat-process-search';node.appendChild(controlIcon('search'));var label=document.createElement('span');label.textContent=block.text;node.appendChild(label);
+      } else appendMessageText(node,block);
       destination.appendChild(node);
     });
   }
@@ -1605,9 +2008,10 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if (event.kind !== 'conversation' || !Array.isArray(event.messages) || !Array.isArray(event.order)) throw new ApiError('对话数据格式异常。', 0);
     if (event.epoch < state.epoch) return;
     var old = state.chat;
-    var replace = event.replace || !old || old.key !== event.key || old.epoch !== event.epoch;
+    var sameConversation=!!old && old.key===event.key && old.epoch===event.epoch;
+    var replace = !sameConversation;
     var messages = {};
-    if (!replace) old.messages.forEach(function(message){ messages[message.id] = message; });
+    if (!replace && !event.replace) old.messages.forEach(function(message){ messages[message.id] = message; });
     event.messages.forEach(function(message){
       if (typeof message.id !== 'string' || typeof message.text !== 'string' || !/^(user|assistant)$/.test(message.role)) throw new ApiError('对话数据格式异常。', 0);
       messages[message.id] = message;
@@ -1626,14 +2030,13 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
         article.className = 'chat-message';
         var foot = document.createElement('div'); foot.className = 'chat-message-foot';
         var timestamp = document.createElement('span'); timestamp.className = 'chat-timestamp';
-        var duration = document.createElement('span');duration.className='chat-duration';
         var copy = document.createElement('button'); copy.type = 'button'; copy.className = 'chat-copy';
         copy.setAttribute('aria-label', '复制这条消息');
         var copyIcon = document.createElement('span'); copyIcon.className = 'chat-copy-icon'; copyIcon.setAttribute('aria-hidden', 'true');
         copy.appendChild(copyIcon);
         var body = document.createElement('div'); body.className = 'chat-message-body';
-        foot.appendChild(copy); foot.appendChild(timestamp);foot.appendChild(duration); article.appendChild(body); article.appendChild(foot);
-        row = { article: article, timestamp: timestamp, duration:duration, body: body, copy:copy, foot:foot, text: null, signature: null };
+        foot.appendChild(copy);foot.appendChild(timestamp);article.appendChild(body);article.appendChild(foot);
+        row = { article: article, timestamp: timestamp, body: body, copy:copy, foot:foot, text: null, signature: null };
         state.chatElements[message.id] = row;
         copy.addEventListener('click', function(){
           if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
@@ -1642,23 +2045,25 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
         });
       }
       row.article.setAttribute('data-role', message.role);
-      row.article.setAttribute('data-phase', /^(activity|reasoning)$/.test(message.phase) ? message.phase : 'answer');
+      row.article.setAttribute('data-phase', /^(activity|reasoning|commentary)$/.test(message.phase) ? message.phase : 'answer');
       row.article.setAttribute('aria-label', message.role === 'user' ? '发送的消息' : '回复');
       row.timestamp.textContent = typeof message.timestamp === 'string' ? message.timestamp.slice(0,80) : '';
       row.timestamp.hidden = !row.timestamp.textContent;
-      row.duration.textContent=typeof message.duration==='string'?message.duration.slice(0,100):'';row.duration.hidden=!row.duration.textContent;
-      row.copy.hidden=!message.text.trim() || (message.role==='assistant' && (message.id===activeAnswer || message.complete===false || /^(activity|reasoning)$/.test(message.phase)));
-      row.foot.hidden=row.copy.hidden && row.timestamp.hidden && row.duration.hidden;
       var blocks = messageBlocks(message);
-      var signature = JSON.stringify([blocks,message.attachments||[],message.phase||'answer']);
-      if (row.signature !== signature) { renderMessageBody(row.body, blocks, message.phase); renderMessageAttachments(row.body,message.attachments);row.signature = signature; }
-      row.text = message.text;
+      var copyText = message.role==='assistant' ? blocks.filter(function(block){return !/^(reasoning|activity)$/.test(block.channel);}).map(function(block){return (block.kind==='list'?'• ':'')+block.text;}).join('\n\n') : message.text;
+      row.copy.hidden=!copyText.trim() || (message.role==='assistant' && (message.id===activeAnswer || message.complete===false || /^(activity|reasoning)$/.test(message.phase)));
+      row.foot.hidden=(row.copy.hidden && row.timestamp.hidden)||/^(activity|reasoning)$/.test(message.phase);
+      var hasWork=message.work||message.duration||/^(activity|reasoning)$/.test(message.phase)||blocks.some(function(block){return /^(activity|reasoning)$/.test(block.channel);});
+      var signature = JSON.stringify([blocks,message.attachments||[],message.phase||'answer',hasWork?[message.work||null,message.duration||'',message.complete!==false]:null]);
+      if (row.signature !== signature) { renderMessageBody(row.body, blocks, message.phase,message); renderMessageAttachments(row.body,message.attachments);row.signature = signature; }
+      row.text = copyText;
       if (list.children[index] !== row.article) list.insertBefore(row.article, list.children[index] || null);
     });
     Object.keys(state.chatElements).forEach(function(id){
       if (!keep[id]) { state.chatElements[id].article.remove(); delete state.chatElements[id]; }
     });
     state.chat = Object.assign({}, event, { messages: ordered });
+    if(event.queue && state.panel!=='queue')state.queue=Object.assign({},event.queue,{epoch:event.epoch});
     observePhoneSend(state.chat);
     if(event.composer && event.composer.options && typeof event.composer.options.key==='string' && Array.isArray(event.composer.options.items) && !event.composer.options.menu){
       state.optionsRoot=Object.assign({},event.composer.options,{epoch:event.epoch});state.optionsRootAt=performance.now();
@@ -1785,6 +2190,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     renderStatusText();
     renderControls();
     renderConversation();
+    renderConnectionHome();
   }
   function renderBadge(){
     if (!state.live || !state.token) { setBadge('未配对', ''); return; }
@@ -1943,8 +2349,8 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     var pending = state.pending;
     var frozen = state.frozen.active;
     var actionsDisabled = !gate.ok || frozen || state.navigationBusy || state.draftBusy || state.optionsBusy;
-    var empty = !els.message.value.trim() && !state.phoneFiles.some(function(item){return item.state==='attached'||item.state==='uploaded';});
-    var filesBlocked=state.filesBusy||state.phoneFiles.some(function(item){return !/^(attached|uploaded)$/.test(item.state) || item.epoch!==state.epoch || item.key!==(state.chat?state.chat.key:state.activeChatKey);});
+    var empty = !els.message.value.trim() && !state.phoneFiles.some(function(item){return /^(attached|uploaded|attaching|unknown)$/.test(item.state);});
+    var filesBlocked=!!phoneFileGate();
     setDisabled(els.sendEnterBtn, !state.live || !state.token || frozen || state.navigationBusy || state.draftBusy || state.optionsBusy || filesBlocked || pending.sendText || empty);
     setDisabled(els.composerOptionsBtn, !state.live || state.mode!=='window' || frozen || state.navigationBusy || state.draftBusy || state.optionsBusy || state.filesBusy || pending.sendText);
     setDisabled(els.submitMethod, pending.sendText);
@@ -1962,9 +2368,11 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     els.desktopBtn.setAttribute('aria-checked',String(state.mode==='desktop'));
     setDisabled(els.unpairBtn, pending.unpair);
     setDisabled(els.fullscreenBtn, false);
-    setDisabled(els.navigationToggleBtn, state.draftBusy || state.optionsBusy || state.filesBusy || pending.sendText);
+    setDisabled(els.navigationToggleBtn, state.draftBusy || state.optionsBusy);
     setDisabled(els.settingsToggleBtn, state.draftBusy || state.optionsBusy);
     setDisabled(els.computerDraftBtn, !state.live || state.mode !== 'window' || state.navigationBusy || pending.sendText || state.draftBusy);
+    setDisabled(els.queueManagerBtn,!state.live||state.mode!=='window'||state.queueBusy);
+    els.queueEditHint.hidden=!state.queueEdit;
     var hasDraft = !!(state.chat && state.chat.composer && state.chat.composer.hasDraft);
     if (state.draft && !draftStale(state.draft)) hasDraft = state.draft.hasDraft;
     els.computerDraftBtn.setAttribute('data-has-draft',String(hasDraft));
@@ -2028,6 +2436,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   function resetRemote(){
     state.navigation=null;state.navigationFold={};state.navigationLoaded={};state.navigationSignature='';state.navigationMode='browse';state.navigationNeedsRefresh=false;state.navigationNewDraft=false;state.navigationSequence++;state.navigationLoading=false;
     state.fileSequence++;state.phoneFiles=[];state.filesBusy=false;renderPhoneFiles();
+    state.queueSequence++;state.queue=null;state.queueEdit=null;state.queueError='';state.queueLoading=false;state.queueBusy=false;
     state.optionsRoot=null;state.optionsRootAt=0;state.localQueued=[];state.queuedExpanded=false;state.settingChoice='';
     closeDraft(true); state.draftBusy = false; state.recoveredUndo = null; state.actionErrorCode = '';
     state.chat = null;
@@ -2093,12 +2502,11 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
 
   function enterRemote(){
     state.sessionEnded = false;
-    els.pairView.hidden = true;
-    els.remoteView.hidden = false;
-    document.body.classList.add('remote-mode');
     clearPairError();
     resetRemote();
-    render();
+    applyPhoneSurface(false);
+    savePhoneSurface('remote');
+    if(window.history)window.history.replaceState({harmonyRemoteSurface:'remote'},'',location.pathname?location.pathname+(location.search||''):'#');
     startLive();
     resumePhoneSend();
     renderStats();
@@ -2110,8 +2518,10 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     closeDraft(true); state.draftBusy = false; state.recoveredUndo = null;
     setPanel('');
     els.remoteView.hidden = true;
+    els.homeView.hidden=true;state.homeActive=false;state.homeRequested=false;
     els.pairView.hidden = false;
     document.body.classList.remove('remote-mode');
+    document.body.classList.remove('home-mode');
     document.body.classList.remove('chat-mode');
     els.settingsToggleBtn.hidden = true;
     els.navigationToggleBtn.hidden = true;
@@ -2119,11 +2529,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     setSettings(false);
     setBadge('未配对', '');
     if (message) showPairError(message); else clearPairError();
-    setTimeout(function(){
-      if (!els.pairView.hidden) {
-        try { els.pin.focus({ preventScroll: true }); } catch (e) { try { els.pin.focus(); } catch (e2) {} }
-      }
-    }, 80);
+    showPairEntry(!!message,false);
   }
 
   function startLive(){
@@ -2142,7 +2548,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if (state.frameAbort) state.frameAbort.abort();
     if (state.chatAbort) state.chatAbort.abort();
     state.chatConnected = false;
-    if (!state.live || document.hidden || state.panel || state.optionsBusy) return;
+    if (!state.live || document.hidden || state.homeActive || state.panel || state.optionsBusy) return;
     var controller = new AbortController();
     if (state.view === 'chat') {
       state.chatAbort = controller;
@@ -2193,15 +2599,24 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if (Number.isFinite(Number(info.epoch)) && Number(info.epoch) < state.epoch) return;
     var prevStatus = state.status;
     var prevEpoch = state.epoch;
+    var prevWindow=state.windows.find(function(row){return row.selected;}),prevMode=state.mode,prevInstance=state.instance;
     if (typeof info.version === 'string') state.version = info.version;
     if (typeof info.instance === 'string') state.instance = info.instance;
+    if (typeof info.computerName === 'string') state.computerName=info.computerName;
     if (typeof info.mock === 'boolean') state.mock = info.mock;
     if (info.mode === 'desktop' || info.mode === 'window') state.mode = info.mode;
     if (typeof info.status === 'string') state.status = info.status;
     if (info.frozen && typeof info.frozen === 'object') state.frozen = normalizeFrozen(info.frozen);
     if (Array.isArray(info.windows)) state.windows = normalizeWindows(info.windows);
     if (Number.isFinite(Number(info.epoch))) state.epoch = Number(info.epoch);
-    if(state.navigation && state.navigation.epoch!==state.epoch && !state.navigationBusy){state.navigation=null;state.navigationFold={};state.navigationLoaded={};state.navigationSignature='';state.navigationSequence++;state.navigationLoading=false;}
+    if(state.navigation && state.navigation.epoch!==state.epoch && !state.navigationBusy){
+      var currentWindow=state.windows.find(function(row){return row.selected;});
+      var sameWindow=prevMode==='window'&&state.mode==='window'&&prevWindow&&currentWindow&&prevWindow.id===currentWindow.id&&(!prevInstance||!state.instance||prevInstance===state.instance);
+      if(sameWindow){state.navigation=Object.assign({},state.navigation,{epoch:state.epoch});state.navigationNeedsRefresh=true;}
+      else{state.navigation=null;state.navigationFold={};state.navigationLoaded={};state.navigationNeedsRefresh=false;}
+      state.navigationSignature='';state.navigationSequence++;state.navigationLoading=false;state.navigationPromise=null;
+      if(state.panel==='navigation'){renderNavigation();refreshNavigation();}
+    }
     if (state.epoch!==prevEpoch && state.panel==='options' && state.options && state.options.epoch!==state.epoch) {
       state.optionsSequence++;state.optionsInvalid=true;state.optionsLoading=false;state.optionsSurface=null;
       state.optionsError='电脑窗口已变化，请刷新选项。';renderOptions();
@@ -2282,7 +2697,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       if (gate.ok && !payload.draftRevision && (payload.conversationKey !== key || epoch !== state.epoch)) return {ok:false,reason:'当前对话已变化，请确认后再发送。'};
       return gate;
     }
-    return payload.kind === 'navigate' || payload.kind === 'draft' || payload.kind === 'composer' || payload.draftRevision
+    return payload.kind === 'navigate' || payload.kind === 'draft' || payload.kind === 'composer' || payload.kind === 'queue' || payload.draftRevision
       ? {ok:state.live && !!state.token && state.mode==='window' && isStatusAllowed(state.status) && !state.frozen.active
           && (payload.kind !== 'navigate' || !state.draftBusy),reason:'请连接电脑窗口并解冻后操作。'}
       : computeGate();
@@ -2326,7 +2741,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       return true;
     } catch (err) {
       if (!err || err.status === 401) return false;
-      if(payload.messageId && !/^(delivery_invalid|delivery_conflict|delivery_busy)$/.test(err.code||'')){
+      if(payload.messageId && !/^(delivery_invalid|delivery_conflict|delivery_busy|delivery_instance)$/.test(err.code||'')){
         if(onResult)onResult({delivery:{id:payload.messageId,state:'confirming'}});
         return true;
       }
@@ -2359,6 +2774,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   function finishPhoneSend(task,status){
     if(!task || state.sending!==task || /^(sent|queued)$/.test(task.state))return;
     task.state=status;
+    state.queueEdit=null;
     if(els.message.value===task.text){els.message.value='';resizeComposer();}
     state.phoneFiles=state.phoneFiles.filter(function(file){return task.attachmentIds.indexOf(file.id)===-1;});renderPhoneFiles();
     if(state.navigationNewDraft){state.navigationNeedsRefresh=true;state.navigationNewDraft=false;}
@@ -2427,7 +2843,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
 
   async function sendText(enter, draft){
     if (state.pending.sendText || (state.draftBusy && !draft)) return false;
-    if(state.filesBusy || state.phoneFiles.some(function(item){return !/^(attached|uploaded)$/.test(item.state)||item.epoch!==state.epoch||item.key!==(state.chat?state.chat.key:state.activeChatKey);})){setError('请先检查当前附件状态。','action');return false;}
+    var fileIssue=phoneFileGate();if(fileIssue){setError(fileIssue,'action');return false;}
     var text = els.message.value;
     if ((!text || !text.trim()) && !state.phoneFiles.length) {
       setError('请先输入要发送的文字。', 'gate');
@@ -2437,6 +2853,11 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if (text.length > MAX_TEXT) {
       setError('文字超过 ' + MAX_TEXT + ' 字，请删减后再发送。', 'gate');
       return false;
+    }
+    if(!draft && state.queueEdit){
+      var editKey=state.chat?state.chat.key:state.activeChatKey;
+      if(state.queueEdit.conversationKey!==editKey || state.queueEdit.epoch!==state.epoch){setError('请返回原对话完成排队消息编辑。','action');return false;}
+      draft=state.queueEdit;
     }
     if (!draft && state.view === 'chat' && state.chat && state.chat.composer && state.chat.composer.hasDraft) { await openDraft(); return false; }
     state.pending.sendText = true;
@@ -3009,7 +3430,12 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   /* ---------- 事件绑定 ---------- */
   function showPanel(name){
     var previous=state.panel;
+    if((name==='settings' && previous!=='settings') || (previous==='settings' && name!=='settings')){
+      state.settingChoice='';renderSettingChoices();
+      Array.prototype.forEach.call(document.querySelectorAll('#settingsPanel details[open]'),function(item){item.open=false;});
+    }
     if (previous==='draft' && name!=='draft') clearDraftPreview();
+    if(previous==='queue'&&name!=='queue'){state.queueSequence++;state.queueLoading=false;state.queueError='';}
     if (previous==='options' && name!=='options') {
       var menu=state.options;
       state.optionsSequence++;state.options=null;state.optionsSurface=null;state.optionsLoading=false;state.optionsError='';els.optionsList.textContent='';
@@ -3020,27 +3446,35 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
       if(state.chatAbort)state.chatAbort.abort();
       if(state.frameAbort)state.frameAbort.abort();
     }
-    ['settings','navigation','draft','options'].forEach(function(panel){
+    ['settings','navigation','draft','options','queue'].forEach(function(panel){
       els[panel+'Panel'].hidden=panel!==name;els[panel+'Backdrop'].hidden=panel!==name;
     });
     els.remoteView.inert=!!name;
+    els.homeView.inert=!!name;
     els.settingsToggleBtn.setAttribute('aria-expanded',String(name==='settings'));
+    els.homeSettingsBtn.setAttribute('aria-expanded',String(name==='settings'));
     els.navigationToggleBtn.setAttribute('aria-expanded',String(name==='navigation'));
     els.computerDraftBtn.setAttribute('aria-expanded',String(name==='draft'));
     els.composerOptionsBtn.setAttribute('aria-expanded',String(name==='options'));
-    var focus=name ? els[name+'CloseBtn'] : ({settings:els.settingsToggleBtn,navigation:els.navigationToggleBtn,draft:els.computerDraftBtn,options:els.composerOptionsBtn})[previous];
+    els.queueManagerBtn.setAttribute('aria-expanded',String(name==='queue'));
+    var focus=name ? els[name+'CloseBtn'] : ({settings:state.homeActive?els.homeSettingsBtn:els.settingsToggleBtn,navigation:els.navigationToggleBtn,draft:els.computerDraftBtn,options:els.composerOptionsBtn,queue:els.queueManagerBtn})[previous];
     if (focus) try { focus.focus({preventScroll:true}); } catch(e) { /* optional focus */ }
     if(!name && previous && state.mediaStarted && !state.optionsBusy) startMedia();
   }
   function setPanel(name){
-    if (state.panelBackPending || (name && (state.draftBusy || state.pending.sendText || state.optionsBusy))) return false;
+    if (state.panelBackPending || (name && (state.draftBusy || (state.pending.sendText&&name!=='navigation'&&name!=='queue') || state.optionsBusy))) return false;
     if (name===state.panel) return true;
+    if(name && state.homeActive){
+      applyPhoneSurface(false,true);
+      if(window.history)window.history.replaceState({harmonyRemoteSurface:'remote'},'',location.pathname?location.pathname+(location.search||''):'#');
+    }
     var history=window.history;
     if (history) {
       if (name) {
         var entry=Object.assign({},history.state||{},{harmonyRemotePanel:name});
-        if (state.panel || (history.state && history.state.harmonyRemotePanel)) history.replaceState(entry,'');
-        else history.pushState(entry,'');
+        var route='#'+({navigation:'projects',settings:'settings',draft:'draft',options:'options'}[name]||name);
+        if (state.panel || (history.state && history.state.harmonyRemotePanel)) history.replaceState(entry,'',route);
+        else history.pushState(entry,'',route);
       } else if (history.state && history.state.harmonyRemotePanel) {
         state.panelBackPending=true;history.back();
       }
@@ -3049,13 +3483,22 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   }
   function panelPopState(event){
     state.panelBackPending=false;
+    if(!state.live && !els.pairView.hidden){showPairEntry(!!(event.state && event.state.harmonyRemotePairEntry),false);return;}
+    if(state.homeRequested){state.homeRequested=false;state.homeActive=true;showPanel('');showConnectionHome();return;}
+    var surface=event.state && event.state.harmonyRemoteSurface;
+    if(state.live && (surface==='home' || surface==='remote')){
+      var home=surface==='home';
+      if(home!==state.homeActive){applyPhoneSurface(home);savePhoneSurface(surface);}
+    }
     var name=event.state && event.state.harmonyRemotePanel;
-    if (els.remoteView.hidden || ['settings','navigation','draft','options'].indexOf(name)<0) name='';
+    if ((els.remoteView.hidden && els.homeView.hidden) || ['settings','navigation','draft','options','queue'].indexOf(name)<0) name='';
+    if(state.homeActive && name && name!=='settings')name='';
     if(name!=='navigation')state.navigationMode='browse';
     showPanel(name);
     if (name==='navigation') {if(state.navigation && state.navigation.epoch===state.epoch){renderNavigation();if(state.navigationNeedsRefresh)refreshNavigation();}else refreshNavigation();}
     if (name==='draft') refreshDraft();
     if (name==='options') refreshOptions();
+    if (name==='queue') refreshQueue();
   }
   function setSettings(open){
     if (open) setPanel('settings');
@@ -3203,6 +3646,17 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
     if (height) document.body.style.setProperty('--app-height', Math.round(height) + 'px');
   }
   function bindEvents(){
+    els.queueManagerBtn.addEventListener('click',openQueue);
+    els.queueCloseBtn.addEventListener('click',function(){setPanel('');});
+    els.queueBackdrop.addEventListener('click',function(){setPanel('');});
+    els.queueRefreshBtn.addEventListener('click',refreshQueue);
+    els.queueScreenBtn.addEventListener('click',function(){setPanel('');switchView('screen');});
+    els.pairStartBtn.addEventListener('click',function(){showPairEntry(true,true);});
+    els.pairBackBtn.addEventListener('click',function(){if(window.history && window.history.state && window.history.state.harmonyRemotePairEntry)window.history.back();else showPairEntry(false,false);});
+    els.homeOpenBtn.addEventListener('click',openRemoteView);
+    els.homeSettingsBtn.addEventListener('click',function(){setSettings(true);});
+    els.computerHomeBtn.addEventListener('click',returnToComputer);
+    els.homeResumeBtn.addEventListener('click',function(){state.autoResume=!state.autoResume;savePhoneSurface(state.homeActive?'home':'remote');renderConnectionHome();});
     els.phoneFileInput.addEventListener('change',function(){var files=Array.prototype.slice.call(els.phoneFileInput.files||[]);els.phoneFileInput.value='';uploadPhoneFiles(files);});
     els.queuedToggleBtn.addEventListener('click',function(){state.queuedExpanded=!state.queuedExpanded;renderQueued();});
     els.submitChoiceBtn.addEventListener('click',function(){state.settingChoice=state.settingChoice==='send'?'':'send';renderSettingChoices();});
@@ -3354,6 +3808,7 @@ body.remote-mode{height:var(--app-height,100dvh);min-height:0;overflow:hidden;ba
   }
 
   function boot(){
+    restorePhonePreferences();
     try {
       var method = localStorage.getItem(SUBMIT_KEY);
       if (['button', 'CTRL+ENTER', 'ENTER'].indexOf(method) !== -1) state.submitMethod = method;

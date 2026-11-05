@@ -1,66 +1,40 @@
-"""One vector mark for the desktop panel, shortcut and native notification icon."""
+"""Export light and dark Rm assets from one canonical vector."""
 from pathlib import Path
+import subprocess
 
-GLYPHS = [
-    [('M', (12, 46)), ('L', (12, 18))],
-    [('M', (12, 18)), ('L', (21, 18)), ('C', (32, 18, 32, 33, 21, 33)), ('L', (12, 33))],
-    [('M', (21, 33)), ('L', (31, 46))],
-    [('M', (37, 46)), ('L', (37, 30))],
-    [('M', (37, 35)), ('C', (37, 28, 46, 28, 46, 35)), ('L', (46, 46))],
-    [('M', (46, 35)), ('C', (46, 28, 55, 28, 55, 35)), ('L', (55, 46))],
-]
+HERE = Path(__file__).resolve().parent
 
 
-def vector() -> str:
-    paths = ''.join('<path d="' + ' '.join(command + ' ' + ' '.join(map(str, values))
-                    for command, values in glyph) + '"/>' for glyph in GLYPHS)
-    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">'
-            '<rect x="1.25" y="1.25" width="61.5" height="61.5" rx="20" fill="#171717" stroke="#737373" stroke-width="2.5"/>'
-            '<g stroke="#fff" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round">'
-            + paths + '</g></svg>')
+def vector(theme='dark') -> str:
+    source = (HERE / 'assets/rm-mark.svg').read_text(encoding='utf-8').strip()
+    if theme == 'light':
+        return (source.replace('fill="#171717"', 'fill="#ffffff" stroke="#d7d7d7" stroke-width="0.75"')
+                .replace('stroke="#ffffff"', 'stroke="#171717"'))
+    if theme == 'auto':
+        style = ('<style>#rm-tile{fill:#fff;stroke:#d7d7d7;stroke-width:.75}'
+                 '#rm-letters{stroke:#171717}@media(prefers-color-scheme:dark){'
+                 '#rm-tile{fill:#171717;stroke:none}#rm-letters{stroke:#fff}}</style>')
+        return source.replace('</svg>', style + '</svg>')
+    return source
 
 
 def build():
-    from PIL import Image, ImageDraw
-    root = Path(__file__).resolve().parent
-    assets = root / 'assets'
-    assets.mkdir(exist_ok=True)
-    (assets / 'rm-mark.svg').write_text(vector(), encoding='utf-8')
-    scale = 8
-    image = Image.new('RGBA', (64*scale, 64*scale))
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((1.25*scale,1.25*scale,62.75*scale,62.75*scale), radius=20*scale,
-                           fill='#171717', outline='#737373', width=round(2.5*scale))
-    for glyph in GLYPHS:
-        points = []
-        current = (0, 0)
-        for command, values in glyph:
-            if command in ('M', 'L'):
-                current = values
-                points.append(current)
-            elif command == 'C':
-                start = current
-                a, b, end = values[:2], values[2:4], values[4:]
-                for step in range(1, 65):
-                    t = step / 64
-                    points.append(tuple((1-t)**3*start[i] + 3*(1-t)**2*t*a[i]
-                                        + 3*(1-t)*t*t*b[i] + t**3*end[i] for i in (0,1)))
-                current = end
-        points = [(x*scale,y*scale) for x,y in points]
-        width = round(5.6*scale)
-        left=[];right=[]
-        for index,(x,y) in enumerate(points):
-            before=points[max(0,index-1)];after=points[min(len(points)-1,index+1)]
-            dx,dy=after[0]-before[0],after[1]-before[1]
-            length=(dx*dx+dy*dy)**.5 or 1
-            nx,ny=-dy/length*width/2,dx/length*width/2
-            left.append((x+nx,y+ny));right.append((x-nx,y-ny))
-        draw.polygon(left+right[::-1],fill='white')
-        for x,y in (points[0],points[-1]):
-            radius=width/2;draw.ellipse((x-radius,y-radius,x+radius,y+radius),fill='white')
-    image = image.resize((256,256), Image.Resampling.LANCZOS)
-    image.save(root / 'desktop.ico', sizes=[(n,n) for n in (16,20,24,32,40,48,64,128,256)])
-    return image
+    from PIL import Image
+    images = {}
+    for theme in ('light', 'dark'):
+        source = HERE / ('assets/rm-mark-' + theme + '.svg')
+        source.write_text(vector(theme) + '\n', encoding='utf-8')
+        raster = HERE.parent / '_wip' / 'icon-render' / ('rm-' + theme + '.png')
+        subprocess.run(['powershell.exe', '-NoProfile', '-Sta', '-ExecutionPolicy', 'Bypass',
+                        '-File', str(HERE / 'render_mark.ps1'), '-Source', str(source),
+                        '-Output', str(raster)], check=True)
+        with Image.open(raster) as rendered:
+            image = rendered.convert('RGBA')
+        image.save(HERE / ('desktop-' + theme + '.ico'), format='ICO',
+                   sizes=[(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)])
+        images[theme] = image
+    (HERE / 'desktop.ico').write_bytes((HERE / 'desktop-dark.ico').read_bytes())
+    return images['dark'].resize((256, 256), Image.Resampling.LANCZOS)
 
 
 if __name__ == '__main__':
