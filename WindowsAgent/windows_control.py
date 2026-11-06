@@ -599,7 +599,7 @@ class WindowsBackend:
             method = "printwindow"
             ok = self.u32.PrintWindow(hwnd, mem_dc, PW_RENDERFULLCONTENT)
             image = self._stretch_crop(mem_dc, left, top, crop_w, crop_h, target_w, target_h)
-            if not ok or self._is_black(image):
+            if not ok or self._is_black(image) or os.environ.get("RM_CAPTURE") == "screen":
                 method = "screen"
                 if not self.g32.BitBlt(mem_dc, 0, 0, fw, fh, screen_dc, 0, 0,
                                        SRCCOPY | CAPTUREBLT):
