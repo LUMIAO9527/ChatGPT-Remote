@@ -11,7 +11,7 @@ const pair={pin:'123456',qr:'data:image/png;base64,example',expiresAt:Date.now()
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(initial={},reply=null){
  const nodes=new Map(),listeners=new Map(),intervals=new Map();let id=0;
- const node=key=>{if(!nodes.has(key))nodes.set(key,{hidden:false,open:false,disabled:false,dataset:{},scrollTop:0,innerHTML:'',textContent:'',value:'',style:{setProperty(){}},classList:{toggle(){}},setAttribute(name,value){this[name]=value;},getAttribute(name){return this[name];},querySelectorAll(){return [];},getBoundingClientRect(){return {height:42};},addEventListener(name,fn){listeners.set(key+':'+name,fn);},close(){this.open=false;},showModal(){this.open=true;},focus(){},select(){}});return nodes.get(key);};
+ const node=key=>{if(!nodes.has(key))nodes.set(key,{hidden:false,open:false,disabled:false,dataset:{},scrollTop:0,innerHTML:'',textContent:'',value:'',style:{setProperty(){}},classList:{toggle(){}},setAttribute(name,value){this[name]=value;},getAttribute(name){return this[name];},querySelectorAll(){return [];},getBoundingClientRect(){return {height:42};},addEventListener(name,fn){listeners.set(key+':'+name,fn);},close(){this.open=false;},showModal(){this.open=true;},focus(){},select(){},insertAdjacentHTML(){},contains(target){return !!target.inMenu;}});return nodes.get(key);};
  const calls=[];
  const context=vm.createContext({JSON,Date,Number,String,Math,Promise,Error,queueMicrotask,
   document:{hidden:false,documentElement:{dataset:{}},querySelector:node,querySelectorAll:()=>[],addEventListener:(name,fn)=>listeners.set(name,fn)},
@@ -22,7 +22,12 @@ function harness(initial={},reply=null){
  vm.runInContext(source,context);
  context.window.pywebview={api:{call:async(action,payload)=>{calls.push({action,payload});if(reply){const result=reply(action,payload);if(result!==undefined)return result;}if(action==='status')return {ok:true,...structuredClone(base)};if(action==='pair')return {ok:true,...pair};if(action==='settings.get')return {ok:true,preferences:base.preferences,autoStart:true};return {ok:true};}}};
  context.initial={panelVisible:false,...initial};vm.runInContext('Object.assign(state,initial)',context);
- return {context,node,calls,intervals,listeners,run:code=>vm.runInContext(code,context),click:(action,data={})=>listeners.get('click')({target:{closest:()=>({disabled:false,dataset:{action,...data},getAttribute(name){return this[name];},setAttribute(name,value){this[name]=value;}})}}),submit:()=>listeners.get('#dialog-form:submit')({preventDefault(){}})};
+ const click=(action,data={})=>{
+  const button=node('[data-action='+action+']');
+  button.dataset={action,...data};
+  return listeners.get('click')({target:{closest:()=>button,inMenu:['rename','remove'].includes(action)}});
+ };
+ return {context,node,calls,intervals,listeners,run:code=>vm.runInContext(code,context),click,submit:()=>listeners.get('#dialog-form:submit')({preventDefault(){}})};
 }
 test('home directly shows pairing, one window and one phone',async()=>{
  const h=harness({status:structuredClone(base),panelVisible:true});await h.run('ensurePair()');
@@ -124,8 +129,7 @@ test('current release uses a single description with the executable version',()=
  const content=h.node('#main').innerHTML;
  assert.match(content,/当前版本 1\.0\.0/);
  assert.match(content,/当前已是最新版本/);
- assert.match(content,/已检查 GitHub 正式版/);
- assert.doesNotMatch(content,/data-action="update-notes"|Old release notes/);
+ assert.doesNotMatch(content,/data-action="update-notes"|Old release notes|已检查 GitHub 正式版/);
 });
 
 test('the updater finishes independently and a delayed agent snapshot cannot overwrite it',async()=>{
@@ -144,7 +148,7 @@ test('the updater finishes independently and a delayed agent snapshot cannot ove
  const staleRead=h.run('refresh()');
  h.run("go('update')");await flush();
  await h.click('check-update');
- assert.match(h.node('#main').innerHTML,/正在检查更新…/);
+ assert.match(h.node('#main').innerHTML,/正在检查…/);
  release=available;
  await h.run('refresh()');
  finishStatus({ok:true,...structuredClone(base),update:current});await staleRead;
@@ -193,18 +197,32 @@ test('target selection preserves the numeric bridge identity',async()=>{
  assert.equal(h.calls.find(x=>x.action==='target.select').payload.id,42);
 });
 test('device rename and removal wait for confirmation and preserve the exact device identity',async()=>{
- const h=harness({status:structuredClone(base)});await h.click('rename',{id:'phone'});
+ const h=harness({status:structuredClone(base)});await h.click('device-menu',{id:'phone'});await h.click('rename');
  assert.equal(h.calls.filter(x=>x.action==='device.rename').length,0);assert.equal(h.node('#dialog-input').value,'手机');
  h.node('#dialog-input').value='我的手机';await h.submit();
  const rename=h.calls.find(x=>x.action==='device.rename');assert.equal(rename.payload.id,'phone');assert.equal(rename.payload.name,'我的手机');
- await h.click('remove',{id:'phone'});assert.equal(h.calls.filter(x=>x.action==='device.remove').length,0);
+ await h.click('device-menu',{id:'phone'});await h.click('remove');assert.equal(h.calls.filter(x=>x.action==='device.remove').length,0);
  await h.submit();assert.equal(h.calls.find(x=>x.action==='device.remove').payload.id,'phone');
 });
-test('installing an update requires confirmation and a non-installable update opens the release page',async()=>{
- const h=harness({status:{...structuredClone(base),update:{status:'ready',installable:true,version:'0.17.0'}}});h.run("go('update')");
+test('a verified update starts once without a second confirmation',async()=>{
+ let finish;const reply=new Promise(resolve=>finish=resolve);
+ const h=harness({status:{...structuredClone(base),update:{status:'ready',installable:true,version:'0.17.0'}}},action=>action==='updates.install'?reply:undefined);h.run("go('update')");
  assert.match(h.node('#main').innerHTML,/data-action="install-update"/);
- await h.click('install-update');assert.equal(h.calls.filter(x=>x.action==='updates.install').length,0);
- assert.equal(h.node('#dialog').open,true);await h.submit();assert.equal(h.calls.filter(x=>x.action==='updates.install').length,1);
+ const install=h.click('install-update');await h.click('install-update');
+ assert.equal(h.node('#dialog').open,false);
+ assert.equal(h.calls.filter(x=>x.action==='updates.install').length,1);
+ assert.match(h.node('#main').innerHTML,/正在重启…/);
+ finish({ok:true});await install;
+});
+test('an install failure is inline and permits retrying the verified update',async()=>{
+ const h=harness({status:{...structuredClone(base),update:{status:'ready',installable:true,version:'0.17.0'}}},
+   action=>action==='updates.install'?{ok:false,error:'请等待当前发送完成'}:undefined);
+ h.run("go('update')");await h.click('install-update');
+ assert.equal(h.node('#dialog').open,false);
+ assert.match(h.node('#main').innerHTML,/请等待当前发送完成/);
+ assert.match(h.node('#main').innerHTML,/重启并更新/);
+});
+test('a non-installable update opens the release page',async()=>{
  const source=harness({status:{...structuredClone(base),installation:{sourceMode:true},update:{status:'ready',installable:false}}});source.run("go('update')");
  assert.doesNotMatch(source.node('#main').innerHTML,/data-action="install-update"/);assert.match(source.node('#main').innerHTML,/data-action="releases"/);
  await source.click('install-update');assert.equal(source.calls.filter(x=>x.action==='updates.install').length,0);

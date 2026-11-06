@@ -5,12 +5,10 @@ function uninstall(s){const source=s.installation?.sourceMode;return `<div class
 function lifecycleUpdate(s) {
  const update = s.update || {}, status = update.status || 'idle';
  const working = ['checking', 'downloading', 'installing'].includes(status);
- const retryDownload = status === 'error' && update.available;
+ const retryDownload = status === 'error' && update.available || status === 'ready' && installError.includes('重新下载');
  const progress = Math.max(0, Math.min(100, Number(update.progress) || 0));
  const titles = {
-  idle: '检查是否有新版本', checking: '正在检查更新…', current: '当前已是最新版本',
-  available: '发现可用更新', downloading: '正在下载更新…', ready: '更新已准备好',
-  installing: '正在重启并更新…', error: '更新未完成',
+  current: '当前已是最新版本', available: '发现可用更新', ready: '更新已准备好', error: '更新未完成',
  };
  let action = 'check-update', label = '检查更新';
  if (status === 'available' || retryDownload) {
@@ -26,9 +24,7 @@ function lifecycleUpdate(s) {
  const hasNotes = hasVersion && update.notes;
  const notesOpen = hasNotes && state.releaseNotesOpen;
  const version = '版本 ' + esc(update.version || '');
- const details = status === 'error' ? (update.message || '请重试') : {
-  idle: '从 GitHub 获取最新正式版。', current: '已检查 GitHub 正式版。',
- }[status];
+ const details = status === 'error' ? (update.message || '请重试') : status === 'ready' ? installError : '';
  const release = hasNotes ? `<div class="update-release">
   <button class="update-notes-toggle" data-action="update-notes" aria-controls="release-notes"
    aria-expanded="${!!notesOpen}">${version} · 更新说明 ${icon('right')}</button>
@@ -41,9 +37,9 @@ function lifecycleUpdate(s) {
    <p class="update-version">当前版本 ${esc(update.current || s.version)}</p>
    <button class="update-github" data-action="github">GitHub 项目 ${icon('external')}</button>
   </section>
-  <button class="primary" data-action="${action}" data-operation data-unavailable="${working}" ${working ? 'disabled' : ''}>${label}</button>
+  <button class="primary" data-action="${action}" data-operation data-unavailable="${working}" ${working ? 'disabled' : ''} aria-live="polite">${label}</button>
   <section class="update-state">
-   <h3 class="update-message" aria-live="polite">${titles[status] || titles.idle}</h3>
+   ${titles[status] ? `<h3 class="update-message" role="status">${titles[status]}</h3>` : ''}
    ${details ? `<p class="update-description">${esc(details)}</p>` : ''}
    ${status === 'downloading' ? '<button class="text-action update-cancel" data-action="cancel-update">取消下载</button>' : ''}
    ${release}
@@ -51,7 +47,7 @@ function lifecycleUpdate(s) {
  </div>`;
 }
 
-let releaseRefreshPending = null, releaseActionPending = false;
+let releaseRefreshPending = null, releaseActionPending = false, installError = '';
 
 function applyReleaseState(update) {
  if (!update || typeof update.status !== 'string') throw new Error('无法读取更新状态，请重试。');
@@ -84,14 +80,26 @@ async function refreshRelease() {
 async function requestRelease(action) {
  if (state.busy || releaseActionPending) return;
  const previous = state.status.update || {};
+ const installing = action === 'updates.install';
+ if (installing && (previous.status !== 'ready' || !previous.installable)) return;
  releaseActionPending = true;
+ installError = '';
  try {
-  if (action === 'updates.check') applyReleaseState({...previous, status: 'checking'});
+  if (installing) {
+   setBusy(true);
+   applyReleaseState({...previous, status: 'installing'});
+  } else if (action === 'updates.check') applyReleaseState({...previous, status: 'checking'});
   const {update} = await call(action);
-  applyReleaseState(update);
+  if (!installing || update) applyReleaseState(update);
  } catch (error) {
-  applyReleaseState({...previous, status: 'error', available: action !== 'updates.check' && !!previous.available, message: error.message});
+  if (installing) {
+   installError = error.message;
+   applyReleaseState(previous);
+  } else {
+   applyReleaseState({...previous, status: 'error', available: action !== 'updates.check' && !!previous.available, message: error.message});
+  }
  } finally {
+  if (installing) setBusy(false);
   releaseActionPending = false;
  }
 }
@@ -104,8 +112,7 @@ async function lifecycleAction(action,button){
  if(action==='install-program'){state.installPath=$('#install-path').value.trim();if(!state.installPath){toast('请选择程序文件夹',true);return true;}await operate('installation.install',{path:state.installPath});return true;}
  if(action==='uninstall-keep'){state.keepData=state.keepData===false;render();return true;}
  if(action==='uninstall-program'){showDialog({title:'确认卸载？',description:state.keepData===false?'配对与设置将一并清除。':'配对与设置会保留。',confirm:'卸载',danger:true,submit:()=>call('uninstall',{keep:state.keepData!==false})});return true;}
- if(action==='install-update'){if(!state.status?.update?.installable)return true;showDialog({title:'重启并更新？',description:'手机连接会短暂断开，配对与设置会保留。',confirm:'重启并更新',submit:async()=>{const r=await call('updates.install');if(r?.update)state.status.update=r.update;}});return true;}
- const operations={'check-update':'updates.check','download-update':'updates.download','cancel-update':'updates.cancel'};
+ const operations={'check-update':'updates.check','download-update':'updates.download','cancel-update':'updates.cancel','install-update':'updates.install'};
  if(operations[action]){await requestRelease(operations[action]);return true;}
  return false;
 }

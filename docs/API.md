@@ -1,4 +1,4 @@
-# ChatGPT Remote 1.0.2 Web/Agent API 契约
+# ChatGPT Remote 1.0.3 Web/Agent API 契约
 
 本文件是 Windows Agent（agent.py）与手机页面（web/index.html）之间的接口契约。
 后端按本契约实现；前端只依赖本契约。除本文件列出的字段外，前端不得依赖其他内部结构。
@@ -38,7 +38,7 @@
 ### GET /api/health
 无需配对令牌。返回：
 ```json
-{"ok": true, "name": "ChatGPT Remote", "version": "1.0.2", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
+{"ok": true, "name": "ChatGPT Remote", "version": "1.0.3", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
 ```
 启用访问密钥时仍需有效 Cookie 或 `X-Access-Key`。
 `transport` 为当前进程的非持久化传输诊断；每条活动连接仅含活动控制连接数、未确认帧数/字节数、自适应确认上限、已发送字节数和服务器发送画面至收到绘制确认的往返耗时，不包含图片、窗口标题、设备名或令牌。
@@ -54,7 +54,7 @@ body：`{"pin": "123456", "name": "手机"}`
 ```json
 {
   "ok": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "computerName": "Example-PC",
   "instance": "<本次服务启动编号>",
   "mock": true,
@@ -138,7 +138,7 @@ body：`{"pin": "123456", "name": "手机"}`
 {"ok":true,"key":"<目录标识>","epoch":123,"available":true,"menu":false,"items":[{"id":"<原生条目>","title":"当前模型","kind":"model","enabled":true,"selected":false}]}
 ```
 
-`kind` 为 `model`、`permission`、`effort`、`tools`、`option`、`upload` 或 `surface`。`upload` 由手机打开自身文件选择器，不调用电脑文件对话框。菜单可附带 `category`；条目可带 `label` 和 `description`，权限名称与说明分开显示，帮助、了解更多等链接不作为可选项。条目来自选定窗口的主文档，嵌入网页另有文档身份时不纳入；菜单条目与输入区分类入口分别返回。当前添加菜单的扁平按钮仅在已观察到输入区触发器展开时识别。菜单目录只在内存中保留，最多八份。
+`kind` 为 `model`、`permission`、`effort`、`tools`、`option`、`upload`、`surface`、`model-list`、`quick`、`reset` 或 `effort-step`。菜单可附带 `category`，条目可带 `label` 和 `description`。`scope` 是当前原生对话标识的摘要，用于核对同一模型面板内陆续读到的选项。`effort-step` 带 `level`、`currentLevel` 和 `levelCount`。选档只调用已核对且拥有键盘焦点的原生强度控件，操作后核对选中档位。上传条目由手机打开自身文件选择器。条目来自选定窗口的主文档，帮助链接和另有文档身份的嵌入网页不纳入目录。菜单目录只在内存中保留，最多八份。
 
 当前窗口出现可识别的审批或选择弹窗时，`GET /api/composer` 返回 `category: "prompt"` 和 `prompt: {title, text, approval, truncated}`，对话快照也可附带同一份目录。选择使用 `composer/invoke` 及这份目录的 `optionsKey` 和 `targetId`。服务端核对当前窗口、会话、弹窗摘要与按钮，提交后重新读取。手机收起弹层只改变本地界面。
 

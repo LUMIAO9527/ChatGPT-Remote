@@ -71,7 +71,7 @@ function Get-ComposerDraft($value, $placeholderOnly=$false) {
 
 function Test-ComposerPlaceholder($composer) {
     if($composer.Current.ClassName -notmatch 'ProseMirror'){return $false}
-    $placeholder=$false;$content=$false
+    $placeholder=$false
     $id=$composer.GetRuntimeId() -join '.'
     $texts=$composer.FindAll([Windows.Automation.TreeScope]::Descendants,
         [Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text))
@@ -83,9 +83,9 @@ function Test-ComposerPlaceholder($composer) {
             if(!$node -or ($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.') -ceq $id){break}
             if($node.Cached.ClassName -match '(^|\s)(placeholder|is-editor-empty)(\s|$)'){$isPlaceholder=$true;break}
         }
-        if($isPlaceholder){$placeholder=$true}else{$content=$true}
+        if($isPlaceholder){$placeholder=$true}else{return $false}
     }
-    return $placeholder -and !$content
+    return $placeholder
 }
 
 function Get-ConversationIdentity($handle, $documentId, $title, $firstMarker, $selectedThreads, $messageAnchor='') {
@@ -732,6 +732,52 @@ function Read-DesktopPrompt($snapshot) {
 }
 
 $script:menuCategory='';$script:menuCategoryContext='';$script:menuCategoryIdentity=''
+function Get-ComposerEffort($menu, $control) {
+    if ($control.Current.ClassName -notmatch '\bSliderKeyboardControl-' -or !$control.Current.IsKeyboardFocusable) { return }
+    $condition=[Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text)
+    $texts=$menu.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
+    foreach ($text in $texts) {
+        $parent=$walker.GetParent($text)
+        if (!$parent -or $parent.Current.ClassName -notmatch '\bKeyboardAnnouncement-') { continue }
+        $announcement=$text.Current.Name
+        if ($announcement -match '^(.+?)[，,]\s*第\s*(\d+)\s*项[，,]\s*共\s*(\d+)\s*项[。.]?$' -or
+            $announcement -match '^(.+?)[,]\s*(?:item\s+)?(\d+)\s+of\s+(\d+)[.]?$') {
+            $position=[int]$Matches[2];$count=[int]$Matches[3]
+            if ($count -ge 2 -and $count -le 12 -and $position -ge 1 -and $position -le $count) {
+                return @{position=$position;count=$count;name=$Matches[1].Trim()}
+            }
+        }
+    }
+}
+
+function Set-ComposerEffort($handle, $choice) {
+    if (-not ('RmEffortInput' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class RmEffortInput {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+}
+'@
+    }
+    $control=$choice.element
+    $id=$control.GetRuntimeId() -join '.'
+    $delta=$choice.position-$choice.effort.position
+    if ($delta -eq 0) { return }
+    $key=if ($delta -lt 0) { 0x25 } else { 0x27 }
+    if ([RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle) { throw 'effort window lost focus' }
+    $control.SetFocus()
+    for ($step=0; $step -lt [Math]::Abs($delta); $step++) {
+        $focused=$AE::FocusedElement
+        if (!$focused -or ($focused.GetRuntimeId() -join '.') -cne $id -or
+            [RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle) { throw 'effort control lost focus' }
+        [RmEffortInput]::keybd_event($key,0,1,[UIntPtr]::Zero)
+        [RmEffortInput]::keybd_event($key,0,3,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 45
+    }
+}
+
 function Read-ComposerOptions($handle, $category='') {
     $snapshot = Read-Window $handle $true
     $prompt=Read-DesktopPrompt $snapshot
@@ -793,11 +839,26 @@ function Read-ComposerOptions($handle, $category='') {
         }
         $kind = ''
         if ($null -ne $menu) {
+            $context=if($portalContext){$portalContext}else{$menu.GetRuntimeId() -join '.'}
+            $id=$node.GetRuntimeId() -join '.'
+            $effort=Get-ComposerEffort $menu $node
+            if ($effort) {
+                for ($position=1; $position -le $effort.count; $position++) {
+                    $selected=$position -eq $effort.position
+                    $menus.Add(@{id="$id|effort:$position";title=[string]$position;kind='effort-step';
+                        enabled=$c.IsEnabled;selected=$selected;label=$(if($selected){$effort.name}else{''});
+                        context=$context;menuElement=$menu;element=$node;position=$position;effort=$effort})
+                }
+                continue
+            }
             $kind=if ($c.Name -match '(?i)^(强度|推理强度|推理等级|思考强度|Reasoning effort|Effort)$') {
                     $expansion=$null
                     if($node.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$expansion) -and
                         $expansion.Current.ExpandCollapseState -ne [System.Windows.Automation.ExpandCollapseState]::LeafNode){'effort'}else{'surface'}
                 }
+                elseif ($c.ClassName -match '\bViewToggle-' -and $c.Name -match '^(选择模型|Select model|Choose model)$') {'model-list'}
+                elseif ($type -eq 'CheckBox' -and $c.ClassName -match '\bFastModeToggle-') {'quick'}
+                elseif ($c.ClassName -match '\bResetToDefault-' -and $c.Name -match '^(重置为默认|Reset to default)$') {'reset'}
                 elseif($c.Name -match '(?i)^(文件和文件夹|添加文件|上传文件|从电脑上传|添加照片和文件|Files and folders|Add files|Upload files|Upload from computer|Add photos .{1,4} files)$') {'upload'} else {'option'}
         }
         else {
@@ -835,7 +896,16 @@ function Get-ProjectAncestor($node) {
 }
 
 function Export-ComposerOptions($options) {
-    $items=@($options.entries | ForEach-Object {@{id=$_.id;title=$_.title;kind=$_.kind;enabled=$_.enabled;selected=$_.selected}})
+    $items=@($options.entries | ForEach-Object {
+        $item=@{id=$_.id;title=$_.title;kind=$_.kind;enabled=$_.enabled;selected=$_.selected}
+        if ($_.kind -eq 'effort-step') {
+            $item.label=$_.label
+            $item.level=$_.position
+            $item.currentLevel=$_.effort.position
+            $item.levelCount=$_.effort.count
+        }
+        $item
+    })
     $result=@{ok=$true;identity=$options.identity;context=$options.context;menu=$options.menu;items=$items;category=$options.category}
     if($options.prompt){$result.prompt=$options.prompt}
     return $result
@@ -910,7 +980,8 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     $matches=@($options.entries | Where-Object {$_.id -ceq $request.item.id -and $_.title -ceq $request.item.title -and
                         $_.kind -ceq $request.item.kind -and $_.selected -eq $request.item.selected -and $_.enabled})
                     if ($matches.Count -ne 1) { throw 'option changed' }
-                    $element=$matches[0].element
+                    $choice=$matches[0]
+                    $element=$choice.element
                     if ($request.operation -eq 'composer_surface') {
                         if ($matches[0].kind -ne 'surface') { throw 'surface unavailable' }
                         $r=$element.Current.BoundingRectangle;$m=$matches[0].menuElement.Current.BoundingRectangle
@@ -919,7 +990,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     } else {
                     if ($matches[0].kind -eq 'surface') { throw 'surface requires pointer' }
                     $pattern=$null
-                    if ($element.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)) {
+                    if ($choice.kind -eq 'effort-step') {
+                        if ($choice.effort.position -ne $request.item.currentLevel -or
+                            $choice.effort.count -ne $request.item.levelCount) { throw 'effort options changed' }
+                        Set-ComposerEffort $request.hwnd $choice
+                    } elseif ($element.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)) {
                         if ($pattern.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded) { $pattern.Collapse() } else { $pattern.Expand() }
                     } elseif ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke() }
                     elseif ($element.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)) { $pattern.Select() }
@@ -931,6 +1006,8 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     if ($request.refresh) {
                         $category=if($request.item.kind -in @('model','permission','tools','effort')){$request.item.kind}else{$options.category}
                         $next=Read-ComposerOptions $request.hwnd $category
+                        if ($choice.kind -eq 'effort-step' -and ($next.identity -cne $options.identity -or
+                            !($next.entries | Where-Object {$_.id -ceq $choice.id -and $_.selected}))) { throw 'effort result unconfirmed' }
                         if(!$next.menu -and !$next.prompt -and !$options.menu -and $request.item.kind -in @('model','permission','tools','effort')) {
                             # A read may straddle the desktop popup animation.
                             # Re-read once; the invocation itself is never repeated.

@@ -12,7 +12,7 @@ const source = script.replace(end, `
   globalThis.pageTest = { state, request, requestJson, refreshWindows, displayFrame, renderStats, FrameParser, acknowledgeFrame,
     sendAction, sendText, queueScroll, applyConversationEvent, computeGate, controlRequest, stopControl, recordActionFrame,
     renderNavigation, refreshNavigation, setNavigation, navigateItem, acceptNavigation, openNewChat, applyWindowState, openDraft, clearDraftConflict, resolveDraft, renderDraft, mergeDraftText, renderControls,
-    setPanel, panelPopState, openFilePicker, openModelPicker, openComposerMenu, refreshOptions, invokeOption, dismissOptions, openOptionSurface, showPairView,
+    setPanel, panelPopState, openFilePicker, openModelPicker, applyModelChoice, refreshOptions, invokeOption, dismissOptions, openOptionSurface, showPairView,
     renderQueued, renderMessageBody, startMedia, uploadPhoneFiles, beginPhoneSend, observePhoneSend, awaitPhoneSend, finishPhoneSend, resumePhoneSend,
     showConnectionHome, openRemoteView, returnToComputer, showPairEntry, restorePhonePreferences,
     startControl, stopLive, showOffline, resumeConnection, keepUnconfirmedDraft, openDesktopPrompt,
@@ -1022,6 +1022,65 @@ test('the model shortcut opens the native model choices and keeps the phone draf
   assert.equal(page.elements.get('message').value,'保留手机草稿');
 });
 
+test('one model sheet flattens the native model branch, strength positions and fast switch',async()=>{
+  let stage='',revision=0,level=5,quick=false,model='GPT Fixture A';
+  const actions=[];
+  function snapshot(){
+    const menu=stage!=='';let items;
+    if(stage==='model')items=[
+      {id:'model-list',title:'选择模型',kind:'model-list'},
+      {id:'quick',title:quick?'禁用快速模式':'启用快速模式',kind:'quick',selected:quick},
+      {id:'reset',title:'重置为默认',kind:'reset'},
+      ...Array.from({length:6},(_,i)=>({id:'strength-'+(i+1),title:String(i+1),kind:'effort-step',
+        label:i+1===level?model+' Max':String(i+1),selected:i+1===level,level:i+1,currentLevel:level,levelCount:6}))
+    ];
+    else if(stage==='models')items=['GPT Fixture A','GPT Fixture B'].map((title,i)=>({id:'m-'+i,title,kind:'option',selected:title===model}));
+    else items=[{id:'model',title:model,kind:'model'}];
+    return optionsEvent({key:'native-'+revision,scope:'fixture-conversation',category:menu?'model':'',menu,
+      items:items.map(item=>({enabled:true,selected:false,...item}))});
+  }
+  const page=makePage(async(path,request)=>{
+    if(path==='/api/composer')return response(snapshot());
+    assert.equal(path,'/api/action');
+    const command=JSON.parse(request.body), before=snapshot();
+    assert.equal(command.optionsKey,before.key);
+    actions.push(command);
+    if(command.operation==='dismiss')stage='';
+    else if(command.targetId==='model')stage='model';
+    else if(command.targetId==='model-list')stage='models';
+    else if(command.targetId==='quick')quick=!quick;
+    else if(command.targetId.startsWith('strength-'))level=Number(command.targetId.split('-')[1]);
+    else if(command.targetId==='m-1'){model='GPT Fixture B';stage='';}
+    else assert.fail('Unexpected control '+command.targetId);
+    revision++;
+    return response({ok:true,epoch:7,options:snapshot()});
+  });
+  page.elements.get('message').value='保留输入';
+  await page.hooks.openModelPicker();
+  const panel=page.elements.get('optionsList');
+  assert.match(panel.textContent,/GPT Fixture AGPT Fixture B/);
+  assert.match(panel.textContent,/Max/);
+  assert.doesNotMatch(panel.textContent,/推理强度/);
+  const fast=panel.children[0].children[0].children.find(node=>node.getAttribute('role')==='switch');
+  assert.equal(fast.getAttribute('aria-label'),'快速模式');
+  assert.equal(fast.textContent,'');
+  assert.equal(page.elements.get('optionsResetBtn').hidden,false);
+  assert.doesNotMatch(panel.textContent,/选择模型/);
+  assert.equal(page.elements.get('optionsBackBtn').hidden,true);
+  const choice=(section,id)=>page.hooks.state.modelChoices.find(row=>row.section===section && row.item.id===id);
+  await page.hooks.applyModelChoice(choice('quick','quick'));
+  assert.equal(choice('quick','quick').item.selected,true);
+  await page.hooks.applyModelChoice(choice('effort','strength-3'));
+  assert.equal(choice('effort','strength-3').item.selected,true);
+  await page.hooks.applyModelChoice(choice('model','m-1'));
+  assert.equal(choice('model','m-1').item.selected,true);
+  assert.equal(actions.filter(action=>action.targetId==='quick').length,1);
+  assert.equal(actions.filter(action=>action.targetId==='strength-3').length,1);
+  assert.equal(actions.filter(action=>action.targetId==='m-1').length,1);
+  assert.equal(page.hooks.state.panel,'options');
+  assert.equal(page.elements.get('message').value,'保留输入');
+});
+
 test('bitmap frames release their image and leave unrelated controls intact',async()=>{
   const page=makePage();let releases=0;
   page.setBitmapDecoder(async()=>({width:900,height:600,close(){releases++;}}));
@@ -1084,15 +1143,15 @@ test('synced composer entries open immediately without an extra read and actions
   assert.deepEqual(paths,['/api/action']);assert.equal(page.hooks.state.options.menu,true);
 });
 
-test('the plus opens only the three local file sources without reading desktop options',()=>{
+test('the plus opens the system chooser directly without adding a panel or reading desktop options',()=>{
   const page=makePage();
+  let opened=0;
+  page.elements.get('phoneFileInput').click=()=>opened++;
   page.hooks.openFilePicker();
-  assert.equal(page.hooks.state.panel,'files');
-  assert.equal(page.elements.get('filesPanel').hidden,false);
-  assert.equal(page.elements.get('optionsPanel').hidden,true);
-  assert.match(html,/id="phonePhotoInput" type="file" accept="image\/\*"/);
-  assert.match(html,/id="phoneCameraInput" type="file" accept="image\/\*" capture="environment"/);
-  assert.match(html,/id="filePickerBtn"[^>]*>[\s\S]*?<span class="option-title">文件<\/span>/);
+  assert.equal(opened,1);
+  assert.equal(page.hooks.state.panel,'');
+  assert.match(html,/id="phoneFileInput" type="file" multiple/);
+  assert.doesNotMatch(html,/id="filesPanel"/);
 });
 
 test('desktop approvals open from chat while a send is pending and only an explicit choice invokes the computer',async()=>{

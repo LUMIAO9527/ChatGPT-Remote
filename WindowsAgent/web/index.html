@@ -289,10 +289,38 @@ svg{flex-shrink:0}
 .sheet-backdrop{position:fixed;z-index:65;inset:0;width:100%;background:#10141c52;border-radius:0;padding:0;touch-action:none}
 .mobile-panel{position:fixed;z-index:70;left:50%;bottom:calc(var(--app-bottom,0px) + max(12px,var(--safe-bottom)));transform:translateX(-50%);width:min(calc(100% - 24px),520px);max-height:min(calc(var(--app-height,100dvh) - max(44px,var(--safe-top)) - max(12px,var(--safe-bottom))),max(240px,calc(var(--app-height,100dvh) * .76)));display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);overflow:hidden;animation:sheet-in .17s ease-out}
 @keyframes sheet-in{from{transform:translate(-50%,16px);opacity:.55}}
-.model-tabs{min-width:0;max-width:min(134px,40%);flex-shrink:0}
-.model-tabs .btn{display:block;max-width:100%;min-height:44px;padding:8px 10px;background:transparent;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.model-tabs .btn:hover:not(:disabled){background:var(--surface-alt);color:var(--ink)}
-.model-section-title{color:var(--muted);font-size:12px;padding:10px 14px 4px}
+.options-panel[data-model="true"]>.panel-body{display:flex;flex-direction:column;overflow:hidden;padding-bottom:12px}
+.options-list[data-model="true"]{display:flex;flex-direction:column;gap:1px;min-height:0;padding:2px 5px;border:0;border-radius:13px;overflow:hidden;background:var(--surface-alt)}
+.model-tuning{--track-surface:var(--surface-alt);display:grid;grid-template-columns:minmax(38px,max-content) minmax(0,1fr) 44px;align-items:center;column-gap:6px;flex:none;padding:0 2px;border-radius:12px;background:var(--track-surface)}
+.model-tuning-head{display:contents}
+.model-effort-title{display:flex;grid-area:1/1;align-items:baseline;justify-content:center;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap}
+.model-current-level{max-width:62px;color:var(--ink);font-size:13px;font-weight:650;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.model-list{position:relative;display:flex;flex:none;min-height:44px;overflow:auto hidden;overscroll-behavior-inline:contain;overflow-anchor:none;touch-action:pan-x;user-select:none;cursor:grab;scroll-behavior:auto;mask-image:linear-gradient(90deg,transparent var(--fade-left,0px),#000 calc(50% - 18px),#000 calc(50% + 18px),transparent var(--fade-right,100%));-webkit-mask-image:linear-gradient(90deg,transparent var(--fade-left,0px),#000 calc(50% - 18px),#000 calc(50% + 18px),transparent var(--fade-right,100%))}
+.model-list[data-dragging]{cursor:grabbing}
+.model-list[data-single]{justify-content:center;cursor:default}
+.model-list[data-single] .model-cycle{padding-right:0}
+.model-list:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:9px}
+.model-cycle{display:flex;flex:none;gap:14px;padding-right:14px}
+.model-list .model-choice{flex:none;width:max-content;min-width:0;min-height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ink);font-size:13px;font-weight:550;white-space:nowrap;overflow-wrap:normal;text-align:center;cursor:inherit}
+.model-levels{display:flex;grid-area:1/2;flex-wrap:wrap;gap:4px}
+.model-levels .model-choice{flex:1 0 auto}
+.model-choice,.model-stop,.model-switch,.model-reset{min-height:44px;background:transparent}
+.model-choice{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0;padding:5px 8px;border-radius:10px;font-size:13px;text-align:left;overflow-wrap:anywhere}
+.model-choice[aria-pressed="true"]{font-weight:650;background:var(--surface-alt)}
+.model-list .model-choice[aria-pressed="true"]{font-weight:550;background:transparent}
+.model-choice .icon{width:14px;height:14px}
+.model-track{--track-start:color-mix(in srgb,var(--accent) 28%,var(--track-surface));--track-end:color-mix(in srgb,var(--muted) 18%,var(--track-surface));position:relative;display:grid;grid-area:1/2;grid-template-columns:repeat(var(--steps),minmax(0,1fr));margin:0;touch-action:none;cursor:grab}
+.model-track[data-dragging]{cursor:grabbing}
+.model-track::before{content:"";position:absolute;inset-inline:0;top:50%;height:12px;transform:translateY(-50%);border-radius:99px;background:linear-gradient(90deg,var(--track-start) var(--preview-level,var(--level)),var(--track-end) var(--preview-level,var(--level)));pointer-events:none}
+.model-stop{display:grid;place-items:center;position:relative;min-width:0;padding:0;border-radius:8px;cursor:inherit}
+.model-stop::before{content:"";width:3px;height:3px;border:0;border-radius:50%;background:color-mix(in srgb,var(--muted) 76%,var(--track-surface));box-shadow:none}
+.model-track:not([data-dragging]) .model-stop[data-past="true"]::before,.model-stop[data-preview="past"]::before{background:var(--accent-ink)}
+.model-track:not([data-dragging]) .model-stop[aria-pressed="true"]::before,.model-stop[data-preview="current"]::before{width:16px;height:16px;box-sizing:border-box;border:3px solid var(--card);background:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 38%,var(--track-surface)),0 1px 3px #0002}
+.model-switch{display:grid;place-items:center;grid-area:1/3;min-width:44px;min-height:44px;padding:0;border-radius:9px;color:var(--ink)}
+.model-fast-pill{display:grid;place-items:center;padding:0;border:0;background:transparent;color:inherit}
+.model-fast-pill .icon{width:17px;height:17px;opacity:.67}
+.model-switch[aria-checked="true"] .icon{fill:currentColor;opacity:1}
+.model-reset{flex:none;padding:0 6px;border-radius:8px;color:var(--muted);font-size:12px}
 .panel-head{display:flex;align-items:center;gap:4px;width:100%;min-height:52px;padding:4px 6px 4px 16px;flex-shrink:0}
 .panel-head h2{flex:1;min-width:0;font-size:16px;line-height:1.35;font-weight:650;overflow-wrap:anywhere}
 .panel-body{width:100%;padding:0 14px 14px;overflow-y:auto;min-height:0;overscroll-behavior:contain}
@@ -337,9 +365,9 @@ svg{flex-shrink:0}
 .k-code{font-size:9px;color:var(--muted)}
 .scroll-row{padding-bottom:16px}
 .scroll-row .btn{flex:1;font-size:12px}
-.navigation-content{flex:1}
-.navigation-search{position:sticky;top:0;z-index:1;width:100%;height:48px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:12px 16px;font-size:16px;margin-bottom:12px}
-.navigation-list{padding-bottom:12px}
+.navigation-content{display:flex;flex:1;flex-direction:column;overflow:hidden}
+.navigation-search{flex:none;width:100%;height:48px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:12px 16px;font-size:16px;margin-bottom:12px}
+.navigation-list{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:12px}
 .navigation-item{width:100%;display:flex;align-items:center;gap:12px;min-height:54px;background:transparent;text-align:left;padding:12px;border-radius:14px;font-size:14px}
 .navigation-item:hover:not(:disabled){background:var(--surface-alt)}
 .navigation-item[data-active="true"]{background:var(--accent-soft);color:var(--accent-ink)}
@@ -382,8 +410,17 @@ svg{flex-shrink:0}
 .option-empty{padding:28px 20px;font-size:13px;color:var(--muted);text-align:center}
 .option-error{padding:0 0 12px}
 .option-surface{display:block;width:100%;max-height:55dvh;object-fit:contain;touch-action:none;background:var(--card)}
-.toast{position:fixed;bottom:calc(28px + var(--safe-bottom));left:50%;transform:translate(-50%,8px);z-index:120;max-width:calc(100% - 40px);width:max-content;max-height:35dvh;overflow:auto;border-radius:16px;background:var(--ink);color:var(--card);padding:13px 20px;font-size:13px;line-height:1.6;box-shadow:var(--shadow);opacity:0;transition:opacity .16s,transform .16s}
-.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast{position:fixed;top:var(--notice-top,16px);bottom:auto;left:50%;transform:translateX(-50%);z-index:120;display:flex;align-items:center;gap:9px;width:var(--notice-width,max-content);max-width:min(520px,calc(100% - 24px));max-height:var(--notice-max-height,30dvh);overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:7px 8px 7px 12px;font-size:13px;line-height:1.55;box-shadow:0 5px 18px #0002;opacity:1}
+.toast #noticeIcon{width:17px;height:17px;flex:none;color:var(--muted)}
+.toast[data-tone="error"] #noticeIcon{color:var(--danger)}
+.toast #noticeText{flex:1;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.toast button{display:flex;align-items:center;justify-content:center;flex:none;min-height:34px;padding:4px 7px;border-radius:8px;background:transparent;font-size:12px}
+.toast #noticeRetryBtn{color:var(--ink);font-weight:550}
+.toast #noticeDismissBtn{width:32px;padding:8px;color:var(--muted)}
+.toast #noticeDismissBtn .icon{width:14px;height:14px}
+.option-reconnecting{display:flex;align-items:center;justify-content:center;gap:10px;min-height:58px;padding:12px;color:var(--muted);font-size:13px}
+.option-reconnecting .control-spinner{width:14px;height:14px;flex:none}
+.options-panel[data-reconnecting="true"] .option-tools{display:none}
 
 @media(min-width:800px){.remote-view{max-width:960px;margin:auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}
 .remote-toolbar{padding:12px 28px}
@@ -556,13 +593,13 @@ svg{flex-shrink:0}
         </section>
         <div class="send-progress" id="sendProgress" hidden><span class="control-spinner" id="sendProgressSpinner" aria-hidden="true"></span><span id="sendProgressText" role="status">发送中…</span><button class="btn small" id="keepSendDraftBtn" type="button" hidden>保留为草稿</button></div>
         <input id="phoneFileInput" type="file" multiple hidden>
-        <input id="phonePhotoInput" type="file" accept="image/*" multiple hidden>
-        <input id="phoneCameraInput" type="file" accept="image/*" capture="environment" hidden>
+
+
         <div class="phone-files" id="phoneFiles" aria-live="polite" hidden></div>
         <div class="composer-box">
           <div class="composer-input"><label class="sr-only" for="message">要发送到电脑的文字</label><textarea id="message" maxlength="6000" rows="1" placeholder="发消息…" aria-label="要发送到电脑的消息" enterkeyhint="enter"></textarea></div>
           <div class="composer-meta">
-            <button class="btn" id="composerOptionsBtn" type="button" aria-label="添加附件" aria-haspopup="dialog" aria-controls="filesPanel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button class="btn" id="composerOptionsBtn" type="button" aria-label="添加附件"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             <button class="composer-model" id="modelPickerBtn" type="button" aria-label="选择模型" aria-haspopup="dialog" aria-controls="optionsPanel" aria-expanded="false"><span id="modelPickerLabel">模型</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
             <button class="btn primary" type="button" id="sendEnterBtn" aria-label="发送" title="发送"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path class="send-arrow" d="M12 19V5m-6 6 6-6 6 6"/><rect class="stop-mark" x="6" y="6" width="12" height="12" rx="1.5"/></svg></button>
           </div>
@@ -624,16 +661,8 @@ svg{flex-shrink:0}
     <p class="error-text" id="navigationError" role="status"></p><div class="navigation-list" id="navigationList" aria-label="项目与对话列表"></div>
   </div>
 </section>
-<section class="mobile-panel files-panel" id="filesPanel" role="dialog" aria-modal="true" aria-labelledby="filesTitle" hidden>
-  <header class="panel-head"><h2 id="filesTitle">添加附件</h2><button class="panel-icon" id="filesCloseBtn" type="button" aria-label="关闭"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
-  <div class="panel-body"><div class="options-list">
-    <button class="option-row file-source" id="photoPickerBtn" type="button"><span class="option-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m4 16 4-4 3 3 4-5 5 6"/></svg></span><span class="option-title">图库</span></button>
-    <button class="option-row file-source" id="cameraPickerBtn" type="button"><span class="option-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6 9 3h6l2 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg></span><span class="option-title">拍照</span></button>
-    <button class="option-row file-source" id="filePickerBtn" type="button"><span class="option-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6Zm8 0v5h4"/></svg></span><span class="option-title">文件</span></button>
-  </div></div>
-</section>
 <section class="mobile-panel options-panel" id="optionsPanel" role="dialog" aria-modal="true" aria-labelledby="optionsTitle" hidden>
-  <header class="panel-head"><button class="panel-icon" type="button" id="optionsBackBtn" aria-label="返回上一级" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="optionsTitle">选择模型</h2><div class="model-tabs" id="modelTabs" hidden><button class="btn" id="modelTab" type="button" hidden>选择模型</button><button class="btn" id="effortTab" type="button" aria-label="推理等级">推理等级</button></div><button class="panel-icon" type="button" id="optionsCloseBtn" aria-label="关闭"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
+  <header class="panel-head"><button class="panel-icon" type="button" id="optionsBackBtn" aria-label="返回" hidden><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><h2 id="optionsTitle">模型与推理</h2><button class="model-reset" type="button" id="optionsResetBtn" hidden>恢复默认</button><button class="panel-icon" type="button" id="optionsCloseBtn" aria-label="关闭"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
   <div class="panel-body">
     <p class="prompt-description" id="optionsPromptText" hidden></p>
     <pre class="prompt-command" id="optionsPromptCommand" hidden></pre>
@@ -657,7 +686,7 @@ svg{flex-shrink:0}
     <div class="confirm-actions"><button class="prompt-choice" type="button" id="confirmCancelBtn">取消</button><button class="prompt-choice primary" type="button" id="confirmAcceptBtn">确认</button></div>
   </div>
 </section>
-<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><svg class="icon" id="noticeIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></svg><span id="noticeText"></span><button id="noticeRetryBtn" type="button" hidden>重试</button><button id="noticeDismissBtn" type="button" aria-label="关闭提示"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></div>
 <noscript><p style="max-width:600px;margin:20px auto;padding:0 16px;color:#a13340">此页面需要启用 JavaScript 才能显示控制台。</p></noscript>
 
 <script>
@@ -685,6 +714,7 @@ svg{flex-shrink:0}
   function $(id){ return document.getElementById(id); }
 
   var els = {
+    noticeText:$('noticeText'),noticeRetryBtn:$('noticeRetryBtn'),noticeDismissBtn:$('noticeDismissBtn'),
     chatViewBtn: $('chatViewBtn'), screenViewBtn: $('screenViewBtn'),
     screenCard: $('screenCard'), screenTitle:$('screenTitle'),
     rawControls:$('rawControls'), desktopControl:$('desktopControl'),
@@ -693,9 +723,8 @@ svg{flex-shrink:0}
     chatFeedback:$('chatFeedback'), chatRetryBtn:$('chatRetryBtn'),
     chatLatestBtn: $('chatLatestBtn'), settingsPanel: $('settingsPanel'), sheetBackdrop:$('sheetBackdrop'),
     settingsToggleBtn: $('settingsToggleBtn'), settingsCloseBtn:$('settingsCloseBtn'), submitMethod: $('submitMethod'),
-    composerOptionsBtn:$('composerOptionsBtn'), filesPanel:$('filesPanel'), filesCloseBtn:$('filesCloseBtn'),
-    photoPickerBtn:$('photoPickerBtn'),cameraPickerBtn:$('cameraPickerBtn'),filePickerBtn:$('filePickerBtn'),
-    optionsPanel:$('optionsPanel'),modelTabs:$('modelTabs'),modelTab:$('modelTab'),effortTab:$('effortTab'),
+    composerOptionsBtn:$('composerOptionsBtn'),
+    optionsPanel:$('optionsPanel'),optionsResetBtn:$('optionsResetBtn'),
     optionsTitle:$('optionsTitle'), optionsList:$('optionsList'), optionsError:$('optionsError'), optionsBackBtn:$('optionsBackBtn'),
     optionsPromptText:$('optionsPromptText'),optionsPromptCommand:$('optionsPromptCommand'),desktopPromptBtn:$('desktopPromptBtn'),desktopPromptLabel:$('desktopPromptLabel'),
     optionsCloseBtn:$('optionsCloseBtn'), optionsRetryBtn:$('optionsRetryBtn'), optionsScreenBtn:$('optionsScreenBtn'),
@@ -730,7 +759,7 @@ svg{flex-shrink:0}
     modelPickerBtn:$('modelPickerBtn'),modelPickerLabel:$('modelPickerLabel'),
     queuedStrip:$('queuedStrip'),queuedList:$('queuedList'),queuePanel:$('queuePanel'),queueHeader:$('queueHeader'),
     queueRetryBtn:$('queueRetryBtn'),queueStatus:$('queueStatus'),queueError:$('queueError'),queueActions:$('queueActions'),queueItems:$('queueItems'),
-    phoneFileInput:$('phoneFileInput'),phonePhotoInput:$('phonePhotoInput'),phoneCameraInput:$('phoneCameraInput'),phoneFiles:$('phoneFiles'),
+    phoneFileInput:$('phoneFileInput'),phoneFiles:$('phoneFiles'),
     submitChoiceBtn:$('submitChoiceBtn'),submitChoiceValue:$('submitChoiceValue'),submitChoices:$('submitChoices'),
     windowChoiceBtn:$('windowChoiceBtn'),windowChoiceValue:$('windowChoiceValue'),windowChoices:$('windowChoices'),
     scrollUpBtn: $('scrollUpBtn'), scrollDownBtn: $('scrollDownBtn'),
@@ -764,7 +793,7 @@ svg{flex-shrink:0}
     optionsInvalid:false,
     optionsPendingId:'',
     optionsIntent:'',
-    optionsDepth:0,
+    modelChoices:null,
     optionsRoot:null,
     optionsRootAt:0,
     mediaStarted:false,
@@ -861,6 +890,7 @@ svg{flex-shrink:0}
   /* ---------- 基础工具 ---------- */
   function controlIcon(name){
     var paths={image:'M3 3h18v18H3ZM3 16l5-5 4 4 3-3 6 6M15 7h.01',file:'M5 3h9l5 5v13H5ZM14 3v6h5',folder:'M3 7V5h6l2 2h10v13H3Z',chat:'M4 4h16v13H8l-4 3Z',chevron:'m9 6 6 6-6 6',down:'m6 9 6 6 6-6',check:'m5 12 4 4L19 6',plus:'M12 5v14M5 12h14',model:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z',permission:'m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6Z',effort:'M4 7h16M4 17h16M9 4v6m6 4v6'};
+    paths.bolt='m13 2-9 12h7l-1 8 10-12h-7Z';
     paths.search='M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM16 16l5 5';
     paths.trash='M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6';
     paths.steer='M4 5v5c0 2 1 3 3 3h12m-5-5 5 5-5 5';
@@ -983,34 +1013,84 @@ svg{flex-shrink:0}
     els.badge.setAttribute('aria-label',text); els.badge.setAttribute('title',text);
     setTone(els.badge, tone || '');
   }
+  var notices={}, noticeSequence=0, activeNotice=null, toastTimer=0;
+  function positionNotice(){
+    if(els.toast.hidden || typeof els.toast.getBoundingClientRect!=='function')return;
+    var panel=state.panel?els[state.panel+'Panel']:!els.pairView.hidden&&!els.pairEntry.hidden?els.pairEntry:null;
+    var viewport=window.visualViewport, top=viewport?viewport.offsetTop:0;
+    var height=viewport?viewport.height:window.innerHeight;
+    if(panel && !panel.hidden){
+      var boundary=Math.min(panel.getBoundingClientRect().top,panel.offsetTop);
+      els.toast.style.setProperty('--notice-width',panel.getBoundingClientRect().width+'px');
+      els.toast.style.setProperty('--notice-max-height',Math.max(40,boundary-top-20)+'px');
+      top=Math.max(top+8,boundary-els.toast.getBoundingClientRect().height-10);
+    }else{
+      els.toast.style.removeProperty('--notice-width');
+      var context=!els.remoteView.hidden && !state.immersive?els.navigationToggleBtn.getBoundingClientRect():null;
+      top=context && context.height?Math.max(top+12,context.bottom+12):top+16;
+      els.toast.style.setProperty('--notice-max-height',Math.max(60,height-top-24)+'px');
+    }
+    els.toast.style.setProperty('--notice-top',Math.round(top)+'px');
+  }
+  function renderNotice(){
+    var eligible=Object.values(notices).filter(function(entry){
+      if(entry.dismissed)return false;
+      if(entry.source==='pair')return !els.pairView.hidden;
+      if(entry.source==='navigation')return state.panel==='navigation';
+      if(entry.source==='options')return state.panel==='options';
+      return true;
+    });
+    eligible.sort(function(a,b){
+      return (a.tone==='error'?1:0)-(b.tone==='error'?1:0) || a.sequence-b.sequence;
+    });
+    activeNotice=eligible.length?eligible[eligible.length-1]:null;
+    els.toast.hidden=!activeNotice;
+    if(!activeNotice)return;
+    var message=activeNotice.message;
+    if(/暂时无法连接|连接中断|网络已断开|连接超时/.test(message)){
+      message=state.offline?'网络已断开':'连接暂时中断';
+    }
+    if(els.noticeText.textContent!==message)els.noticeText.textContent=message;
+    els.noticeText.setAttribute('title',activeNotice.message);
+    els.toast.setAttribute('data-tone',activeNotice.tone);
+    els.toast.setAttribute('role',activeNotice.tone==='error'?'alert':'status');
+    els.toast.setAttribute('aria-live',activeNotice.tone==='error'?'assertive':'polite');
+    els.noticeRetryBtn.hidden=!(state.live && (state.networkTrouble || state.errorSource==='conversation') && !state.offline);
+    els.noticeRetryBtn.disabled=!!state.pending.refresh;
+    requestAnimationFrame(positionNotice);
+  }
+  function setNotice(source,message,tone){
+    message=String(message||'');
+    var previous=notices[source];
+    if(!message)delete notices[source];
+    else if(!previous || previous.message!==message || previous.tone!==tone){
+      notices[source]={source:source,message:message,tone:tone||'info',sequence:++noticeSequence,dismissed:false};
+    }
+    renderNotice();
+  }
   function setError(message, source){
-    state.error = message || '';
-    state.errorSource = source || '';
-    els.errorLine.textContent = state.error;
-    els.errorLine.hidden = !state.error;
-    renderConversationState();
+    state.error=message||'';state.errorSource=source||'';
+    els.errorLine.textContent=state.error;els.errorLine.hidden=true;
+    setNotice('error',state.error,'error');renderConversationState();
   }
   function clearError(){
-    if (!state.error) return;
-    state.error = '';
-    state.errorSource = '';
-    els.errorLine.textContent = '';
-    els.errorLine.hidden = true;
-    renderConversationState();
+    state.error='';state.errorSource='';
+    els.errorLine.textContent='';els.errorLine.hidden=true;
+    setNotice('error','','error');renderConversationState();
   }
-  function showPairError(message){ els.pairError.textContent = message || ''; }
-  function clearPairError(){ els.pairError.textContent = ''; }
-
-  var toastTimer = 0;
+  function showPairError(message){
+    els.pairError.textContent=message||'';els.pairError.hidden=true;
+    setNotice('pair',message,'error');
+  }
+  function clearPairError(){showPairError('');}
+  function navigationNotice(message){
+    els.navigationError.textContent=message||'';els.navigationError.hidden=true;
+    setNotice('navigation',message,'error');
+  }
   function toast(message){
-    els.toast.textContent = message;
-    els.toast.hidden = false;
-    requestAnimationFrame(function(){ els.toast.classList.add('show'); });
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){
-      els.toast.classList.remove('show');
-      toastTimer = setTimeout(function(){ els.toast.hidden = true; }, 170);
-    }, 1900);
+    setNotice('info',message,'info');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(function(){setNotice('info','','info');},3500);
   }
 
   var sleepTimer = 0;
@@ -1323,8 +1403,9 @@ svg{flex-shrink:0}
     els.chatEmpty.textContent = trouble ? '等待连接恢复' : chat && !chat.available ? chat.notice : (state.chatConnected ? '这是一个新对话，可以直接发送消息。' : state.view==='screen'?'收起画面后继续同步对话。':'正在读取…');
     if (!trouble && state.chatConnected && !state.gate.ok) els.chatStatus.textContent = state.gate.reason;
     els.chatError.textContent = state.error || (trouble ? '暂时无法连接，请稍后重试。' : '');
-    els.chatError.hidden = !els.chatError.textContent;
-    els.chatFeedback.hidden = (state.view==='screen' && !trouble && state.errorSource==='frame') || (els.chatError.hidden && !trouble);
+    els.chatError.hidden = true;
+    els.chatFeedback.hidden=true;
+    setNotice('connection',!state.error && trouble?'暂时无法连接，请稍后重试。':'','error');
     els.chatRetryBtn.hidden = !trouble;
     els.chatRetryBtn.disabled = !state.live || state.offline || state.pending.refresh;
     els.chatRetryBtn.textContent = state.pending.refresh ? '正在重试…' : '重试连接';
@@ -1345,10 +1426,6 @@ svg{flex-shrink:0}
       return block && /^(paragraph|list|heading|code|search)$/.test(block.kind) && typeof block.text === 'string';
     })) return message.blocks;
     return message.text.trim() ? message.text.split(/\n\s*\n/).map(function(text){ return { kind: 'paragraph', text: text }; }) : [];
-  }
-  function choosePhoneFiles(input){
-    if(state.filesBusy || state.pending.sendText || state.mode!=='window' || state.frozen.active)return;
-    if(setPanel(''))input.click();
   }
   function phoneFileGate(){
     if(state.filesBusy)return '文件正在上传…';
@@ -1481,7 +1558,7 @@ svg{flex-shrink:0}
     els.queuedStrip.hidden=!visible;els.queuePanel.hidden=!visible;
     els.queuedList.hidden=!!snapshot || !fallback.length;
     var status=state.queueLoading?'正在同步队列…':'';
-    els.queueError.textContent=state.queueError;els.queueError.hidden=!state.queueError;
+    els.queueError.textContent=state.queueError;els.queueError.hidden=true;setNotice('queue',state.queueError,'error');
     els.queueStatus.textContent=status;els.queueStatus.hidden=!status;
     els.queueHeader.hidden=!status && !controls.length && !state.queueError;
     els.queueRetryBtn.hidden=!state.queueError;
@@ -1634,7 +1711,7 @@ svg{flex-shrink:0}
     var sequence=++state.navigationSequence,epoch=state.epoch;
     var finished;state.navigationPromise=new Promise(function(resolve){finished=resolve;});
     state.navigationLoading = true;
-    els.navigationError.textContent = '';
+    navigationNotice('');
     renderNavigation();
     try {
       var snapshot = await requestJson('/api/navigation');
@@ -1644,8 +1721,8 @@ svg{flex-shrink:0}
         if (!item || typeof item.id !== 'string' || typeof item.title !== 'string' || !/^(project|thread|section|more|sidebar|new)$/.test(item.kind)) throw new ApiError('项目与对话列表格式异常。',0);
       });
       acceptNavigation(snapshot,force===true);
-      els.navigationError.textContent = snapshot.available ? '' : snapshot.notice;
-    } catch (err) { if(sequence===state.navigationSequence)els.navigationError.textContent = err.message || '读取列表失败，请刷新重试。'; }
+      navigationNotice(snapshot.available?'':snapshot.notice);
+    } catch (err) { if(sequence===state.navigationSequence)navigationNotice(err.message||'读取列表失败，请刷新重试。'); }
     finally { finished();if(sequence===state.navigationSequence){state.navigationLoading = false;state.navigationPromise=null;renderNavigation();} }
   }
   function acceptNavigation(snapshot,force){
@@ -1780,7 +1857,7 @@ svg{flex-shrink:0}
       if(!item){renderNavigation();return;}
       if(projectCanToggle(item)){await navigateItem(item);return;}
     }
-    if(state.filesBusy || state.phoneFiles.length){els.navigationError.textContent='请先发送或移除输入框中的附件，再切换对话。';return;}
+    if(state.filesBusy || state.phoneFiles.length){navigationNotice('请先发送或移除输入框中的附件，再切换对话。');return;}
     var switching=item.kind==='thread'||item.kind==='new';
     var catalog=state.navigation,token=state.token,instance=state.instance,previousChat=currentChat();
     if(item.kind==='project')state.navigationFold[item.project||item.id]=true;
@@ -1788,7 +1865,7 @@ svg{flex-shrink:0}
     state.navigationPendingId=item.id;
     if(state.mediaStarted)startMedia();
     renderControls(); renderNavigation();
-    els.navigationError.textContent = '';
+    navigationNotice('');
     try {
       var result=null;
       var ok=await sendAction({kind:'navigate',targetId:item.id,navigationKey:item.catalogKey||catalog.key,expanded:true},function(data){result=data;});
@@ -1796,12 +1873,12 @@ svg{flex-shrink:0}
       if(!ok && /^(navigation_pending|navigation_unconfirmed)$/.test(state.actionErrorCode)){
         result=await confirmThreadSwitch(item,catalog.source,token,instance);
         ok=!!result;
-        if(!ok)els.navigationError.textContent='切换结果待确认，请查看电脑当前对话。';
+        if(!ok)navigationNotice('切换结果待确认，请查看电脑当前对话。');
       }
       if(token!==state.token || (instance && instance!==state.instance))return;
       if(!ok){
         if(state.actionErrorCode==='navigation_changed'){clearError();await refreshNavigation(true);}
-        else if(!els.navigationError.textContent)els.navigationError.textContent=state.error;
+        else if(!els.navigationError.textContent)navigationNotice(state.error);
         if(item.kind==='project')state.navigationFold[item.project||item.id]=false;
         return;
       }
@@ -1818,7 +1895,7 @@ svg{flex-shrink:0}
         }
         state.navigationNewDraft=item.kind==='new';
         setNavigation(false); render();
-      } else if(result && result.navigation) {acceptNavigation(result.navigation);els.navigationError.textContent='';renderNavigation();}
+      } else if(result && result.navigation) {acceptNavigation(result.navigation);navigationNotice('');renderNavigation();}
       else await refreshNavigation();
     } finally {
       state.navigationBusy=false;state.navigationPendingId='';
@@ -2293,7 +2370,8 @@ svg{flex-shrink:0}
     els.screenTitle.textContent=state.mode==='desktop'?'电脑桌面':'ChatGPT 窗口';
     els.screen.style.touchAction=readOnly?'pan-x pan-y pinch-zoom':'none';
     var prompt=state.options && state.options.prompt;
-    var needsPicture=!!state.optionsError || !!(prompt && prompt.truncated) || !!state.optionsSurface;
+    var noModelChoices=state.optionsIntent==='model' && state.modelChoices && !state.modelChoices.length && !state.optionsBusy;
+    var needsPicture=!!state.optionsError || !!(prompt && prompt.truncated) || !!state.optionsSurface || noModelChoices;
     els.optionsScreenBtn.textContent=readOnly?'查看电脑画面':'在画面中操作';
     els.optionsScreenBtn.hidden=!hasCapability('windowView') || !needsPicture;
     els.screenViewBtn.hidden=!hasCapability('windowView');
@@ -2659,6 +2737,9 @@ svg{flex-shrink:0}
     render();
     renderStats();
     if(state.panel==='navigation' && state.navigationNeedsRefresh && !state.navigation)refreshNavigation();
+    if(modelReconnectPending && state.panel==='options' && state.optionsIntent==='model' && !state.optionsBusy && !state.optionsLoading){
+      modelReconnectPending=false;openModelPicker();
+    }
   }
 
   function cancelWindowRefresh(){
@@ -3511,7 +3592,7 @@ svg{flex-shrink:0}
       var active=opener || document.activeElement;
       state.panelOpener=active && active!==document.body && typeof active.focus==='function'?active:null;
     }
-    if(name && previous!==name){clearTimeout(toastTimer);els.toast.classList.remove('show');els.toast.hidden=true;}
+    if(previous && previous!==name)setNotice(previous,'','error');
     if((name==='settings' && previous!=='settings') || (previous==='settings' && name!=='settings')){
       state.settingChoice='';renderSettingChoices();
       Array.prototype.forEach.call(document.querySelectorAll('#settingsPanel details[open]'),function(item){item.open=false;});
@@ -3520,10 +3601,12 @@ svg{flex-shrink:0}
       var menu=state.options;
       state.optionsSequence++;state.options=null;state.optionsSurface=null;state.optionsLoading=false;state.optionsError='';els.optionsList.textContent='';
       if (menu && menu.menu && !state.optionsBusy && state.live && state.token) dismissOptions(menu,true);
-      state.optionsIntent='';state.optionsDepth=0;
+      state.optionsIntent='';state.modelChoices=null;modelReconnectPending=false;
+      if(modelPickerCleanup){modelPickerCleanup();modelPickerCleanup=null;}
     }
     state.panel=name;
-    ['settings','navigation','files','options','help','confirm'].forEach(function(panel){
+    renderNotice();
+    ['settings','navigation','options','help','confirm'].forEach(function(panel){
       els[panel+'Panel'].hidden=panel!==name;
     });
     els.sheetBackdrop.hidden=!name && (els.pairView.hidden || els.pairEntry.hidden);
@@ -3533,7 +3616,6 @@ svg{flex-shrink:0}
     els.settingsToggleBtn.setAttribute('aria-expanded',String(name==='settings'));
     els.homeSettingsBtn.setAttribute('aria-expanded',String(name==='settings'));
     els.navigationToggleBtn.setAttribute('aria-expanded',String(name==='navigation'));
-    els.composerOptionsBtn.setAttribute('aria-expanded',String(name==='files'));
     if(name!=='options'){
       els.modelPickerBtn.setAttribute('aria-expanded','false');
       els.desktopPromptBtn.setAttribute('aria-expanded','false');
@@ -3541,7 +3623,7 @@ svg{flex-shrink:0}
     if(name==='options' && previous!==name){
       els.optionsCloseBtn.hidden=false;els.optionsCloseBtn.disabled=false;els.optionsBackBtn.hidden=true;
     }
-    var focus=name ? els[name+'CloseBtn'] : state.panelOpener || ({settings:state.homeActive?els.homeSettingsBtn:els.settingsToggleBtn,navigation:els.navigationToggleBtn,files:els.composerOptionsBtn,options:els.modelPickerBtn})[previous];
+    var focus=name ? els[name+'CloseBtn'] : state.panelOpener || ({settings:state.homeActive?els.homeSettingsBtn:els.settingsToggleBtn,navigation:els.navigationToggleBtn,options:els.modelPickerBtn})[previous];
     if(focus===els.desktopPromptBtn && (focus.hidden || focus.disabled))focus=els.composerOptionsBtn;
     if(!name)state.panelOpener=null;
     if (focus) try { focus.focus({preventScroll:true}); } catch(e) { /* optional focus */ }
@@ -3585,7 +3667,7 @@ svg{flex-shrink:0}
     }
     var name=event.state && event.state.harmonyRemotePanel;
     if(name==='confirm')name='settings';
-    if ((els.remoteView.hidden && els.homeView.hidden) || ['settings','navigation','files','options','help'].indexOf(name)<0) name='';
+    if ((els.remoteView.hidden && els.homeView.hidden) || ['settings','navigation','options','help'].indexOf(name)<0) name='';
     if(state.homeActive && name && name!=='settings' && name!=='help')name='';
     if(name!=='navigation')state.navigationMode='browse';
     showPanel(name);
@@ -3609,7 +3691,8 @@ svg{flex-shrink:0}
     if(accepted && confirmation.token===state.token && confirmation.instance===state.instance)return confirmation.action();
   }
   function openFilePicker(){
-    setPanel('files',els.composerOptionsBtn);
+    if(els.composerOptionsBtn.disabled || !state.live || state.panel)return;
+    els.phoneFileInput.click();
   }
   async function openDesktopPrompt(){
     if(!setPanel('options',els.desktopPromptBtn))return;
@@ -3617,34 +3700,144 @@ svg{flex-shrink:0}
     await refreshOptions();
   }
   async function openModelPicker(){
+    var retry=state.panel==='options' && state.optionsIntent==='model';
     if(!setPanel('options',els.modelPickerBtn))return;
     state.optionsIntent='model';
-    if(state.optionsRoot && state.optionsRoot.epoch===state.epoch && performance.now()-state.optionsRootAt<15000){
+    state.modelChoices=null;
+    if(!retry && state.optionsRoot && state.optionsRoot.epoch===state.epoch && performance.now()-state.optionsRootAt<15000){
       state.options=state.optionsRoot;state.optionsInvalid=false;renderOptions();
     }else await refreshOptions();
-    if(state.panel!=='options' || state.optionsIntent!=='model' || !state.options || state.optionsInvalid)return;
-    await openComposerMenu('model');
+    if(state.panel!=='options' || state.optionsIntent!=='model' || !state.options || state.optionsInvalid || state.options.prompt)return;
+    await runModelTask(async function(snapshot,move){
+      if(retry && snapshot.menu && /^(model|effort)$/.test(snapshot.category))snapshot=await closeModelMenus(snapshot,move);
+      return collectModelChoices(snapshot,move);
+    });
   }
-  async function openComposerMenu(kind){
-    if(state.panel!=='options' || state.optionsIntent!=='model' || state.optionsBusy || state.optionsLoading || state.optionsInvalid || !state.options || state.options.prompt)return;
-    if(state.options.menu){
-      if(state.options.category===kind)return;
-      await dismissOptions(state.options,true);
+
+  function modelOption(snapshot, predicate){
+    var matches=snapshot.items.filter(predicate);
+    return matches.length===1?matches[0]:null;
+  }
+  async function closeModelMenus(snapshot,move){
+    for(var step=0;step<3 && snapshot.menu;step++){
+      var previous=snapshot.key;
+      snapshot=await move(snapshot,null);
+      if(snapshot.menu && snapshot.key===previous)break;
     }
-    if(state.panel!=='options' || state.optionsIntent!=='model' || !state.options || state.options.menu || state.options.prompt)return;
-    var control=state.options.items.find(function(item){return item.kind===kind && item.enabled!==false;});
-    if(control)await invokeOption(control);
-    else{state.optionsError=kind==='effort'?'电脑当前未提供推理等级。':'暂时未读到电脑的模型选择。';renderOptions();}
+    if(snapshot.menu)throw new ApiError('电脑模型菜单还开着，请收起后重新读取。',0);
+    return snapshot;
   }
   function isEffortOption(item){
-    return item.kind==='effort' || /^(低|中|高|超高|标准|扩展|轻量|深度|low|medium|high|extra high|standard|extended)$/i.test(item.label||item.title);
+    return item.kind==='effort-step' || /^(低|中|高|超高|标准|扩展|轻量|深度|low|medium|high|extra high|standard|extended)$/i.test(item.label||item.title);
   }
-  function acceptOptions(snapshot,depth){
+  async function collectModelChoices(snapshot,move){
+    var choices=[];
+    function add(source,path,section,filter){
+      source.items.filter(filter).forEach(function(item){choices.push({source:source,path:path,section:section,item:item});});
+    }
+    var root=snapshot.menu?state.optionsRoot:snapshot;
+    if(root && (root.epoch!==snapshot.epoch || root.scope!==snapshot.scope))root=null;
+    if(!snapshot.menu){
+      var effort=modelOption(root,function(item){return item.kind==='effort' && item.enabled!==false;});
+      if(effort){
+        var levels=await move(root,effort);
+        if(levels.menu)add(levels,[effort],'effort',function(item){return item.kind==='option'||item.kind==='effort-step';});
+        root=await closeModelMenus(levels,move);
+      }
+    }
+    var trigger=root && modelOption(root,function(item){return item.kind==='model' && item.enabled!==false;});
+    var path=trigger?[trigger]:[];
+    var menu=snapshot.menu?snapshot:trigger?await move(root,trigger):root;
+    if(!menu.menu || (menu.category!=='model' && !menu.items.some(function(item){return item.kind==='model-list'||item.kind==='effort-step';})))return choices;
+    add(menu,path,'effort',isEffortOption);
+    add(menu,path,'quick',function(item){return item.kind==='quick';});
+    add(menu,path,'reset',function(item){return item.kind==='reset';});
+    var modelList=modelOption(menu,function(item){return item.kind==='model-list' && item.enabled!==false;});
+    if(modelList){
+      var models=await move(menu,modelList);
+      if(models.menu)add(models,path.concat(modelList),'model',function(item){return item.kind==='option';});
+    }else{
+      add(menu,path,'model',function(item){return item.kind==='option' && !isEffortOption(item);});
+    }
+    return choices;
+  }
+  async function applyModelChoice(choice){
+    if(state.optionsBusy || state.optionsInvalid || !state.modelChoices || state.modelChoices.indexOf(choice)<0 || choice.item.enabled===false)return;
+    if(choice.item.selected && (choice.section==='model'||choice.section==='effort'))return;
+    await runModelTask(async function(snapshot,move){
+      if(snapshot.key!==choice.source.key){
+        var active=state.modelChoices.find(function(entry){return entry.source.key===snapshot.key;});
+        var prefix=active && active.path.length && active.path.length<choice.path.length &&
+          active.path.every(function(item,index){return item===choice.path[index];});
+        if(!prefix)snapshot=await closeModelMenus(snapshot,move);
+        for(var control of choice.path.slice(prefix?active.path.length:0)){
+          var entry=modelOption(snapshot,function(item){return item.kind===control.kind && item.title===control.title && item.enabled!==false;});
+          if(!entry)throw new ApiError('电脑选项已变化，请重新读取。',0);
+          snapshot=await move(snapshot,entry);
+        }
+      }
+      var selected=modelOption(snapshot,function(item){
+        return item.kind===choice.item.kind && item.title===choice.item.title && item.selected===choice.item.selected &&
+          item.currentLevel===choice.item.currentLevel && item.levelCount===choice.item.levelCount && item.enabled!==false;
+      });
+      if(!selected)throw new ApiError('电脑选项已变化，请重新读取。',0);
+      var next=await move(snapshot,selected);
+      if(next.menu && (choice.section==='quick' || selected.kind==='effort-step')){
+        var updated=modelOption(next,function(item){return item.kind===selected.kind &&
+          (selected.kind==='quick' ? item.selected!==selected.selected : item.level===selected.level && item.selected);});
+        if(!updated)throw new ApiError('电脑尚未确认变更，请重新读取。',0);
+        return state.modelChoices.map(function(entry){
+          if(entry.source!==choice.source)return entry;
+          var current=modelOption(next,function(item){return item.kind===entry.item.kind &&
+            (item.kind==='quick' || item.title===entry.item.title);});
+          return current?Object.assign({},entry,{source:next,item:current}):null;
+        }).filter(Boolean);
+      }
+      var choices=await collectModelChoices(await closeModelMenus(next,move),move);
+      if(choice.section==='quick' && !choices.some(function(entry){return entry.section==='quick' && entry.item.selected!==selected.selected;})){
+        throw new ApiError('电脑尚未确认快速模式变更，请重新读取。',0);
+      }
+      return choices;
+    });
+  }
+  async function runModelTask(task){
+    if(state.optionsBusy || state.optionsLoading || !state.options || state.options.epoch!==state.epoch)return;
+    var latest=state.options,scope=latest.scope,epoch=latest.epoch,sequence=++state.optionsSequence;
+    function current(){return sequence===state.optionsSequence && state.epoch===epoch && state.panel==='options';}
+    state.optionsBusy=true;state.optionsError='';renderOptions();renderControls();
+    async function move(snapshot,item){
+      if(!current())throw new ApiError('选项已关闭。',0);
+      var result;
+      var ok=await sendAction(Object.assign({kind:'composer',operation:item?'invoke':'dismiss',optionsKey:snapshot.key,epoch:epoch},
+        item?{targetId:item.id}:{}),function(data){result=data;});
+      if(!ok)throw new ApiError(state.error||'操作结果未确认，请重新读取。',0);
+      var next=result && result.options?result.options:await requestJson('/api/composer');
+      if(next.epoch!==epoch || (scope && next.scope!==scope))throw new ApiError('电脑对话已变化，请重新读取。',0);
+      latest=next;
+      if(!current())throw new ApiError('选项已关闭。',0);
+      acceptOptions(next);
+      if(next.prompt)throw new ApiError('电脑有待处理的请求。',0);
+      return next;
+    }
+    try{
+      var choices=await task(latest,move);
+      if(current())state.modelChoices=choices;
+    }catch(err){
+      if(current() && !state.options?.prompt){
+        state.optionsRoot=null;state.optionsInvalid=true;state.optionsError=err.message;
+      }
+    }finally{
+      state.optionsBusy=false;
+      renderControls();
+      if(current())renderOptions();
+      else if(!state.panel && state.live && state.token)await dismissOptions(latest,true);
+    }
+  }
+  function acceptOptions(snapshot){
     if (!snapshot || typeof snapshot.key!=='string' || !Number.isInteger(snapshot.epoch) || !Array.isArray(snapshot.items)
         || snapshot.items.some(function(item){return !item || typeof item.id!=='string' || typeof item.title!=='string';})) throw new ApiError('选项读取失败，请刷新重试。',0);
     if(snapshot.epoch!==state.epoch) throw new ApiError('电脑窗口已变化，请刷新选项。',0);
     state.options=snapshot;state.optionsInvalid=false;
-    state.optionsDepth=snapshot.menu?(depth||state.optionsDepth||1):0;
     if(!snapshot.menu && !snapshot.prompt) {state.optionsRoot=snapshot;state.optionsRootAt=performance.now();}
   }
   async function refreshOptions(){
@@ -3660,42 +3853,306 @@ svg{flex-shrink:0}
     } catch(err) { if (sequence===state.optionsSequence) { state.options=null;state.optionsError=err.message||'暂时无法读取选项。'; } }
     finally { if (sequence===state.optionsSequence) {state.optionsLoading=false;renderOptions();} }
   }
+  var modelPickerCleanup=null, modelWheelPending='', modelWheelFocus=false, modelReconnectPending=false;
+  function activateModelPicker(){
+    if(typeof ResizeObserver==='undefined')return;
+    var disposed=false, wheelCleanup=null;
+    var observer=new ResizeObserver(function(){
+      if(disposed)return;
+      if(wheelCleanup)wheelCleanup.resize();
+      positionNotice();
+    });
+    modelPickerCleanup=function(){
+      disposed=true;observer.disconnect();
+      if(wheelCleanup)wheelCleanup.dispose();
+    };
+    requestAnimationFrame(function(){
+      if(disposed)return;
+      var list=els.optionsList.querySelector('.model-list');
+      if(list){wheelCleanup=mountModelWheel(list);observer.observe(list);}
+      var track=els.optionsList.querySelector('.model-track');
+      if(track)bindModelTrack(track);
+      var tuning=els.optionsList.querySelector('.model-tuning');
+      if(tuning)observer.observe(tuning);
+    });
+  }
+  function mountModelWheel(list){
+    const originals=Array.from(list.children), count=originals.length;
+    const primary=document.createElement('div');
+    primary.className='model-cycle';
+    originals.forEach(button=>{button.tabIndex=-1;primary.appendChild(button);});
+    list.appendChild(primary);
+    const period=primary.getBoundingClientRect().width;
+    const copies=count>1 && period>0 ? Math.max(2,Math.ceil(list.clientWidth/period)) : 0;
+    for(let i=0;i<copies;i++){
+      for(const side of ['before','after']){
+        const clone=document.createElement('div');
+        clone.className='model-cycle';clone.setAttribute('aria-hidden','true');
+        originals.forEach(button=>{
+          const span=document.createElement('span');
+          span.className='model-choice';span.textContent=button.textContent;clone.appendChild(span);
+        });
+        if(side==='before')primary.before(clone);else primary.after(clone);
+      }
+    }
+    if(!copies)list.setAttribute('data-single','');
+    const choices=Array.from(list.querySelectorAll('.model-choice'));
+    choices.forEach((choice,i)=>choice.dataset.wheelIndex=String(i));
+    list.tabIndex=0;
+    let current=null, pointer=null, timer=0, gesture=false, suppressClick=false, applying=false, disposed=false;
+    const base=copies*count;
+    let selected=originals.findIndex(button=>button.getAttribute('aria-pressed')==='true');
+    if(modelWheelPending && originals.every(button=>button.disabled)){
+      const pending=originals.findIndex(button=>button.textContent===modelWheelPending);
+      if(pending!==-1)selected=pending;
+    }else modelWheelPending='';
+    if(selected<0)selected=0;
+    function midpoint(choice){return choice.offsetLeft+choice.offsetWidth/2;}
+    function mark(index){
+      current?.removeAttribute('data-wheel-current');
+      current=choices[index];current?.setAttribute('data-wheel-current','');
+    }
+    function center(index){
+      list.scrollLeft=midpoint(choices[index])-list.clientWidth/2;mark(index);
+    }
+    function nearest(){
+      const middle=list.scrollLeft+list.clientWidth/2;
+      let index=0, distance=Infinity;
+      choices.forEach((choice,i)=>{
+        const next=Math.abs(midpoint(choice)-middle);
+        if(next<distance){distance=next;index=i;}
+      });
+      return index;
+    }
+    function pick(index){
+      clearTimeout(timer);gesture=false;
+      if(disposed || !list.isConnected)return;
+      const local=((index%count)+count)%count, target=originals[local];
+      if(target.disabled){center(base+selected);return;}
+      center(base+local);
+      if(target.getAttribute('aria-pressed')==='true')return;
+      modelWheelFocus=document.activeElement===list;modelWheelPending=target.textContent;
+      applying=true;target.click();applying=false;
+    }
+    function settle(){
+      clearTimeout(timer);
+      if(gesture && !pointer)timer=setTimeout(()=>pick(nearest()),140);
+    }
+    function resize(){
+      if(disposed || !list.clientWidth)return;
+      const area=list.getBoundingClientRect(), tuning=list.parentElement.querySelector('.model-tuning');
+      const caption=tuning?.querySelector('.model-current-level'), bolt=tuning?.querySelector('.model-switch .icon');
+      const left=caption ? caption.getBoundingClientRect().left-area.left : 0;
+      const right=bolt ? bolt.getBoundingClientRect().right-area.left : area.width;
+      list.style.setProperty('--fade-left',Math.max(0,left)+'px');
+      list.style.setProperty('--fade-right',Math.min(area.width,right)+'px');
+      if(!gesture)center(base+selected);
+    }
+    list.addEventListener('scroll',()=>{
+      if(disposed)return;
+      if(copies){
+        const cycle=primary.getBoundingClientRect().width;
+        const anchor=midpoint(choices[base])-list.clientWidth/2;
+        let shift=0;
+        if(list.scrollLeft<anchor-cycle)shift=cycle;
+        else if(list.scrollLeft>anchor+cycle)shift=-cycle;
+        if(shift){list.scrollLeft+=shift;if(pointer)pointer.left+=shift;}
+      }
+      mark(nearest());settle();
+    },{passive:true});
+    list.addEventListener('pointerdown',event=>{
+      if(!copies || !event.isPrimary || event.button!==0)return;
+      clearTimeout(timer);pointer={id:event.pointerId,x:event.clientX,left:list.scrollLeft,dragging:false};gesture=true;
+    });
+    list.addEventListener('pointermove',event=>{
+      if(!pointer || pointer.id!==event.pointerId || event.pointerType!=='mouse')return;
+      const delta=event.clientX-pointer.x;
+      if(!pointer.dragging){
+        if(Math.abs(delta)<5)return;
+        pointer.dragging=true;list.setPointerCapture(event.pointerId);list.setAttribute('data-dragging','');
+      }
+      list.scrollLeft=pointer.left-delta;
+    });
+    function release(event){
+      if(pointer?.id!==event.pointerId)return;
+      suppressClick=pointer.dragging;
+      if(suppressClick)setTimeout(()=>{suppressClick=false;},0);
+      pointer=null;list.removeAttribute('data-dragging');settle();
+    }
+    ['pointerup','pointercancel','lostpointercapture'].forEach(name=>list.addEventListener(name,release));
+    list.addEventListener('pointerleave',event=>{if(event.pointerType==='mouse' && !pointer?.dragging)release(event);});
+    list.addEventListener('wheel',event=>{
+      if(!copies || event.ctrlKey)return;
+      const distance=Math.abs(event.deltaX)>=Math.abs(event.deltaY)?event.deltaX:event.deltaY;
+      if(!distance)return;
+      event.preventDefault();gesture=true;
+      const unit=event.deltaMode===1?16:event.deltaMode===2?list.clientWidth:1;
+      list.scrollLeft+=Math.max(-list.clientWidth,Math.min(list.clientWidth,distance*unit));settle();
+    },{passive:false});
+    list.addEventListener('keydown',event=>{
+      if(!copies || !['ArrowLeft','ArrowRight'].includes(event.key))return;
+      event.preventDefault();pick(nearest()+(event.key==='ArrowRight'?1:-1));
+    });
+    list.addEventListener('click',event=>{
+      if(applying)return;
+      const choice=event.target.closest('[data-wheel-index]');
+      if(!choice && !suppressClick)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      if(!suppressClick)pick(Number(choice.dataset.wheelIndex));
+    },true);
+    resize();
+    if(modelWheelFocus)list.focus({preventScroll:true});
+    if(!modelWheelPending)modelWheelFocus=false;
+    return {resize,dispose(){disposed=true;clearTimeout(timer);}};
+  }
+  function bindModelTrack(slider){
+    const stops=Array.from(slider.querySelectorAll('.model-stop'));
+    const active=stops.findIndex(stop=>stop.getAttribute('aria-pressed')==='true');
+    const caption=slider.parentElement.querySelector('.model-current-level'), confirmed=caption?.textContent;
+    let pointer=null, preview=null, suppressClick=false;
+    function move(event){
+      const box=slider.getBoundingClientRect();
+      const index=Math.max(0,Math.min(stops.length-1,Math.floor((event.clientX-box.left)*stops.length/box.width)));
+      if(index===preview)return;
+      preview=index;slider.style.setProperty('--preview-level',index*100/(stops.length-1)+'%');
+      stops.forEach((stop,i)=>stop.dataset.preview=i===index?'current':i<index?'past':'future');
+      if(caption)caption.textContent=stops[index].dataset.levelLabel||'第 '+(index+1)+' 档';
+    }
+    function finish(event,commit){
+      if(pointer!==event.pointerId)return;
+      if(commit)move(event);
+      const target=stops[preview];pointer=preview=null;
+      slider.removeAttribute('data-dragging');slider.style.removeProperty('--preview-level');
+      stops.forEach(stop=>delete stop.dataset.preview);
+      if(caption)caption.textContent=confirmed;
+      if(slider.hasPointerCapture(event.pointerId))slider.releasePointerCapture(event.pointerId);
+      if(commit && target && !target.disabled){
+        suppressClick=true;setTimeout(()=>{suppressClick=false;},0);
+        if(target!==stops[active])target.click();
+      }
+    }
+    slider.addEventListener('pointerdown',event=>{
+      if(!event.isPrimary || event.button!==0 || pointer!==null || stops.every(stop=>stop.disabled))return;
+      event.preventDefault();pointer=event.pointerId;slider.setPointerCapture(pointer);slider.setAttribute('data-dragging','');move(event);
+    });
+    slider.addEventListener('pointermove',event=>{if(pointer===event.pointerId)move(event);});
+    slider.addEventListener('pointerup',event=>finish(event,true));
+    slider.addEventListener('pointercancel',event=>finish(event,false));
+    slider.addEventListener('lostpointercapture',event=>finish(event,false));
+    slider.addEventListener('click',event=>{
+      if(suppressClick && event.detail>0){event.preventDefault();event.stopImmediatePropagation();}
+    },true);
+    slider.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      const current=stops.indexOf(event.target);if(current===-1)return;
+      event.preventDefault();
+      const index=event.key==='Home'?0:event.key==='End'?stops.length-1:Math.max(0,Math.min(stops.length-1,current+(event.key==='ArrowRight'?1:-1)));
+      if(!stops[index].disabled)stops[index].click();
+    });
+  }
+  function renderModelChoices(choices,scrollTop){
+    function buttonFor(choice,text,style){
+      var button=document.createElement('button');
+      button.type='button';button.className=style;button.textContent=text;
+      button.disabled=state.optionsBusy || state.optionsLoading || state.optionsInvalid || choice.item.enabled===false;
+      button.addEventListener('click',function(){applyModelChoice(choice);});
+      return button;
+    }
+    function choiceList(entries,name,style){
+      var list=document.createElement('div'),stepped=style==='model-track';
+      list.className=style;
+      list.setAttribute('role','group');list.setAttribute('aria-label',name);
+      var active=entries.find(function(entry){return entry.item.selected;});
+      if(stepped){
+        list.style.setProperty('--steps',String(entries.length));
+        list.style.setProperty('--level',(active?(active.item.level-1)*100/(entries.length-1):0)+'%');
+      }
+      entries.forEach(function(choice){
+        var item=choice.item;
+        var button=buttonFor(choice,stepped?'':item.label||item.title,stepped?'model-stop':'model-choice');
+        button.setAttribute('aria-pressed',String(!!item.selected));
+        if(stepped){
+          button.setAttribute('aria-label','强度 '+item.title+' / '+item.levelCount);
+          button.setAttribute('data-past',String(!!active && item.level<active.item.level));
+          button.setAttribute('data-level-label',item.label||'');
+        }else if(style!=='model-list' && item.selected)button.appendChild(controlIcon('check'));
+        list.appendChild(button);
+      });
+      return list;
+    }
+    var models=choices.filter(function(choice){return choice.section==='model';});
+    var effort=choices.filter(function(choice){return choice.section==='effort';});
+    var quick=choices.find(function(choice){return choice.section==='quick';});
+    if(effort.length || quick){
+      var tuning=document.createElement('section');tuning.className='model-tuning';
+      var head=document.createElement('div');head.className='model-tuning-head';
+      var stepped=effort.length>1 && effort.every(function(choice){return choice.item.kind==='effort-step';});
+      if(effort.length){
+        var title=document.createElement('div');title.className='model-effort-title';
+        var active=stepped && effort.find(function(choice){return choice.item.selected;});
+        if(active){
+          var name=active.item.label||active.item.title;
+          var selectedModel=models.find(function(choice){return choice.item.selected;});
+          if(selectedModel && name.indexOf(selectedModel.item.title+' ')===0)name=name.slice(selectedModel.item.title.length+1);
+          var value=document.createElement('span');value.className='model-current-level';value.textContent=name;title.appendChild(value);
+        }
+        head.appendChild(title);
+      }
+      if(quick){
+        var toggle=buttonFor(quick,'','model-switch');
+        toggle.setAttribute('role','switch');toggle.setAttribute('aria-label','快速模式');
+        toggle.setAttribute('aria-checked',String(!!quick.item.selected));
+        var pill=document.createElement('span');pill.className='model-fast-pill';
+        pill.appendChild(controlIcon('bolt'));
+        toggle.appendChild(pill);head.appendChild(toggle);
+      }
+      tuning.appendChild(head);
+      if(effort.length)tuning.appendChild(choiceList(effort,'推理强度',stepped?'model-track':'model-levels'));
+      els.optionsList.appendChild(tuning);
+    }
+    if(models.length){
+      var list=choiceList(models,'模型','model-list');
+      els.optionsList.appendChild(list);
+      list.scrollTop=scrollTop;
+    }
+    activateModelPicker();
+  }
   function renderOptions(){
     var returnFocus=document.activeElement;
     var snapshot=state.options,prompt=snapshot && snapshot.prompt;
     var modelView=state.optionsIntent==='model' && !prompt;
-    var rootEffort=modelView && state.optionsRoot && state.optionsRoot.epoch===state.epoch && state.optionsRoot.items.find(function(item){return item.kind==='effort' && item.enabled!==false;});
-    var showingEffort=!!snapshot && snapshot.category==='effort';
-    els.modelTabs.hidden=!rootEffort;
-    els.modelTab.hidden=!showingEffort;
-    els.effortTab.hidden=showingEffort;
-    els.modelTab.disabled=els.effortTab.disabled=state.optionsBusy||state.optionsLoading||state.optionsInvalid;
-    var effortName=rootEffort?String(rootEffort.label||rootEffort.title).replace(/^(?:思考强度|推理强度|推理等级|Reasoning effort|Effort)\s*[：:·]\s*/i,''):'';
-    els.effortTab.textContent=effortName && !/^(推理等级|思考强度|推理强度|Reasoning effort|Effort)$/i.test(effortName)?'推理 · '+effortName:'推理等级';
+    var reconnecting=modelView && (state.offline || state.networkTrouble || !snapshot && /连接|网络|超时/.test(state.optionsError));
+    els.optionsPanel.setAttribute('data-reconnecting',String(reconnecting));
+    if(reconnecting)modelReconnectPending=true;
+    var flat=modelView && !state.optionsSurface && state.modelChoices && state.modelChoices.length>0;
+    var previousList=Array.prototype.find.call(els.optionsList.children,function(child){return child.className==='model-list';});
+    var modelScrollTop=previousList?previousList.scrollTop:0;
     renderCapabilities();
     els.modelPickerBtn.setAttribute('aria-expanded',String(state.panel==='options' && state.optionsIntent==='model'));
     els.desktopPromptBtn.setAttribute('aria-expanded',String(state.panel==='options' && state.optionsIntent==='prompt'));
-    els.optionsTitle.textContent=prompt?prompt.title:state.optionsSurface?state.optionsSurface.title:showingEffort?'推理等级':modelView?'选择模型':'电脑弹窗';
+    els.optionsTitle.textContent=prompt?prompt.title:state.optionsSurface?state.optionsSurface.title:modelView?'模型与推理':'电脑弹窗';
     els.optionsPanel.setAttribute('data-prompt',String(!!prompt || state.optionsIntent==='prompt'));
+    els.optionsPanel.setAttribute('data-model',String(!!flat));
     var detail=prompt?String(prompt.text||''):'',lines=detail.split('\n');
     var command=prompt && /命令|command/i.test(prompt.title) && lines.length===2 && /^\S+(?:\s|$)/.test(lines[1]) && /-\w/.test(lines[1]) ? lines.pop() : '';
     els.optionsPromptText.textContent=lines.join('\n')+(prompt && prompt.truncated?'\n…':'');
     els.optionsPromptText.hidden=!els.optionsPromptText.textContent;
     els.optionsPromptCommand.textContent=command;
     els.optionsPromptCommand.hidden=!command;
-    els.optionsBackBtn.hidden=!(state.optionsSurface || (modelView && state.optionsDepth>1));
+    els.optionsBackBtn.hidden=!state.optionsSurface;
+    var reset=flat && state.modelChoices.find(function(choice){return choice.section==='reset';});
+    els.optionsResetBtn.hidden=!reset;
+    els.optionsResetBtn.disabled=state.optionsBusy||state.optionsInvalid||!!(reset && reset.item.enabled===false);
     els.optionsCloseBtn.hidden=false;
-    els.optionsCloseBtn.disabled=state.optionsBusy;
+    els.optionsCloseBtn.disabled=state.optionsBusy && !modelView;
     els.optionsBackBtn.disabled=state.optionsBusy||state.optionsLoading;
     els.optionsRetryBtn.hidden=!state.optionsError || state.optionsLoading;
     els.optionsRetryBtn.disabled=state.optionsBusy||state.optionsLoading;
     if(state.panel==='options' && returnFocus===els.optionsBackBtn && els.optionsBackBtn.hidden && !els.optionsCloseBtn.disabled)els.optionsCloseBtn.focus({preventScroll:true});
-    if(state.panel==='options' && rootEffort && !els.modelTab.disabled &&
-        ((returnFocus===els.effortTab && showingEffort) || (returnFocus===els.modelTab && !showingEffort))){
-      (showingEffort?els.modelTab:els.effortTab).focus({preventScroll:true});
-    }
-    els.optionsError.textContent=state.optionsError;els.optionsError.hidden=!state.optionsError;
+    els.optionsError.textContent=state.optionsError;els.optionsError.hidden=true;setNotice('options',state.optionsError,'error');
+    if(modelPickerCleanup){modelPickerCleanup();modelPickerCleanup=null;}
     els.optionsList.textContent='';
+    els.optionsList.setAttribute('data-model',String(!!flat));
     if(prompt){
       var once=snapshot.items.find(function(item){return /^(允许一次|允许本次|批准一次|Allow once|Approve once)$/i.test(item.title);});
       var deny=snapshot.items.find(function(item){return /^(拒绝|拒绝本次|不允许|Deny|Decline|Reject)$/i.test(item.title);});
@@ -3715,6 +4172,13 @@ svg{flex-shrink:0}
       return;
     }
     els.optionsList.removeAttribute('data-decisions');
+    if(reconnecting){
+      var waiting=document.createElement('div');waiting.className='option-reconnecting';
+      var spinner=document.createElement('span');spinner.className='control-spinner';spinner.setAttribute('aria-hidden','true');
+      var label=document.createElement('span');label.textContent='等待连接恢复';
+      waiting.appendChild(spinner);waiting.appendChild(label);els.optionsList.appendChild(waiting);return;
+    }
+    if(flat){renderModelChoices(state.modelChoices,modelScrollTop);return;}
     if (state.optionsSurface && !state.optionsLoading) {
       var surface=state.optionsSurface;
       var canvas=document.createElement('canvas');canvas.className='option-surface';canvas.setAttribute('role','img');canvas.setAttribute('aria-label',surface.title+(hasCapability('rawInput')?'':'，仅查看'));canvas.style.touchAction=hasCapability('rawInput')?'none':'pan-x pan-y pinch-zoom';canvas.setAttribute('aria-busy','true');
@@ -3723,7 +4187,7 @@ svg{flex-shrink:0}
       var surfaceUrl=URL.createObjectURL(new Blob([bytes],{type:'image/png'}));
       preloadImage(surfaceUrl,5000).then(function(image){
         canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);canvas.setAttribute('aria-busy','false');
-      },function(){if(state.optionsSurface===surface){state.optionsError='控件画面加载失败，请刷新重试。';els.optionsError.textContent=state.optionsError;els.optionsError.hidden=false;}}).finally(function(){URL.revokeObjectURL(surfaceUrl);});
+      },function(){if(state.optionsSurface===surface){state.optionsError='控件画面加载失败，请刷新重试。';els.optionsError.textContent=state.optionsError;els.optionsError.hidden=true;setNotice('options',state.optionsError,'error');}}).finally(function(){URL.revokeObjectURL(surfaceUrl);});
       canvas.addEventListener('pointerdown',function(event){if(hasCapability('rawInput') && !state.optionsBusy) {event.preventDefault();canvas.setPointerCapture(event.pointerId);}});
       canvas.addEventListener('pointerup',function(event){
         if(!hasCapability('rawInput') || state.optionsBusy) return;
@@ -3734,19 +4198,10 @@ svg{flex-shrink:0}
       if(!hasCapability('rawInput')){var note=document.createElement('p');note.className='option-empty';note.textContent='此控件画面仅供查看，请在电脑上完成操作。';els.optionsList.appendChild(note);}
       els.optionsList.appendChild(canvas);return;
     }
-    var items=snapshot?snapshot.items.filter(function(item){
-      if(prompt)return true;
-      if(!modelView)return false;
-      if(!snapshot.menu)return item.kind==='model'||item.kind==='effort';
-      if(snapshot.category!=='model' && snapshot.category!=='effort')return false;
-      return item.kind!=='upload' && (item.kind!=='surface'||hasCapability('rawInput'));
+    var items=snapshot && !state.optionsBusy && !state.optionsLoading && state.modelChoices===null?snapshot.items.filter(function(item){
+      return modelView && !snapshot.menu && (item.kind==='model'||item.kind==='effort');
     }):[];
-    var effortHeading=false,combined=modelView && snapshot && snapshot.category==='model' && items.some(isEffortOption);
-    if(combined)items=items.filter(function(item){return !isEffortOption(item);}).concat(items.filter(isEffortOption));
     items.forEach(function(item){
-      if(combined && !effortHeading && isEffortOption(item)){
-        var heading=document.createElement('p');heading.className='model-section-title';heading.textContent='推理等级';els.optionsList.appendChild(heading);effortHeading=true;
-      }
       var button=document.createElement('button');button.type='button';button.className='option-row';
       button.setAttribute('data-selected',String(!!item.selected));
       button.setAttribute('aria-busy',String(state.optionsBusy && state.optionsPendingId===item.id));
@@ -3761,7 +4216,7 @@ svg{flex-shrink:0}
       button.addEventListener('click',function(){invokeOption(item);});els.optionsList.appendChild(button);
     });
     if (!items.length && !state.optionsError) {
-      var empty=document.createElement('p');empty.className='option-empty';empty.textContent=state.optionsLoading?'正在读取…':'当前页面没有可读取的选项';els.optionsList.appendChild(empty);
+      var empty=document.createElement('p');empty.className='option-empty';empty.textContent=state.optionsLoading||state.optionsBusy?'正在读取…':'当前没有可读取的选项';els.optionsList.appendChild(empty);
     }
   }
   async function openOptionSurface(item){
@@ -3791,7 +4246,7 @@ svg{flex-shrink:0}
       if(!snapshot.prompt && state.live && state.token) try {await dismissOptions(result && result.options ? result.options : await requestJson('/api/composer'),true);} catch(err) { /* a later read is required */ }
       if(state.mediaStarted && !state.panel)startMedia();
     } else if (ok) {
-      if(result && result.options) {try{acceptOptions(result.options,snapshot.menu?state.optionsDepth+(point?0:1):1);state.optionsSurface=null;renderOptions();}catch(err){state.optionsInvalid=true;state.optionsError=err.message;renderOptions();}}
+      if(result && result.options) {try{acceptOptions(result.options);state.optionsSurface=null;renderOptions();}catch(err){state.optionsInvalid=true;state.optionsError=err.message;renderOptions();}}
       else await refreshOptions();
       renderControls();
       if(snapshot.prompt && !state.optionsInvalid){
@@ -3801,7 +4256,6 @@ svg{flex-shrink:0}
           state.optionsError='已发出选择，等待电脑回读。';renderOptions();
         }
       }
-      if(snapshot.menu && /^(model|effort)$/.test(snapshot.category) && state.options && !state.options.menu && !state.optionsInvalid){setPanel('');toast(snapshot.category==='effort'?'推理等级已更新':'模型已更新');}
       if(point) {var updated=state.options && state.options.items.find(function(row){return row.id===item.id;});if(updated)await openOptionSurface(updated);}
     } else renderOptions();
   }
@@ -3814,7 +4268,7 @@ svg{flex-shrink:0}
         var ok=await sendAction({kind:'composer',operation:'dismiss',optionsKey:snapshot.key},function(data){result=data;});
         if (!ok) break;
         snapshot=result && result.options ? result.options : await requestJson('/api/composer');
-        if(state.panel==='options')acceptOptions(snapshot,Math.max(1,state.optionsDepth-1));
+        if(state.panel==='options')acceptOptions(snapshot);
         if(!snapshot.menu && !snapshot.prompt && snapshot.epoch===state.epoch) {state.optionsRoot=snapshot;state.optionsRootAt=performance.now();}
         if (!all || !snapshot.menu || snapshot.epoch!==state.epoch) break;
       }
@@ -3823,12 +4277,7 @@ svg{flex-shrink:0}
   }
   async function optionsBack(){
     if (state.optionsBusy) return;
-    if(state.optionsSurface) {state.optionsSurface=null;renderOptions();return;}
-    await dismissOptions(state.options);
-    if(state.panel==='options'){
-      if(state.options && !state.options.menu)setPanel('');
-      else renderOptions();
-    }
+    if(state.optionsSurface) {state.optionsSurface=null;renderOptions();}
   }
   function resizeComposer(){
     els.message.style.height = 'auto';
@@ -3845,6 +4294,18 @@ svg{flex-shrink:0}
     document.body.style.setProperty('--app-bottom',Math.round(bottom)+'px');
   }
   function bindEvents(){
+    els.noticeRetryBtn.addEventListener('click',retryConnection);
+    els.noticeDismissBtn.addEventListener('click',function(){
+      if(activeNotice)activeNotice.dismissed=true;
+      renderNotice();
+    });
+    if(typeof ResizeObserver!=='undefined'){
+      var noticeObserver=new ResizeObserver(positionNotice);
+      ['settingsPanel','navigationPanel','optionsPanel','helpPanel','confirmPanel','pairEntry'].forEach(function(id){
+        noticeObserver.observe(els[id]);
+        els[id].addEventListener('animationend',positionNotice);
+      });
+    }
     els.queueRetryBtn.addEventListener('click',refreshQueue);
     els.pairStartBtn.addEventListener('click',function(){showPairEntry(true,true);});
     els.pairBackBtn.addEventListener('click',closePairEntry);
@@ -3862,10 +4323,10 @@ svg{flex-shrink:0}
     els.homeSettingsBtn.addEventListener('click',function(){setSettings(true);});
     els.computerHomeBtn.addEventListener('click',returnToComputer);
     els.homeResumeBtn.addEventListener('click',function(){state.autoResume=!state.autoResume;savePhoneSurface(state.homeActive?'home':'remote');renderConnectionHome();});
-    [[els.photoPickerBtn,els.phonePhotoInput],[els.cameraPickerBtn,els.phoneCameraInput],[els.filePickerBtn,els.phoneFileInput]].forEach(function(pair){
-      var button=pair[0],input=pair[1];
-      button.addEventListener('click',function(){choosePhoneFiles(input);});
-      input.addEventListener('change',function(){var files=Array.prototype.slice.call(input.files||[]);input.value='';uploadPhoneFiles(files);});
+    els.phoneFileInput.addEventListener('change',function(){
+      var files=Array.prototype.slice.call(els.phoneFileInput.files||[]);
+      els.phoneFileInput.value='';
+      uploadPhoneFiles(files);
     });
     els.submitChoiceBtn.addEventListener('click',function(){state.settingChoice=state.settingChoice==='send'?'':'send';renderSettingChoices();});
     els.windowChoiceBtn.addEventListener('click',function(){
@@ -3898,12 +4359,13 @@ svg{flex-shrink:0}
       Array.prototype.forEach.call(document.querySelectorAll('.navigation-filter'),function(filter){filter.setAttribute('aria-pressed',String(filter===button));});renderNavigation();
     });});
     els.composerOptionsBtn.addEventListener('click',openFilePicker);
-    els.filesCloseBtn.addEventListener('click',function(){setPanel('');});
     els.desktopPromptBtn.addEventListener('click',openDesktopPrompt);
     els.modelPickerBtn.addEventListener('click',openModelPicker);
-    els.modelTab.addEventListener('click',function(){openComposerMenu('model');});
-    els.effortTab.addEventListener('click',function(){openComposerMenu('effort');});
-    els.optionsRetryBtn.addEventListener('click',refreshOptions);
+    els.optionsResetBtn.addEventListener('click',function(){
+      var reset=state.modelChoices && state.modelChoices.find(function(choice){return choice.section==='reset';});
+      if(reset)applyModelChoice(reset);
+    });
+    els.optionsRetryBtn.addEventListener('click',function(){if(state.optionsIntent==='model')openModelPicker();else refreshOptions();});
     els.optionsCloseBtn.addEventListener('click',function(){setPanel('');});
     els.optionsBackBtn.addEventListener('click',optionsBack);
     els.optionsScreenBtn.addEventListener('click',openScreenView);
@@ -3967,9 +4429,12 @@ svg{flex-shrink:0}
     });
     els.message.addEventListener('input', function(){ resizeComposer(); renderControls(); });
     window.addEventListener('resize', updateViewport);
+    window.addEventListener('resize',positionNotice);
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', updateViewport);
       window.visualViewport.addEventListener('scroll', updateViewport);
+      window.visualViewport.addEventListener('resize',positionNotice);
+      window.visualViewport.addEventListener('scroll',positionNotice);
     }
     els.fullscreenBtn.addEventListener('click', function(){ setImmersive(!state.immersive); });
     els.fullscreenExit.addEventListener('click', function(){ setImmersive(false); });
@@ -3982,7 +4447,7 @@ svg{flex-shrink:0}
         event.preventDefault();return;
       }
       if (event.key === 'Tab' && sheet) {
-        var focusable=Array.from(sheet.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary')).filter(function(node){return node.getClientRects().length;});
+        var focusable=Array.from(sheet.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex="0"]')).filter(function(node){return node.tabIndex>=0 && node.getClientRects().length;});
         var first=focusable[0],last=focusable[focusable.length-1];
         if (first && event.shiftKey && document.activeElement===first) {last.focus();event.preventDefault();}
         else if (last && !event.shiftKey && document.activeElement===last) {first.focus();event.preventDefault();}

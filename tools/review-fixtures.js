@@ -26,7 +26,7 @@
     setItem:(k,v)=>memory.set(k,String(v)),removeItem:k=>memory.delete(k),clear:()=>memory.clear()}});
   window.WebSocket = undefined; // Deliberately exercise the real HTTP fallback UI.
   const model = {
-    epoch:1, title:'周末短途计划', key:'review-chat-1', menu:'', model:'示例模型 A', effort:'标准',
+    epoch:1, title:'周末短途计划', key:'review-chat-1', menu:'', model:config.modelCount===1?'默认模型':'示例模型 A', effort:3, quick:false,
     generating:config.scenario === 'queue', paused:config.scenario === 'paused',approval:config.scenario === 'approval',
     offline:config.scenario === 'offline', draft:config.scenario === 'draft' ? '先把交通方式和预算列出来。' : '',
     messages:[
@@ -53,9 +53,21 @@
   const approval = () => ({available:true,epoch:model.epoch,key:'approval-fixture',menu:false,category:'prompt',
     prompt:{title:'批准运行命令',text:'读取示例项目目录以核对文件列表。\nGet-ChildItem -Name',approval:true,truncated:false},
     items:[{id:'allow-once',title:'允许一次',kind:'option',enabled:true},{id:'deny',title:'拒绝',kind:'option',enabled:true}]});
-  const options = () => ({available:true,epoch:model.epoch,key:'opts-'+model.revision,menu:!!model.menu,category:model.menu,
-    items:model.menu ? (model.menu==='model'?['示例模型 A','示例模型 B']:['标准','高']).map((title,i)=>({id:'choice-'+i,title,enabled:true,selected:title===(model.menu==='model'?model.model:model.effort),kind:'option'})) :
-    [{id:'model',title:model.model,kind:'model',enabled:true},{id:'effort',title:'推理等级 · '+model.effort,kind:'effort',enabled:true}]} );
+  const modelNames = config.modelNames || ['默认模型','示例模型 A','示例模型 B','示例模型 C','示例模型 D','示例模型 E','示例模型 F','示例模型 G','示例模型 H'];
+  const models = modelNames.slice(0,config.modelCount || (config.scenario==='chat'?3:modelNames.length));
+  const levels = ['低','标准','高','超高','Max','Ultra'];
+  const options = () => {
+    const items = model.menu==='models' ? models.map((title,i)=>({id:'choice-'+i,title,selected:title===model.model,kind:'option'})) :
+      model.menu==='model' ? [
+        {id:'model-list',title:'选择模型',kind:'model-list'},
+        {id:'quick',title:model.quick?'关闭快速模式':'启用快速模式',kind:'quick',selected:model.quick},
+        {id:'reset',title:'重置为默认',kind:'reset'},
+        ...levels.map((label,i)=>({id:'effort-'+(i+1),title:String(i+1),label,kind:'effort-step',
+          level:i+1,currentLevel:model.effort,levelCount:levels.length,selected:i+1===model.effort}))
+      ] : [{id:'model',title:model.model,kind:'model'}];
+    return {available:true,epoch:model.epoch,scope:model.key,key:'opts-'+model.revision,menu:!!model.menu,
+      category:model.menu?'model':'',items:items.map(item=>({enabled:true,selected:false,...item}))};
+  };
   const queue = () => ({available:true,key:'queue-'+model.revision,epoch:model.epoch,paused:model.paused,hasDraft:!!model.draft,
     items:model.queue.map(row=>({...row,actions:['steer','delete','edit'].map(operation=>({id:row.id+'|'+operation,operation,enabled:true}))})),
     actions:[...(model.paused?[{id:'resume',operation:'resume',enabled:true}]:[]),...(model.generating?[{id:'stop',operation:'stop',enabled:true}]:[])]});
@@ -122,10 +134,21 @@
         model.approval=false;mutate();report('模拟审批已回读');
         return {...result,options:options()};
       }
+      const current=options();
+      if(data.optionsKey!==current.key)return {ok:false,error:'模拟选项已变化'};
       if(data.operation==='dismiss')model.menu='';
-      else if(model.menu){const choice=options().items.find(i=>i.id===data.targetId);if(choice)model[model.menu]=choice.title;model.menu='';}
-      else model.menu=data.targetId;
-      model.revision++;result.options=options();report('模拟选项已回读');
+      else{
+        const choice=current.items.find(item=>item.id===data.targetId);
+        if(!choice)return {ok:false,error:'模拟选项不存在'};
+        if(choice.kind==='model')model.menu='model';
+        if(choice.kind==='model-list')model.menu='models';
+        if(choice.kind==='option'){model.model=choice.title;model.menu='';}
+        if(choice.kind==='effort-step')model.effort=choice.level;
+        if(choice.kind==='quick')model.quick=!model.quick;
+        if(choice.kind==='reset'){model.model=models[0];model.effort=3;model.quick=false;}
+      }
+      mutate();report('模拟选项已回读');
+      return {...result,options:options()};
     } else if(data.kind==='navigate') {
       if(data.targetId!=='project'){
         model.epoch++;model.key='review-chat-'+model.epoch;model.title=data.targetId==='other'?'下周的阅读清单':data.targetId==='main'?'周末短途计划':'新对话';
@@ -154,7 +177,7 @@
         return new Response(body,{headers:{'Content-Type':'application/x-ndjson'}});
       }
       case '/api/queue':return json({ok:true,...queue()});
-      case '/api/navigation':return json(navigation());
+      case '/api/navigation':return config.scenario==='navigation-error' ? json({ok:false,error:'项目列表读取失败，请稍后重试。'},503) : json(navigation());
       case '/api/composer':return json({ok:true,...(model.approval?approval():options())});
       case '/api/draft':return json(draft());
       case '/api/action': {const result=action(data);return json(result,result.ok?200:409);}

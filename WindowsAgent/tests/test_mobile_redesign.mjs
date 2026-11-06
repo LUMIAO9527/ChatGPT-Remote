@@ -15,7 +15,7 @@ const source = script.replace(end, `
     actionGate,sendAction,queueScroll,toggleDesktop,bindScreenGestures,statusSentence,renderStatusText,
     computeGate,setPanel,panelPopState,openModelPicker,renderMessageBody,resetRemote,
     setError,clearError,renderConversationState,retryConnection,restorePhonePreferences,enterRemote,stopLive,
-    showConnectionHome,openRemoteView,openScreenView,renderOptions,confirmSetting,finishConfirmation};
+    showConnectionHome,openRemoteView,openScreenView,renderOptions,confirmSetting,finishConfirmation,setNotice,renderNotice};
 })();`);
 
 function makePage(fetchImpl = async () => { throw new Error('Unexpected request'); }) {
@@ -261,10 +261,12 @@ test('failed connection replaces indefinite loading and exposes a direct retry',
   hooks.setError('暂时无法连接，请检查手机网络和电脑上的 Rm。','network');
   assert.equal(elements.get('chatStatus').textContent,'等待连接恢复');
   assert.equal(elements.get('chatEmpty').textContent,'等待连接恢复');
-  assert.equal(elements.get('chatFeedback').hidden,false);
-  assert.equal(elements.get('chatRetryBtn').hidden,false);
-  assert.equal(elements.get('chatRetryBtn').disabled,false);
-  assert.equal(elements.get('chatRetryBtn').textContent,'重试连接');
+  assert.equal(elements.get('chatFeedback').hidden,true);
+  assert.equal(elements.get('toast').hidden,false);
+  assert.equal(elements.get('noticeRetryBtn').hidden,false);
+  assert.equal(elements.get('noticeRetryBtn').disabled,false);
+  assert.equal(elements.get('noticeText').textContent,'连接暂时中断');
+  assert.match(elements.get('noticeText').getAttribute('title'),/暂时无法连接/);
   assert.doesNotMatch(elements.get('chatError').textContent,/电脑离线|TLS|证书/);
 });
 
@@ -411,24 +413,15 @@ test('screen entry from home settings waits for panel history then preserves the
 });
 
 
-test('native model submenus add Back while the shared close button stays on the right',()=>{
-  const {hooks,elements,document}=makePage();
+test('native model submenus share one mobile panel and no Back button',()=>{
+  const {hooks,elements}=makePage();
   hooks.setPanel('options',elements.get('modelPickerBtn'));
   hooks.state.optionsIntent='model';
   hooks.state.options={key:'model-menu',epoch:7,menu:true,category:'model',items:[]};
-  hooks.state.optionsDepth=1;hooks.renderOptions();
-  assert.equal(elements.get('optionsBackBtn').hidden,true);
-  assert.equal(elements.get('optionsCloseBtn').hidden,false);
-  hooks.state.optionsDepth=2;hooks.renderOptions();
-  assert.equal(elements.get('optionsBackBtn').hidden,false);
-  assert.equal(elements.get('optionsCloseBtn').hidden,false);
-  elements.get('optionsBackBtn').focus();
-  hooks.state.options={key:'composer-root',epoch:7,menu:false,items:[]};
-  hooks.state.optionsDepth=0;
   hooks.renderOptions();
   assert.equal(elements.get('optionsCloseBtn').hidden,false);
   assert.equal(elements.get('optionsBackBtn').hidden,true);
-  assert.equal(document.activeElement,elements.get('optionsCloseBtn'));
+  assert.equal(elements.get('optionsTitle').textContent,'模型与推理');
 });
 
 test('a settings confirmation reuses the current sheet history and acts only when accepted',()=>{
@@ -458,4 +451,21 @@ test('reopening options clears a stale hidden Close and disabled Back before foc
   hooks.renderOptions();
   assert.equal(document.activeElement,elements.get('optionsCloseBtn'));
   assert.equal(document.activeElement.hidden,false);
+});
+
+test('one global notice retains errors across rendering and scopes sheet errors to their panel',()=>{
+  const {hooks,elements}=makePage();
+  hooks.setError('网络连接已中断','network');
+  hooks.setNotice('info','已复制','info');
+  assert.equal(elements.get('noticeText').textContent,'网络连接已中断');
+  assert.equal(elements.get('toast').getAttribute('role'),'alert');
+  hooks.clearError();
+  hooks.setNotice('info','','info');
+  hooks.state.panel='navigation';
+  hooks.setNotice('navigation','列表读取失败','error');
+  hooks.renderNotice();
+  assert.equal(elements.get('noticeText').textContent,'列表读取失败');
+  hooks.state.panel='settings';
+  hooks.renderNotice();
+  assert.equal(elements.get('toast').hidden,true);
 });

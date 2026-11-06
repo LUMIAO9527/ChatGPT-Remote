@@ -320,10 +320,19 @@ class ConversationReader:
                 continue
             if INFO_OPTION.fullmatch(item['title'].strip()) or (raw.get('category')=='permission' and PERMISSION_INFO.fullmatch(item['title'].strip())):
                 continue
-            items.append({"id": item["id"], "title": item["title"][:500],
-                          "kind": str(item.get("kind") or "option"),
-                          "enabled": bool(item.get("enabled")), "selected": bool(item.get("selected")),
-                          **option_labels(item['title'][:500],str(raw.get('category') or ''))})
+            title = item["title"][:500]
+            kind = str(item.get("kind") or "option")
+            option = {"id": item["id"], "title": title, "kind": kind,
+                      "enabled": bool(item.get("enabled")), "selected": bool(item.get("selected")),
+                      **option_labels(title, str(raw.get("category") or ""))}
+            if kind == "effort-step":
+                level, current, count = (item.get(field) for field in ("level", "currentLevel", "levelCount"))
+                if not (all(type(value) is int for value in (level, current, count)) and
+                        2 <= count <= 12 and 1 <= level <= count and 1 <= current <= count):
+                    continue
+                option.update(level=level, currentLevel=current, levelCount=count,
+                              label=str(item.get("label") or title)[:500])
+            items.append(option)
         snapshot = {"items": items, "menu": bool(raw.get("menu")), "context": str(raw.get("context") or ""),
                     "identity": str(raw.get("identity") or ""),"category":str(raw.get('category') or '')}
         prompt = raw.get('prompt')
@@ -344,7 +353,8 @@ class ConversationReader:
         self.option_catalogs[key] = (now, hwnd, snapshot)
         while len(self.option_catalogs) > 8:
             self.option_catalogs.pop(next(iter(self.option_catalogs)))
-        return {"key": key, "items": items, "menu": snapshot["menu"], "available": bool(items),"category":snapshot['category'],
+        scope = hashlib.sha256(snapshot["identity"].encode()).hexdigest()[:24]
+        return {"key": key, "scope": scope, "items": items, "menu": snapshot["menu"], "available": bool(items),"category":snapshot['category'],
                 **({'prompt': snapshot['prompt']} if 'prompt' in snapshot else {})}
 
     def composer_action(self, hwnd: int, key: str, target: str | None, dismiss: bool = False, refresh: bool = False) -> bool | dict:
@@ -489,7 +499,8 @@ class ConversationReader:
                     time.sleep(.07)
                     after=self._call(operation='observe',hwnd=hwnd)
                     resolved=self.history.resolve(str(after.get('selectedTitle') or '')) if after.get('ok') else None
-                    if resolved and resolved['id']==item['threadId']:return 'thread'
+                    if resolved and resolved['id']==item['threadId']:
+                        return {'kind':'thread'} if refresh else 'thread'
                 raise TargetError('对话正在打开，请稍候','navigation_pending')
             before = self._call(operation="identity", hwnd=hwnd) if item["kind"] in ('thread','new') else None
             reply = self._call(operation="navigate", hwnd=hwnd, identity=reference[2],

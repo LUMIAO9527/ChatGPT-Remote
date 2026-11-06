@@ -54,6 +54,27 @@ class ConversationTests(unittest.TestCase):
         with patch('conversation.os.startfile') as opened,patch('conversation.time.sleep'):
             self.assertEqual(reader.navigate(1,'catalog','item',False),'thread')
             opened.assert_called_once_with('codex://threads/'+thread)
+
+    def test_first_indexed_thread_switch_returns_the_backend_refresh_contract(self):
+        reader=ConversationReader();thread='11111111-1111-4111-8111-111111111111';reader.history=Mock()
+        reader.history.resolve.side_effect=[{'id':'other'},{'id':thread},{'id':thread}]
+        reader.catalogs['catalog']=(0,1,'native',[{'id':'item','kind':'thread','threadId':thread}])
+        reader._call=lambda **_: {'ok':True,'selectedTitle':'title'}
+        backend=WindowsBackend.__new__(WindowsBackend)
+        backend.lock=threading.RLock();backend.mode='window'
+        backend.tracker=SimpleNamespace(epoch=7,current_id=1)
+        backend.frozen_info_locked=lambda:{'active':False}
+        backend._rect=lambda:(0,0,900,600)
+        backend._reader=lambda:reader
+        command={'kind':'navigate','navigationKey':'catalog','targetId':'item','expanded':False}
+        with patch('conversation.os.startfile') as opened,patch('conversation.time.sleep'):
+            first=backend.action({**command,'epoch':7})
+            self.assertEqual(first,{})
+            self.assertEqual(backend.tracker.epoch,8)
+            second=backend.action({**command,'epoch':8})
+            self.assertEqual(second,{'navigationUnchanged':True})
+            self.assertEqual(backend.tracker.epoch,8)
+            opened.assert_called_once_with('codex://threads/'+thread)
     def test_structured_paragraphs_do_not_join_when_their_screen_rectangles_overlap(self):
         result = parse_snapshot({'nodes': [
             {'type': 'Text', 'name': 'ChatGPT 说：', 'marker': True},
