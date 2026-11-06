@@ -2075,12 +2075,8 @@ svg{flex-shrink:0}
         var body = document.createElement('div'); body.className = 'chat-message-body';
         foot.appendChild(copy);foot.appendChild(timestamp);article.appendChild(body);article.appendChild(foot);
         row = { article: article, timestamp: timestamp, body: body, copy:copy, foot:foot, text: null, signature: null };
+        article.dataset.messageId = message.id;
         state.chatElements[message.id] = row;
-        copy.addEventListener('click', function(){
-          if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(row.text).then(function(){ toast('已复制'); }, function(){ toast('请长按文字选择和复制'); });
-          } else toast('请长按文字选择和复制');
-        });
       }
       row.article.setAttribute('data-role', message.role);
       var processMessage=isProcessPhase(message.phase);
@@ -4581,6 +4577,16 @@ svg{flex-shrink:0}
     els.chatRetryBtn.addEventListener('click',retryConnection);
     els.chatLatestBtn.addEventListener('click', function(){ els.chatMessages.scrollTop = els.chatMessages.scrollHeight; updateChatLatest(); });
     els.chatMessages.addEventListener('scroll',updateChatLatest,{passive:true});
+  // One delegated copy handler instead of one listener per message.
+  els.chatMessages.addEventListener('click',function(event){
+    var button=event.target.closest?event.target.closest('.chat-copy'):null;
+    var article=button&&button.closest('.chat-message');
+    var row=article&&state.chatElements[article.dataset.messageId];
+    if(!row||!row.text)return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(row.text).then(function(){ toast('已复制'); }, function(){ toast('请长按文字选择和复制'); });
+    } else toast('请长按文字选择和复制');
+  });
     els.pin.addEventListener('input', function(){
       var digits = els.pin.value.replace(/\D+/g, '').slice(0, 6);
       if (els.pin.value !== digits) els.pin.value = digits;
