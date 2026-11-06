@@ -29,7 +29,9 @@ class NativeConversationTests(unittest.TestCase):
 <style>body{font:16px system-ui;margin:20px}.sr-only{position:absolute;left:-9999px}
 .thread-scroll-container{max-height:200px;overflow:auto}.bg-user-message{white-space:pre-wrap}#prompt-textarea{padding:12px;border:1px solid #bbb;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap}
 button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content:'使用 ChatGPT Work';pointer-events:none;color:#888}.file-card{height:58px;padding:5px;border:1px solid #aaa;margin:5px}.fixture-composer{padding:8px;border:1px solid #eee}</style>
-<aside><ul><li><button class="app-action-sidebar-thread-selected bg-primary-ghost-hover">Fixture conversation</button></li></ul></aside>
+<aside><ul><li><button class="app-action-sidebar-thread-selected bg-primary-ghost-hover">Fixture conversation</button></li>
+<li><button class="app-action-sidebar-thread-selected">模型选择历史</button></li>
+<li id="pending-thread" hidden><button class="app-action-sidebar-thread-selected" aria-label="Fixture pending"><span>Fixture pending</span><span class="bg-chart-blue/15"><span>需要用户输入</span></span></button></li></ul></aside>
 <main class="thread-scroll-container"><div class="relative shrink-0"><h5 class="sr-only">ChatGPT 说：</h5>HISTORY</div>
 <div class="relative shrink-0"><h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture">继续</p></div><span>星期三20:15</span></div>
 <div class="relative shrink-0"><div class="min-w-0 text-size-chat relative overflow-visible py-0">已处理 1分钟 20秒</div></div>
@@ -46,13 +48,22 @@ button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content
 </div></div>
 <button id="send" aria-label="排队" disabled>排队</button><button aria-label="停止">停止</button>
 <button id="model" aria-haspopup="listbox" aria-expanded="false">GPT Fixture A</button>
-<button id="open-approval">审批测试入口</button><button id="open-choices">工具选择测试入口</button>
+<button id="open-approval">审批测试入口</button><button id="open-choices">工具选择测试入口</button><button id="open-question">工具问卷测试入口</button>
+<button id="open-pointer">GPT 测试画面</button>
 </div>
 <div id="models" role="listbox" aria-label="模型" hidden><div role="option" tabindex="0" aria-selected="true">GPT Fixture A</div><div role="option" tabindex="0" aria-selected="false">GPT Fixture B</div></div>
 <section id="approval" class="approval-card" hidden style="position:fixed;bottom:15px;background:white;padding:12px;border:1px solid">
 <h3>示例命令审批</h3><p>仅列出测试目录</p><button>允许一次</button><button>拒绝</button></section>
 <section id="choices" role="dialog" aria-label="选择测试方案" hidden style="position:fixed;bottom:15px;background:white;padding:12px;border:1px solid">
 <p>选择下一步</p><button>使用方案 A</button><button>使用方案 B</button></section>
+<div id="question" class="@container/request-card" hidden style="position:fixed;bottom:15px;background:white;padding:12px;border:1px solid">
+<div id="first-question"><h3>接下来选哪个方案？</h3><div role="radiogroup">
+<button role="radio" aria-checked="false">保留原方案</button><button role="radio" aria-checked="false">采用新方案</button></div>
+<button id="question-next" data-codex-composer-request-navigation disabled>下一步</button></div>
+<div id="last-question" hidden><h3>要附上哪些内容？</h3><div role="group">
+<button role="checkbox" aria-checked="false">验证结果</button><button role="checkbox" aria-checked="false">修改记录</button></div>
+<button id="question-submit" data-codex-composer-request-navigation disabled>提交 ⏎</button></div></div>
+<button id="pointer-zone" hidden style="position:fixed;inset:30% 15%;background:white">点击测试区域</button>
 <script>
 const edit=document.querySelector('#prompt-textarea'),send=document.querySelector('#send');
 const model=document.querySelector('#model'),models=document.querySelector('#models');
@@ -61,6 +72,27 @@ for(const id of ['approval','choices']){
   document.getElementById('open-'+id).addEventListener('click',()=>{panel.hidden=false;});
   panel.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{panel.hidden=true;}));
 }
+const pending=document.querySelector('#pending-thread'),question=document.querySelector('#question');
+const next=document.querySelector('#question-next'),submit=document.querySelector('#question-submit');
+document.querySelector('#open-question').onclick=()=>{pending.hidden=false;};
+pending.querySelector('button').onclick=()=>{
+  document.querySelector('aside .bg-primary-ghost-hover').classList.remove('bg-primary-ghost-hover');
+  pending.querySelector('button').classList.add('bg-primary-ghost-hover');
+  question.hidden=false;
+};
+const radios=question.querySelectorAll('[role=radio]');
+radios.forEach(button=>button.onclick=()=>{radios.forEach(row=>row.setAttribute('aria-checked',String(row===button)));next.disabled=false;});
+next.onclick=()=>{document.querySelector('#first-question').hidden=true;document.querySelector('#last-question').hidden=false;};
+const checks=question.querySelectorAll('[role=checkbox]');
+checks.forEach(button=>button.onclick=()=>{
+  button.setAttribute('aria-checked',String(button.getAttribute('aria-checked')!=='true'));
+  submit.disabled=!Array.from(checks).some(row=>row.getAttribute('aria-checked')==='true');
+});
+submit.onclick=()=>{question.hidden=true;pending.querySelector('[class="bg-chart-blue/15"]').remove();};
+const pointer=document.querySelector('#pointer-zone');
+document.querySelector('#open-pointer').onclick=()=>{pointer.hidden=false;};
+pointer.onclick=()=>{document.title='TITLE Left';};
+pointer.oncontextmenu=event=>{event.preventDefault();document.title='TITLE Right';};
 model.addEventListener('click',()=>{models.hidden=!models.hidden;model.setAttribute('aria-expanded',String(!models.hidden));});
 models.querySelectorAll('[role=option]').forEach(option=>option.addEventListener('click',()=>{model.textContent=option.textContent;models.querySelectorAll('[role=option]').forEach(row=>row.setAttribute('aria-selected',String(row===option)));models.hidden=true;model.setAttribute('aria-expanded','false');}));
 let count=0;edit.addEventListener('input',()=>{if(edit.textContent.trim())edit.querySelectorAll('.placeholder').forEach(p=>p.classList.remove('placeholder'));send.disabled=!edit.textContent.trim()&&!document.querySelector('#files').children.length;document.querySelector('h5.sr-only').outerHTML='<h5 class="sr-only">ChatGPT 说：</h5>';});
@@ -94,8 +126,12 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
             raise RuntimeError('Isolated UIA fixture did not open')
         reader=cls.backend._reader()
         deadline=time.monotonic()+15
+        observed={}
         while time.monotonic()<deadline:
-            observed=reader._call(operation='observe',hwnd=cls.hwnd,fresh=True)
+            try:
+                observed=reader._call(operation='observe',hwnd=cls.hwnd,fresh=True)
+            except TargetError:
+                continue
             if observed.get('selectedTitle')=='Fixture conversation' and observed.get('composer',{}).get('available'):
                 cls.backend._focus(cls.hwnd)
                 break
@@ -160,6 +196,7 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
     def test_native_x_model_listbox_changes_selection_and_preserves_draft(self):
         reader=self.backend._reader()
         root=self.backend.composer_options()
+        self.assertFalse(any(item['title']=='模型选择历史' for item in root['items']))
         trigger=next(item for item in root['items'] if item['kind']=='model')
         draft=reader.draft(self.hwnd)
         opened=reader.composer_action(self.hwnd,root['key'],trigger['id'],refresh=True)['options']
@@ -210,6 +247,76 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
             self.assertFalse(after['composer']['hasDraft'])
             samples.append({'length':len(text),'actionMs':action_ms,'exactlyOnce':True,'clipboardUnchanged':True})
         (self.work/'clipboard-locked-result.json').write_text(json.dumps({'samples':samples}),encoding='utf-8')
+
+    def test_native_zz_questionnaire_reads_pending_chat_and_submits_one_step_at_a_time(self):
+        reader = self.backend._reader()
+
+        def observe():
+            return reader._call(operation='observe', hwnd=self.hwnd, fresh=True)
+
+        def invoke(snapshot, label):
+            target = next(item for item in snapshot['items'] if item['title'] == label)
+            return self.backend.action({'kind': 'composer', 'operation': 'invoke', 'optionsKey': snapshot['key'],
+                                        'targetId': target['id'], 'epoch': snapshot['epoch']})['options']
+
+        invoke(self.backend.composer_options(), '工具问卷测试入口')
+        before = observe()
+        self.assertNotIn('prompt', before)
+        [pending] = before['pendingRequests']
+        self.assertEqual((pending['title'], pending['pending'], pending['selected']), ('Fixture pending', 'input', False))
+        nav = self.backend.navigation()
+        entry = next(item for item in nav['items'] if item['id'] == pending['id'])
+        self.assertEqual(entry['pending'], 'input')
+        self.backend.action({'kind': 'navigate', 'navigationKey': nav['key'],
+                             'targetId': entry['id'], 'epoch': nav['epoch']})
+        question = self.backend.composer_options()
+        self.assertTrue(question['prompt']['questionnaire'])
+        self.assertEqual(question['prompt']['title'], '请回答')
+        self.assertIn('接下来选哪个方案？', question['prompt']['text'])
+        active = observe()
+        self.assertTrue(active['prompt']['prompt']['questionnaire'])
+        self.assertTrue(active['pendingRequests'][0]['selected'])
+        self.assertFalse(next(item for item in question['items'] if item['title'] == '下一步')['enabled'])
+        question = invoke(question, '保留原方案')
+        self.assertEqual([item['title'] for item in question['items'] if item['selected']], ['保留原方案'])
+        question = invoke(question, '采用新方案')
+        self.assertEqual([item['title'] for item in question['items'] if item['selected']], ['采用新方案'])
+        question = invoke(question, '保留原方案')
+        question = invoke(question, '采用新方案')
+        question = invoke(question, '下一步')
+        self.assertIn('要附上哪些内容？', question['prompt']['text'])
+        question = invoke(question, '验证结果')
+        question = invoke(question, '修改记录')
+        self.assertEqual([item['title'] for item in question['items'] if item['selected']], ['验证结果', '修改记录'])
+        question = invoke(question, '验证结果')
+        self.assertEqual([item['title'] for item in question['items'] if item['selected']], ['修改记录'])
+        self.assertNotIn('prompt', invoke(question, '提交'))
+        after = observe()
+        self.assertNotIn('prompt', after)
+        self.assertEqual(after['pendingRequests'], [])
+
+    def test_native_zzz_window_pointer_posts_left_and_right_to_the_chosen_window(self):
+        from unittest.mock import patch
+        options = self.backend.composer_options()
+        target = next(item for item in options['items'] if item['title'] == 'GPT 测试画面')
+        self.backend.action({'kind': 'composer', 'operation': 'invoke', 'optionsKey': options['key'],
+                             'targetId': target['id'], 'epoch': options['epoch']})
+        x, y, width, height = self.backend._rect()
+        command = {'kind': 'window-pointer', 'epoch': options['epoch'], 'x': .5, 'y': .5,
+                   'pointer_target': (self.hwnd, (x, y, width, height))}
+        with patch('windows_control._APP_EXES', {'msedge.exe'}):
+            with self.assertRaisesRegex(TargetError, '窗口位置'):
+                self.backend.action({**command, 'operation': 'left', 'pointer_target': (self.hwnd, (x+10, y, width, height))})
+            for operation in ('left', 'right'):
+                self.backend.action({**command, 'operation': operation})
+                deadline = time.monotonic()+3
+                while time.monotonic()<deadline:
+                    window = next(row for row in self.backend._enumerate() if row['id'] == self.hwnd)
+                    if window['title'].endswith(operation.capitalize()):
+                        break
+                    time.sleep(.06)
+                else:
+                    self.fail(f'Native {operation} click was not observed')
 
     def test_native_z_attachment_and_placeholder_with_enabled_queue_button(self):
         from PIL import Image

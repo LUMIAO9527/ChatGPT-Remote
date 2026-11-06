@@ -62,6 +62,14 @@ class QueueTests(unittest.TestCase):
         with self.assertRaises(TargetError):self.reader.queue_action(42,queue['key'],'delete-a')
         with self.assertRaises(TargetError):self.reader.queue_action(42,queue['key'],'delete-a')
 
+    def test_edit_that_never_reached_the_native_item_can_be_selected_again(self):
+        queue=self.reader.queue(42)
+        self.reader._call=lambda **_: {'ok':False,'reason':'queue edit not started'}
+        for _ in range(2):
+            with self.assertRaises(TargetError) as error:
+                self.reader.queue_action(42,queue['key'],'edit-a')
+            self.assertEqual(error.exception.code,'queue_edit_not_started')
+
     def test_edit_returns_the_actual_native_draft_revision(self):
         queue=self.reader.queue(42)
         original=self.reader._call

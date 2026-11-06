@@ -6,7 +6,7 @@
 
 公开下载版本以 [GitHub Releases](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest) 为准。
 
-**1.0.3** 模型环按名称宽度排列，居中选中，两侧渐隐。思考档位和闪电开关直接操作。统一手机状态浮层，修复首次切换本地索引对话时报错，改善托盘失焦收起。双击 `ChatGPT-Remote-Preview.html` 可查看交互预览。[手机界面与连接说明](docs/MOBILE-REDESIGN.md)
+**1.0.4** 手机可回答电脑问卷、查看其他对话的待处理项，并从顶部电脑图标打开窗口画面。模型、思考档位和快速模式可一起预览和应用。修复队列编辑，按发生顺序显示并折叠回复过程。双击 `ChatGPT-Remote-Preview.html` 可查看交互预览。[手机界面与连接说明](docs/MOBILE-REDESIGN.md)
 
 - 更新在“设置 → 版本更新”内完成下载、校验和重启安装。
 - 手机发送键在有草稿时用于发送或排队，在空输入且有原生停止动作时显示停止。队列继续、引导、删除和编辑留在输入框上方。
@@ -27,7 +27,7 @@
 ## 程序与源码
 
 - `ChatGPTRemote.exe` 是 Windows x64 独立程序。
-- `ChatGPT-Remote-v1.0.3-source.zip` 提供同版本源码、构建入口和开发说明。
+- `ChatGPT-Remote-v1.0.4-source.zip` 提供同版本源码、构建入口和开发说明。
 - `ChatGPT-Remote-Preview.html` 提供离线预览，可切换主题、尺寸和审批场景。
 - `SHA256SUMS.txt` 提供发布文件的 SHA-256。
 
@@ -65,6 +65,8 @@ python -B tools/build_review.py
 独立程序的配对、窗口选择和访问密钥保存在所选程序文件夹的 `_data/`；源码模式保存在 `WindowsAgent/data/`。运行缓存与更新恢复材料位于 `_wip/`，独立程序的手机上传文件属于 `_data/`。更新保留配对和设置。对话正文不写入程序日志；发布包不包含本机配对、密钥或运行数据。
 
 本机 Codex 对话从原有 `.codex/state_*.sqlite`、`thread_history_*.sqlite` 和 `queue_*.sqlite` 只读取得，保留原生角色、消息编号和轮次状态；项目重复打开复用网页内缓存。公开思考摘要和工作记录折叠，正文按 Markdown 段落、列表、标题和代码显示。输入、发送及附件附加通过桌面原生控件完成；其它可访问界面继续使用辅助功能读取。
+
+超长对话或剪贴板被占用时，原生输入压力检查仍有读取超时或文字回读失败。遇到无法确认的发送会保留手机草稿并阻止自动重发。
 
 ## 联系与支持
 

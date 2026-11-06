@@ -1,7 +1,7 @@
 """Capabilities for the browser-facing transport, independent of its vendor.
 
 The local named-pipe manager is intentionally outside this policy. Public
-transport has structured ChatGPT controls and a view-only window surface.
+transport has structured ChatGPT controls and window-bound pointer input.
 This is an application capability boundary, not a sandbox for ChatGPT itself.
 """
 from __future__ import annotations
@@ -21,6 +21,7 @@ class RemotePolicy:
             'desktop': not self.public,
             'rawInput': not self.public,
             'windowView': True,
+            'windowPointer': True,
             'conversation': True,
             'nativeQueue': True,
             'composerOptions': True,
@@ -38,7 +39,7 @@ class RemotePolicy:
         if not self.public:
             return
         self.require_window(mode)
-        if data.get('kind') not in ('message', 'navigate', 'draft', 'composer', 'queue'):
-            raise PolicyError('公网画面仅供查看，请使用对话、模型和原生队列控件。')
+        if data.get('kind') not in ('message', 'navigate', 'draft', 'composer', 'queue', 'window-pointer'):
+            raise PolicyError('请使用 ChatGPT 窗口的画面或对话控件。')
         if data.get('kind') == 'composer' and data.get('operation') not in ('invoke', 'dismiss'):
             raise PolicyError('该选项需要在电脑端完成；公网不开放原始坐标控制。')

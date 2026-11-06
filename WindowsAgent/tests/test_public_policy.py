@@ -89,6 +89,7 @@ class PublicPolicyTests(unittest.TestCase):
         self.assertEqual(capabilities['scope'], 'chatgpt-window')
         self.assertFalse(capabilities['desktop'])
         self.assertFalse(capabilities['rawInput'])
+        self.assertTrue(capabilities['windowPointer'])
         with tempfile.TemporaryDirectory() as directory:
             local = AgentState(MockBackend(), Path(directory))
             try:
@@ -96,6 +97,21 @@ class PublicPolicyTests(unittest.TestCase):
                 self.assertTrue(local.info()['capabilities']['rawInput'])
             finally:
                 local.close()
+
+    def test_window_pointer_requires_a_recent_frame_of_the_selected_window(self):
+        frame = self.state.hub.capture_now()
+        command = {'kind': 'window-pointer', 'operation': 'right', 'epoch': frame['epoch'],
+                   'frameId': frame['id'], 'x': .25, 'y': .75}
+        self.assertEqual(self.request('/api/action', command)[0], 200)
+        self.assertEqual(self.backend.last_action, 'right:0.25,0.75')
+        self.assertEqual(self.request('/api/action', {**command, 'x': 2})[0], 400)
+        self.assertEqual(self.request('/api/action', {**command, 'frameId': frame['id']+999})[0], 409)
+        self.backend.freeze(20)
+        self.backend.unfreeze()
+        self.assertEqual(self.request('/api/action', {**command, 'epoch': self.backend.tracker.epoch})[0], 409)
+        self.backend.desktop()
+        self.assertEqual(self.request('/api/action', command)[0], 403)
+        self.assertEqual(self.backend.last_action, 'right:0.25,0.75')
 
     def test_desktop_mode_cannot_be_used_to_bypass_public_action_policy(self):
         self.backend.desktop()

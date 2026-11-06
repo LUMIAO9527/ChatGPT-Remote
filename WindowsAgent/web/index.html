@@ -47,6 +47,7 @@ button{border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-act
 button:disabled{cursor:default;opacity:.45}
 button,input,textarea,summary{outline-offset:3px}
 button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent)}
+input:focus-visible,textarea:focus-visible{outline-offset:-2px}
 [hidden]{display:none!important}
 h1,h2,h3,p{margin:0}
 h2{font-size:20px;line-height:1.4}
@@ -126,6 +127,7 @@ svg{flex-shrink:0}
 .context-picker #currentContextTitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .context-picker .context-arrow{width:14px;height:14px;color:var(--muted)}
 .context-state{display:flex;align-items:center;flex-shrink:0}
+.toolbar-screen{flex:none;color:var(--ink)}
 .badge{display:flex;align-items:center;width:6px;min-width:6px;height:20px;font-size:0}
 .badge::before{content:"";width:5px;height:5px;background:var(--muted);border-radius:50%}
 .badge[data-tone="good"]::before{background:#309567}
@@ -181,8 +183,9 @@ svg{flex-shrink:0}
 .chat-process-content{padding-bottom:8px;font-size:14px;line-height:1.65}
 .chat-process-content p+p{margin-top:7px}
 .chat-process-reasoning{font-size:14px;color:var(--muted)}
-.chat-process-search{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin:10px 0}
-.chat-process-search .icon{width:17px;height:17px;margin-top:3px}
+.chat-process-action{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin:8px 0}
+.chat-process-action .icon{width:16px;height:16px;margin-top:3px}
+.chat-process-commentary{color:var(--ink)}
 .chat-attachments{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
 .chat-attachment{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-alt);border:1px solid var(--line);border-radius:12px;font-size:12px;max-width:100%;overflow-wrap:anywhere}
 #chatLatestBtn{position:absolute;bottom:14px;right:24px;width:44px;height:44px;background:var(--card);border:1px solid var(--line);box-shadow:0 3px 12px #111a3014;border-radius:50%;font-size:20px}
@@ -209,10 +212,17 @@ svg{flex-shrink:0}
 .draft-notice{font-size:12px;color:var(--muted);margin:0 0 6px}
 .draft-actions{display:flex;flex-wrap:wrap;gap:6px}
 .draft-actions .prompt-choice{flex:1;min-height:44px;padding:8px;font-size:12px}
-.send-progress{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:6px 10px 0;font-size:12px;color:var(--muted)}
+.send-progress{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;width:fit-content;min-height:25px;margin:5px 6px 0;padding:3px 10px;border-radius:12px;background:var(--card);color:var(--muted);font-size:12px}
+.send-progress[data-unconfirmed="true"]{width:calc(100% - 12px)}
+.send-dots{display:inline-flex;align-items:center;gap:4px}
+.send-dots i{width:5px;height:5px;border-radius:50%;background:currentColor;animation:send-wave 1.1s ease-in-out infinite}
+.send-dots i:nth-child(2){animation-delay:.13s}
+.send-dots i:nth-child(3){animation-delay:.26s}
+@keyframes send-wave{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-2px);opacity:1}}
 .send-progress>.btn{margin-left:auto;background:var(--card)}
 .prompt-shortcut{display:flex;align-items:center;justify-content:space-between;gap:8px;width:calc(100% - 10px);min-height:44px;margin:5px;padding:7px 12px;border-radius:14px;text-align:left;background:var(--accent-soft);color:var(--accent-ink);font-size:13px;font-weight:600}
 .prompt-shortcut .icon{width:16px;height:16px}
+.navigation-attention{flex:none;color:var(--accent-ink);font-size:11px;font-weight:600}
 .control-spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}
 }
@@ -254,16 +264,11 @@ svg{flex-shrink:0}
 .phone-file-action{min-width:44px;min-height:44px;border-radius:12px;background:transparent;color:var(--muted);font-size:14px}
 
 /* Screen resources are only started when this view is requested. */
-.screen-return{min-height:44px;min-width:44px;padding:8px 6px;font-size:13px}
-
-.screen-return .icon{width:18px;height:18px}
-
-.screen-card{flex:0 1 52%;min-height:0;max-height:440px;display:flex;flex-direction:column;margin:4px 12px 8px;border:1px solid var(--line);border-radius:18px;background:var(--surface-alt);overflow:auto;overscroll-behavior:contain;animation:screen-in .17s ease-out}
-@keyframes screen-in{from{opacity:.45}}
-.screen-card .card-head h2{font-size:15px}
-.screen-card .card-head{justify-content:flex-start;padding:3px 12px;flex-shrink:0}
-.screen-shell{position:relative;display:flex;align-items:center;justify-content:center;min-height:88px;flex:1;overflow:hidden;background:var(--screen);margin:0 8px 8px;border-radius:12px;touch-action:none}
+.screen-card .panel-body{display:flex;flex-direction:column;gap:8px;padding-bottom:10px}
+.screen-shell{position:relative;display:flex;align-items:center;justify-content:center;min-height:88px;height:clamp(140px,48dvh,420px);overflow:hidden;background:var(--screen);border-radius:12px;touch-action:none}
 .screen-shell canvas{display:block;max-width:100%;max-height:100%;object-fit:contain;touch-action:none}
+.screen-cursor{position:absolute;top:0;left:0;width:21px;height:24px;pointer-events:none;filter:drop-shadow(0 1px 2px #0009);color:#101216;fill:#fff}
+.screen-gesture-hint{min-height:18px;color:var(--muted);font-size:12px;text-align:center}
 .screen-shell[data-readonly="true"]{touch-action:pan-x pan-y}
 .screen-shell[data-readonly="true"] canvas{touch-action:pan-x pan-y}
 .screen-hint{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:24px;background:#111318e8;color:#f0f2f6;text-align:center}
@@ -276,8 +281,10 @@ svg{flex-shrink:0}
 .ribbon-warn{background:var(--warn-bg);color:var(--warn)}
 #fullscreenBtn{position:absolute;right:8px;top:8px;min-width:44px;min-height:44px;background:#242933d9;color:#fff;padding:10px;border-radius:12px}
 .screen-fullscreen-exit,.immersive-stats{display:none}
-.screen-shell.immersive{position:fixed;inset:0;z-index:100;max-height:none;margin:0;border-radius:0;background:#050608;padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)}
+.screen-card.immersive-screen{inset:0;transform:none;width:100%;max-height:none;border-radius:0}
+.screen-shell.immersive{position:absolute;inset:0;z-index:2;width:100%;height:100%;margin:0;border-radius:0;background:#050608;padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)}
 .screen-shell.immersive canvas{max-width:100vw;max-height:var(--app-height,100dvh)}
+.screen-shell.immersive #fullscreenBtn{display:none}
 .screen-shell.immersive .screen-fullscreen-exit{display:flex;position:absolute;right:calc(16px + var(--safe-right));bottom:calc(16px + var(--safe-bottom));background:#303640;color:#fff;z-index:3}
 .screen-shell.immersive .immersive-stats{display:flex;position:absolute;left:16px;bottom:calc(24px + var(--safe-bottom));gap:12px;color:#b9c0ca;font-size:11px}
 .banner{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--warn-bg);color:var(--warn);font-size:12px;flex-shrink:0}
@@ -321,6 +328,7 @@ svg{flex-shrink:0}
 .model-fast-pill .icon{width:17px;height:17px;opacity:.67}
 .model-switch[aria-checked="true"] .icon{fill:currentColor;opacity:1}
 .model-reset{flex:none;padding:0 6px;border-radius:8px;color:var(--muted);font-size:12px}
+.model-reset[data-apply="true"]{min-width:60px;color:var(--accent-ink);font-weight:650}
 .panel-head{display:flex;align-items:center;gap:4px;width:100%;min-height:52px;padding:4px 6px 4px 16px;flex-shrink:0}
 .panel-head h2{flex:1;min-width:0;font-size:16px;line-height:1.35;font-weight:650;overflow-wrap:anywhere}
 .panel-body{width:100%;padding:0 14px 14px;overflow-y:auto;min-height:0;overscroll-behavior:contain}
@@ -398,13 +406,17 @@ svg{flex-shrink:0}
 .option-tools:has(button:not([hidden])){margin-top:6px}
 .option-tool{min-height:44px;padding:8px 10px;border-radius:10px;background:transparent;color:var(--muted);font-size:13px}
 .option-tool:hover:not(:disabled){background:var(--surface-alt);color:var(--ink)}
-.options-panel[data-prompt="true"] .options-list{display:grid;gap:8px;border:0;border-radius:0;overflow:visible}
+.options-panel[data-prompt="true"] .options-list:not(.question-choices){display:grid;gap:8px;border:0;border-radius:0;overflow:visible}
 .options-panel[data-prompt="true"] .options-list[data-decisions="true"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .prompt-description{margin:0 0 12px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:14px;line-height:1.6}
 .prompt-command{margin:0 0 14px;padding:10px 12px;border-radius:12px;background:var(--surface-alt);font:13px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 .prompt-choice{min-height:44px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-alt);font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .prompt-choice:hover:not(:disabled){filter:brightness(.94)}
 .prompt-choice[data-selected="true"]{border-color:var(--accent);color:var(--accent-ink)}
+.question-choices .option-row::before{content:"";flex:none;width:15px;height:15px;border:1px solid var(--muted);border-radius:50%}
+.question-choices [data-kind="prompt-check"]::before{border-radius:4px}
+.question-choices [data-selected="true"]::before{border-color:var(--accent);background:var(--accent);box-shadow:inset 0 0 0 2px var(--surface-alt)}
+.question-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:2px}
 .prompt-choice.primary{background:var(--ink);border-color:transparent;color:var(--card)}
 .confirm-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .option-empty{padding:28px 20px;font-size:13px;color:var(--muted);text-align:center}
@@ -415,7 +427,8 @@ svg{flex-shrink:0}
 .toast[data-tone="error"] #noticeIcon{color:var(--danger)}
 .toast #noticeText{flex:1;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .toast button{display:flex;align-items:center;justify-content:center;flex:none;min-height:34px;padding:4px 7px;border-radius:8px;background:transparent;font-size:12px}
-.toast #noticeRetryBtn{color:var(--ink);font-weight:550}
+.toast :is(#noticeRetryBtn,#noticeOpenBtn){color:var(--ink);font-weight:550}
+.toast[data-tone="progress"] #noticeIcon{animation:process-pulse 1.3s ease-in-out infinite}
 .toast #noticeDismissBtn{width:32px;padding:8px;color:var(--muted)}
 .toast #noticeDismissBtn .icon{width:14px;height:14px}
 .option-reconnecting{display:flex;align-items:center;justify-content:center;gap:10px;min-height:58px;padding:12px;color:var(--muted);font-size:13px}
@@ -523,6 +536,9 @@ svg{flex-shrink:0}
       <span id="currentContextTitle">当前对话</span><svg class="icon context-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
     </button>
     <div class="context-state"><span class="badge" id="badge" role="status" aria-live="polite">未配对</span><p class="sr-only" id="chatStatus"></p></div></div>
+    <button class="btn ghost small toolbar-screen" type="button" id="screenOpenBtn" aria-label="电脑画面" aria-controls="screenCard" aria-expanded="false" hidden>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M12 16.5V21m-4 0h8"/></svg>
+    </button>
     <button class="btn ghost small" type="button" id="settingsToggleBtn" aria-label="设置" aria-controls="settingsPanel" aria-expanded="false">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3h5l.6 2.3 2 1.2 2.3-.6 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.3-.6-2 1.2-.6 2.2h-5l-.6-2.2-2-1.2-2.3.6-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.3.6 2-1.2L9.5 3Z"/><circle cx="12" cy="13" r="3.2"/></svg>
     </button>
@@ -535,43 +551,12 @@ svg{flex-shrink:0}
       <p class="chat-empty" id="chatEmpty">正在读取…</p>
       <div class="chat-feedback" id="chatFeedback" hidden><p class="chat-error" id="chatError" role="alert" hidden></p><button class="btn small" id="chatRetryBtn" type="button" hidden>重试连接</button></div>
     </section>
-    <section class="card screen-card" id="screenCard" aria-labelledby="screenTitle" hidden>
-      <div class="card-head">
-        <button class="btn ghost screen-return" type="button" id="chatViewBtn" aria-label="收起画面"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
-        <h2 id="screenTitle">ChatGPT 窗口</h2>
-      </div>
-
-      <div class="screen-shell" id="screenShell">
-        <canvas id="screen" role="img" aria-label="电脑 ChatGPT 窗口画面（尚未连接）">电脑 ChatGPT 窗口画面</canvas>
-        <button class="btn ghost small" type="button" id="fullscreenBtn" aria-pressed="false" aria-label="全屏查看画面"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></svg></button>
-        <div class="screen-hint" id="screenHint">
-          <strong id="screenHintTitle">正在连接画面…</strong>
-          <span id="screenHintText">正在等待电脑返回第一帧截图。</span>
-        </div>
-        <div class="ribbon-stack">
-          <div class="ribbon" id="switchRibbon" hidden>窗口正在切换，请稍候…</div>
-          <div class="ribbon ribbon-warn" id="freezeRibbon" hidden>已冻结：输入操作已禁用</div>
-        </div>
-        <div class="immersive-stats" aria-hidden="true">
-          <span id="immersiveFps">FPS —</span>
-          <span id="immersiveLatency">往返 —</span>
-        </div>
-        <button class="btn screen-fullscreen-exit" type="button" id="fullscreenExit">退出全屏</button>
-      </div>
-
-      <div class="screen-foot">
-        <p class="sr-only" id="statusText" role="status"></p>
-        <p class="sr-only" id="gateHint" hidden></p>
-        <p class="error-line" id="errorLine" role="alert" hidden></p>
-      </div>
-    </section>
-
     <div class="side">
       <section class="card composer-card" aria-labelledby="textTitle">
         <h2 id="textTitle">发送消息</h2>
         <div class="queued-strip" id="queuedStrip" hidden>
           <section class="queue-panel" id="queuePanel" aria-label="排队消息" hidden>
-            <div class="queue-header" id="queueHeader"><p class="queue-status" id="queueStatus" role="status"></p><div class="queue-actions" id="queueActions"></div><button class="btn ghost small" id="queueRetryBtn" type="button" hidden>重读队列</button></div>
+            <div class="queue-header" id="queueHeader"><p class="queue-status" id="queueStatus" role="status"></p><div class="queue-actions" id="queueActions"></div></div>
             <p class="option-error" id="queueError" role="alert" hidden></p>
             <div id="queueItems"></div><div class="queued-list" id="queuedList"></div>
           </section>
@@ -591,7 +576,7 @@ svg{flex-shrink:0}
             <button class="prompt-choice primary" type="button" id="draftRecoverBtn">合并到输入框</button>
           </div>
         </section>
-        <div class="send-progress" id="sendProgress" hidden><span class="control-spinner" id="sendProgressSpinner" aria-hidden="true"></span><span id="sendProgressText" role="status">发送中…</span><button class="btn small" id="keepSendDraftBtn" type="button" hidden>保留为草稿</button></div>
+        <div class="send-progress" id="sendProgress" hidden><span class="send-dots" id="sendProgressSpinner" aria-hidden="true"><i></i><i></i><i></i></span><span class="sr-only" id="sendProgressText" role="status">正在发送</span><button class="btn small" id="keepSendDraftBtn" type="button" hidden>保留草稿</button></div>
         <input id="phoneFileInput" type="file" multiple hidden>
 
 
@@ -600,7 +585,7 @@ svg{flex-shrink:0}
           <div class="composer-input"><label class="sr-only" for="message">要发送到电脑的文字</label><textarea id="message" maxlength="6000" rows="1" placeholder="发消息…" aria-label="要发送到电脑的消息" enterkeyhint="enter"></textarea></div>
           <div class="composer-meta">
             <button class="btn" id="composerOptionsBtn" type="button" aria-label="添加附件"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-            <button class="composer-model" id="modelPickerBtn" type="button" aria-label="选择模型" aria-haspopup="dialog" aria-controls="optionsPanel" aria-expanded="false"><span id="modelPickerLabel">模型</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="composer-model" id="modelPickerBtn" type="button" aria-label="选择模型" aria-haspopup="dialog" aria-controls="optionsPanel" aria-expanded="false"><svg class="icon composer-fast" id="modelFastIcon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m13 2-9 12h7l-1 8 10-12h-7Z" fill="currentColor"/></svg><span id="modelPickerLabel">模型</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
             <button class="btn primary" type="button" id="sendEnterBtn" aria-label="发送" title="发送"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path class="send-arrow" d="M12 19V5m-6 6 6-6 6 6"/><rect class="stop-mark" x="6" y="6" width="12" height="12" rx="1.5"/></svg></button>
           </div>
         </div>
@@ -611,6 +596,23 @@ svg{flex-shrink:0}
 </main>
 
 <button class="sheet-backdrop" id="sheetBackdrop" type="button" aria-label="关闭弹层" aria-hidden="true" tabindex="-1" hidden></button>
+
+<section class="mobile-panel screen-card" id="screenCard" role="dialog" aria-modal="true" aria-labelledby="screenTitle" hidden>
+  <header class="panel-head"><h2 id="screenTitle">ChatGPT 窗口</h2><button class="panel-icon" id="chatViewBtn" type="button" aria-label="收起画面"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
+  <div class="panel-body">
+    <div class="screen-shell" id="screenShell">
+      <canvas id="screen" role="img" aria-label="电脑 ChatGPT 窗口画面">电脑 ChatGPT 窗口画面</canvas>
+      <svg class="screen-cursor" id="screenCursor" viewBox="0 0 21 24" aria-hidden="true" hidden><path d="M1.5 1.5V19l5-4 3.4 7 3.4-1.8-3.5-6.8 6.6-.3Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      <button class="btn ghost small" type="button" id="fullscreenBtn" aria-pressed="false" aria-label="全屏查看画面"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></svg></button>
+      <div class="screen-hint" id="screenHint"><strong id="screenHintTitle">正在连接画面…</strong><span id="screenHintText">正在等待电脑返回第一帧截图。</span></div>
+      <div class="ribbon-stack"><div class="ribbon" id="switchRibbon" hidden>窗口正在切换，请稍候…</div><div class="ribbon ribbon-warn" id="freezeRibbon" hidden>已冻结：输入操作已禁用</div></div>
+      <div class="immersive-stats" aria-hidden="true"><span id="immersiveFps">FPS —</span><span id="immersiveLatency">往返 —</span></div>
+      <button class="btn screen-fullscreen-exit" type="button" id="fullscreenExit">退出全屏</button>
+    </div>
+    <p class="screen-gesture-hint" id="screenGestureHint"></p>
+    <p class="sr-only" id="statusText" role="status"></p><p class="sr-only" id="gateHint" hidden></p><p class="error-line" id="errorLine" role="alert" hidden></p>
+  </div>
+</section>
 
 <section class="mobile-panel settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
   <header class="panel-head"><h2 id="settingsTitle">设置</h2><button class="panel-icon" id="settingsCloseBtn" type="button" aria-label="关闭设置"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
@@ -686,7 +688,7 @@ svg{flex-shrink:0}
     <div class="confirm-actions"><button class="prompt-choice" type="button" id="confirmCancelBtn">取消</button><button class="prompt-choice primary" type="button" id="confirmAcceptBtn">确认</button></div>
   </div>
 </section>
-<div class="toast" id="toast" role="status" aria-live="polite" hidden><svg class="icon" id="noticeIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></svg><span id="noticeText"></span><button id="noticeRetryBtn" type="button" hidden>重试</button><button id="noticeDismissBtn" type="button" aria-label="关闭提示"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><svg class="icon" id="noticeIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></svg><span id="noticeText"></span><button id="noticeRetryBtn" type="button" hidden>重试</button><button id="noticeOpenBtn" type="button" aria-label="查看其他对话待处理项" hidden>查看</button><button id="noticeDismissBtn" type="button" aria-label="关闭提示"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></div>
 <noscript><p style="max-width:600px;margin:20px auto;padding:0 16px;color:#a13340">此页面需要启用 JavaScript 才能显示控制台。</p></noscript>
 
 <script>
@@ -714,9 +716,10 @@ svg{flex-shrink:0}
   function $(id){ return document.getElementById(id); }
 
   var els = {
-    noticeText:$('noticeText'),noticeRetryBtn:$('noticeRetryBtn'),noticeDismissBtn:$('noticeDismissBtn'),
-    chatViewBtn: $('chatViewBtn'), screenViewBtn: $('screenViewBtn'),
-    screenCard: $('screenCard'), screenTitle:$('screenTitle'),
+    noticeText:$('noticeText'),noticeRetryBtn:$('noticeRetryBtn'),noticeDismissBtn:$('noticeDismissBtn'),noticeOpenBtn:$('noticeOpenBtn'),
+    chatViewBtn: $('chatViewBtn'), screenViewBtn: $('screenViewBtn'),screenOpenBtn:$('screenOpenBtn'),
+    screenPanel: $('screenCard'), screenCloseBtn:$('chatViewBtn'),screenTitle:$('screenTitle'),
+    screenCursor:$('screenCursor'),screenGestureHint:$('screenGestureHint'),
     rawControls:$('rawControls'), desktopControl:$('desktopControl'),
     conversationTitle: $('conversationTitle'), chatStatus: $('chatStatus'),
     chatMessages: $('chatMessages'), chatEmpty: $('chatEmpty'), chatError: $('chatError'),
@@ -756,9 +759,9 @@ svg{flex-shrink:0}
     statusText: $('statusText'), gateHint: $('gateHint'), errorLine: $('errorLine'),
     windowSelect: $('windowSelect'), selectBtn: $('selectBtn'), desktopBtn: $('desktopBtn'), desktopTip: $('desktopTip'),
     message: $('message'), sendEnterBtn: $('sendEnterBtn'),
-    modelPickerBtn:$('modelPickerBtn'),modelPickerLabel:$('modelPickerLabel'),
+    modelPickerBtn:$('modelPickerBtn'),modelPickerLabel:$('modelPickerLabel'),modelFastIcon:$('modelFastIcon'),
     queuedStrip:$('queuedStrip'),queuedList:$('queuedList'),queuePanel:$('queuePanel'),queueHeader:$('queueHeader'),
-    queueRetryBtn:$('queueRetryBtn'),queueStatus:$('queueStatus'),queueError:$('queueError'),queueActions:$('queueActions'),queueItems:$('queueItems'),
+    queueStatus:$('queueStatus'),queueError:$('queueError'),queueActions:$('queueActions'),queueItems:$('queueItems'),
     phoneFileInput:$('phoneFileInput'),phoneFiles:$('phoneFiles'),
     submitChoiceBtn:$('submitChoiceBtn'),submitChoiceValue:$('submitChoiceValue'),submitChoices:$('submitChoices'),
     windowChoiceBtn:$('windowChoiceBtn'),windowChoiceValue:$('windowChoiceValue'),windowChoices:$('windowChoices'),
@@ -774,7 +777,6 @@ svg{flex-shrink:0}
     panelOpener: null,
     homeActive:false,
     homeRequested:false,
-    remoteRequested:'',
     computerName:'',
     autoResume:true,
     lastSurface:'home',
@@ -847,6 +849,7 @@ svg{flex-shrink:0}
     live: false,
     epoch: -1,
     displayedEpoch: -1,
+    displayedFrameId: 0,
     lastFrameId: 0,
     frameSeen: false,
     lastFrameAt: 0,
@@ -879,7 +882,6 @@ svg{flex-shrink:0}
     statsTimer: 0,
     gate: { ok: false, reason: '正在连接…' },
     actionsInFlight: 0,
-    lastRightClickAt: 0,
     streamAck: null,
     sending: null,
     instance: '',
@@ -892,6 +894,8 @@ svg{flex-shrink:0}
     var paths={image:'M3 3h18v18H3ZM3 16l5-5 4 4 3-3 6 6M15 7h.01',file:'M5 3h9l5 5v13H5ZM14 3v6h5',folder:'M3 7V5h6l2 2h10v13H3Z',chat:'M4 4h16v13H8l-4 3Z',chevron:'m9 6 6 6-6 6',down:'m6 9 6 6 6-6',check:'m5 12 4 4L19 6',plus:'M12 5v14M5 12h14',model:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z',permission:'m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6Z',effort:'M4 7h16M4 17h16M9 4v6m6 4v6'};
     paths.bolt='m13 2-9 12h7l-1 8 10-12h-7Z';
     paths.search='M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15ZM16 16l5 5';
+    paths.terminal='M4 5h16v14H4ZM8 9l3 3-3 3m5 0h3';
+    paths.tools='M8 4v4m-2-2h4m6 10v4m-2-2h4m-6-8 4 4m0-4-4 4';
     paths.trash='M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6';
     paths.steer='M4 5v5c0 2 1 3 3 3h12m-5-5 5 5-5 5';
     paths.resume='m9 5 11 7-11 7Z';paths.edit='m15 4 5 5M4 20l4-1L20 7a2 2 0 0 0-4-4L4 15Z';
@@ -925,8 +929,7 @@ svg{flex-shrink:0}
       var value=JSON.parse(localStorage.getItem(SURFACE_KEY)||'{}');
       state.autoResume=value.autoResume!==false;
       state.lastSurface='remote';
-      state.view=value.view==='screen'?'screen':'chat';
-      if(!state.autoResume)state.view='chat';
+      state.view='chat';
     } catch(e) { state.autoResume=true;state.lastSurface='remote';state.view='chat'; }
   }
   function savePhoneSurface(surface){
@@ -965,10 +968,7 @@ svg{flex-shrink:0}
     applyPhoneSurface(false);savePhoneSurface('remote');
   }
   function openScreenView(){
-    if(!setPanel(''))return;
-    if(state.panelBackPending){state.remoteRequested='screen';return;}
-    if(state.homeActive)openRemoteView();
-    switchView('screen');
+    if(hasCapability('windowView'))setPanel('screen',els.screenOpenBtn);
   }
   function returnToComputer(){
     if(state.panelBackPending || state.pending.sendText || state.draftBusy || state.optionsBusy)return;
@@ -1038,6 +1038,8 @@ svg{flex-shrink:0}
       if(entry.source==='pair')return !els.pairView.hidden;
       if(entry.source==='navigation')return state.panel==='navigation';
       if(entry.source==='options')return state.panel==='options';
+      if(entry.source==='attention')return state.live && !state.homeActive &&
+        !(state.panel==='navigation' && state.navigationMode==='pending');
       return true;
     });
     eligible.sort(function(a,b){
@@ -1055,8 +1057,12 @@ svg{flex-shrink:0}
     els.toast.setAttribute('data-tone',activeNotice.tone);
     els.toast.setAttribute('role',activeNotice.tone==='error'?'alert':'status');
     els.toast.setAttribute('aria-live',activeNotice.tone==='error'?'assertive':'polite');
-    els.noticeRetryBtn.hidden=!(state.live && (state.networkTrouble || state.errorSource==='conversation') && !state.offline);
-    els.noticeRetryBtn.disabled=!!state.pending.refresh;
+    var queueNotice=activeNotice.source==='queue';
+    els.noticeRetryBtn.hidden=!queueNotice && (activeNotice.tone!=='error' || !(state.live && (state.networkTrouble || state.errorSource==='conversation') && !state.offline));
+    els.noticeRetryBtn.disabled=queueNotice?state.queueBusy||state.queueLoading:!!state.pending.refresh;
+    els.noticeOpenBtn.hidden=activeNotice.source!=='attention';
+    els.noticeOpenBtn.disabled=state.draftBusy || state.optionsBusy || state.networkTrouble;
+    els.noticeDismissBtn.hidden=activeNotice.source==='attention' || activeNotice.tone==='progress';
     requestAnimationFrame(positionNotice);
   }
   function setNotice(source,message,tone){
@@ -1369,23 +1375,16 @@ svg{flex-shrink:0}
 
   /* ---------- 对话文字 ---------- */
   function switchView(view){
-    if (state.view === view) return;
-    setImmersive(false);
-    state.view = view;
-    savePhoneSurface(state.homeActive?'home':'remote');
-    if (state.errorSource === 'conversation' || state.errorSource === 'frame') clearError();
-    startMedia();
-    render();
-    (view==='screen'?els.chatViewBtn:els.settingsToggleBtn).focus({preventScroll:true});
-    if (state.live) refreshWindows();
+    if(view==='screen')return openScreenView();
+    if(state.panel==='screen')setPanel('');
   }
   function renderConversation(){
     var visible = state.view === 'chat';
     document.body.classList.toggle('chat-mode', visible && !state.homeActive && !els.remoteView.hidden);
     els.settingsToggleBtn.hidden = els.remoteView.hidden;
     els.navigationToggleBtn.hidden = els.remoteView.hidden;
-    els.screenCard.hidden = visible;
     els.screenViewBtn.setAttribute('aria-pressed', visible ? 'false' : 'true');
+    els.screenOpenBtn.setAttribute('aria-expanded',String(state.panel==='screen'));
     var chat = state.chat;
     renderQueued();
     els.conversationTitle.textContent = state.activeChatTitle || (chat && chat.title ? chat.title : '当前对话');
@@ -1405,7 +1404,8 @@ svg{flex-shrink:0}
     els.chatError.textContent = state.error || (trouble ? '暂时无法连接，请稍后重试。' : '');
     els.chatError.hidden = true;
     els.chatFeedback.hidden=true;
-    setNotice('connection',!state.error && trouble?'暂时无法连接，请稍后重试。':'','error');
+    var connecting=state.live && !state.homeActive && !state.navigationBusy && !state.chat && !state.frameSeen && !state.status;
+    setNotice('connection',!state.error?(trouble?'暂时无法连接，请稍后重试。':connecting?'正在连接电脑…':''):'',trouble?'error':'progress');
     els.chatRetryBtn.hidden = !trouble;
     els.chatRetryBtn.disabled = !state.live || state.offline || state.pending.refresh;
     els.chatRetryBtn.textContent = state.pending.refresh ? '正在重试…' : '重试连接';
@@ -1423,7 +1423,7 @@ svg{flex-shrink:0}
   }
   function messageBlocks(message){
     if (Array.isArray(message.blocks) && message.blocks.length && message.blocks.every(function(block){
-      return block && /^(paragraph|list|heading|code|search)$/.test(block.kind) && typeof block.text === 'string';
+      return block && /^(paragraph|list|heading|code|search|operation)$/.test(block.kind) && typeof block.text === 'string';
     })) return message.blocks;
     return message.text.trim() ? message.text.split(/\n\s*\n/).map(function(text){ return { kind: 'paragraph', text: text }; }) : [];
   }
@@ -1560,9 +1560,7 @@ svg{flex-shrink:0}
     var status=state.queueLoading?'正在同步队列…':'';
     els.queueError.textContent=state.queueError;els.queueError.hidden=true;setNotice('queue',state.queueError,'error');
     els.queueStatus.textContent=status;els.queueStatus.hidden=!status;
-    els.queueHeader.hidden=!status && !controls.length && !state.queueError;
-    els.queueRetryBtn.hidden=!state.queueError;
-    els.queueRetryBtn.disabled=busy;
+    els.queueHeader.hidden=!status && !controls.length;
     renderComposerAction();
     var signature=JSON.stringify([snapshot,busy,state.frozen.active,state.queueExpanded]);
     if(signature===state.queueRenderSignature)return;
@@ -1579,7 +1577,7 @@ svg{flex-shrink:0}
       }else{
         button.appendChild(controlIcon(action.operation));var caption=document.createElement('span');caption.textContent=label;button.appendChild(caption);
       }
-      button.disabled=busy||!action.enabled||state.frozen.active||!snapshot||snapshot.epoch!==state.epoch;
+      button.disabled=busy||!!state.queueError||!action.enabled||state.frozen.active||!snapshot||snapshot.epoch!==state.epoch;
       button.addEventListener('click',function(){invokeQueue(action,item);});return button;
     }
     if(!snapshot)return;
@@ -1607,11 +1605,31 @@ svg{flex-shrink:0}
       state.queueError='手机还有未处理的消息或附件，请先处理后再编辑队列。';renderQueue();return false;
     }
     var phoneBefore=els.message.value,tokenBefore=state.token,conversationBefore=state.activeChatKey;
+    function sameQueue(){return state.live && state.token===tokenBefore && state.epoch===snapshot.epoch && state.activeChatKey===conversationBefore;}
     state.queueBusy=true;state.queueError='';renderQueue();renderControls();
     try{
       var outcome=null,ok=await sendAction({kind:'queue',queueKey:snapshot.key,targetId:action.id,epoch:snapshot.epoch},function(data){outcome=data;});
-      if(!state.live||state.token!==tokenBefore||state.epoch!==snapshot.epoch||state.activeChatKey!==conversationBefore)return false;
-      if(!ok){state.queueError='操作未确认，请刷新队列并检查电脑画面。';state.queue=null;return false;}
+      if(!sameQueue())return false;
+      if(!ok && action.operation==='edit' && item && item.text && state.actionErrorCode==='queue_pending'){
+        try {
+          var observed=await Promise.all([requestJson('/api/queue'),requestJson('/api/draft')]);
+          var queue=observed[0],draft=observed[1],original=normalizeSendText(item.text);
+          if(sameQueue() && draft.epoch===snapshot.epoch && draft.conversationKey===conversationBefore &&
+              draft.hasDraft && !draft.truncated && normalizeSendText(draft.text)===original &&
+              queue.epoch===snapshot.epoch && !queue.items.some(function(row){return row.id===item.id;}) &&
+              queue.items.filter(function(row){return normalizeSendText(row.text)===original;}).length<
+                snapshot.items.filter(function(row){return normalizeSendText(row.text)===original;}).length){
+            outcome={queue:queue,queueDraft:draft};ok=true;
+          }
+        } catch(err) { /* Continue to show the unresolved operation. */ }
+      }
+      if(!sameQueue())return false;
+      if(!ok){
+        state.queueError=state.actionErrorCode==='queue_edit_not_started'?'未打开编辑，请重试。':'队列操作待核对，请刷新。';
+        if(state.errorSource==='action')clearError();
+        return false;
+      }
+      if(state.errorSource==='action')clearError();
       if(outcome&&outcome.queue)state.queue=outcome.queue;
       if(outcome&&outcome.queueDraft){
         if(els.message.value!==phoneBefore){toast('排队消息已取回电脑输入框，手机新输入的文字已保留。');return true;}
@@ -1745,21 +1763,32 @@ svg{flex-shrink:0}
   function openNewChat(){
     state.navigationMode='create';els.navigationSearch.value='';setNavigation(true);renderNavigation();els.navigationBackBtn.focus({preventScroll:true});
   }
+  function openPendingRequests(){
+    if(!setPanel('navigation',els.navigationToggleBtn))return;
+    state.navigationMode='pending';
+    els.navigationSearch.value='';els.navigationList.scrollTop=0;
+    renderNotice();
+    refreshNavigation(true);
+  }
+  function projectNeedsReveal(item){
+    return state.navigationMode==='pending' && item.kind==='project' && !!item.pending && !item.expanded;
+  }
   function projectCanToggle(item){
-    if(item.kind!=='project'||!state.navigation)return false;
+    if(item.kind!=='project'||!state.navigation||projectNeedsReveal(item))return false;
     var id=item.project||item.id;
     return !!(state.navigationFold[id]||state.navigationLoaded[id]||state.navigation.complete||item.expanded||
       state.navigation.items.some(function(row){return row.project===id&&row.kind==='thread';}));
   }
   function renderNavigation(){
     var creating=state.navigationMode==='create';
-    els.navigationTitle.textContent=creating?'新建对话':'项目与对话';
+    var pendingOnly=state.navigationMode==='pending';
+    els.navigationTitle.textContent=creating?'新建对话':pendingOnly?'待处理':'项目与对话';
     var navigationReturnFocus=document.activeElement;
-    els.navigationBackBtn.hidden=!creating;
-    if(state.panel==='navigation' && navigationReturnFocus===els.navigationBackBtn && !creating){
+    els.navigationBackBtn.hidden=!creating&&!pendingOnly;
+    if(state.panel==='navigation' && navigationReturnFocus===els.navigationBackBtn && els.navigationBackBtn.hidden){
       els.navigationCloseBtn.focus({preventScroll:true});
     }
-    els.navigationNewBtn.hidden=creating;els.navigationFilters.hidden=true;
+    els.navigationNewBtn.hidden=creating||pendingOnly;els.navigationFilters.hidden=true;
     els.navigationSearch.placeholder=creating?'选择项目':'搜索项目或对话';
     els.navigationNewBtn.disabled=state.navigationBusy||state.pending.sendText||state.draftBusy;
     var catalog = state.navigation;
@@ -1768,7 +1797,7 @@ svg{flex-shrink:0}
       row.button.disabled=!projectCanToggle(row.item)&&(state.navigationBusy||state.pending.sendText||state.draftBusy||state.navigationLoading);
       var pending=state.navigationBusy&&row.item.id===state.navigationPendingId;row.button.setAttribute('aria-busy',String(pending));row.spinner.hidden=!pending;
     });}
-    var signature=JSON.stringify([catalog&&catalog.items,!catalog&&state.navigationLoading,els.navigationSearch.value,state.navigationFilter,state.navigationFold,creating,state.activeNavigationId]);
+    var signature=JSON.stringify([catalog&&catalog.items,!catalog&&state.navigationLoading,els.navigationSearch.value,state.navigationFilter,state.navigationFold,state.navigationMode,state.activeNavigationId]);
     if(signature===state.navigationSignature){updateButtons();return;}
     state.navigationSignature=signature;var scroll=list.scrollTop,focused=document.activeElement&&document.activeElement.getAttribute('data-navigation-id');list.textContent = '';state.navigationButtons=[];
     function restorePosition(){
@@ -1790,6 +1819,10 @@ svg{flex-shrink:0}
       icon.setAttribute('aria-hidden','true');
       var title = document.createElement('span'); title.className='navigation-title';title.textContent = label || (item.kind === 'more' ? '显示更多对话' : item.title);
       button.appendChild(icon); button.appendChild(title); button.disabled = state.navigationBusy || state.navigationLoading || state.pending.sendText || state.draftBusy;
+      if(item.pending){
+        var attention=document.createElement('span');attention.className='navigation-attention';
+        attention.textContent=item.pending==='approval'?'待审批':'待回答';button.appendChild(attention);
+      }
       if (item.kind==='project' || item.id===state.activeNavigationId) { var arrow=document.createElement('span');arrow.className='navigation-chevron';arrow.appendChild(controlIcon(item.kind==='project' ? (expanded?'down':'chevron') : 'check'));arrow.setAttribute('aria-hidden','true');button.appendChild(arrow); }
       var spinner=document.createElement('span');spinner.className='control-spinner';spinner.hidden=true;spinner.setAttribute('aria-hidden','true');button.appendChild(spinner);state.navigationButtons.push({button:button,item:item,spinner:spinner,local:!!local});
       button.addEventListener('click',function(){ navigateItem(item); }); parent.appendChild(button);
@@ -1797,6 +1830,20 @@ svg{flex-shrink:0}
     if(creating){
       catalog.items.filter(function(item){return item.kind==='new';}).forEach(function(item){var title=item.project?(item.projectTitle||'当前项目'):'不使用项目';if(!query||title.toLocaleLowerCase().indexOf(query)!==-1)add(item,list,false,title);});
       if(!list.children.length){var empty=document.createElement('p');empty.className='navigation-empty';empty.textContent=query?'没有找到匹配的项目':'当前电脑页面没有可用的新建入口';list.appendChild(empty);}
+      updateButtons();restorePosition();return;
+    }
+    if(pendingOnly){
+      var pendingRows=catalog.items.filter(function(item){
+        return item.pending && matches(item) && (item.kind!=='project' || !catalog.items.some(function(row){
+          return row.kind==='thread' && row.pending && row.project===(item.project||item.id);
+        }));
+      });
+      pendingRows.forEach(function(item){add(item,list,false);});
+      if(!pendingRows.length){
+        var empty=document.createElement('p');empty.className='navigation-empty';
+        empty.textContent=state.navigationLoading?'正在读取…':query?'没有匹配的待处理项':'暂无待处理项';
+        list.appendChild(empty);
+      }
       updateButtons();restorePosition();return;
     }
     var grouped = {};
@@ -1863,7 +1910,6 @@ svg{flex-shrink:0}
     if(item.kind==='project')state.navigationFold[item.project||item.id]=true;
     state.navigationBusy = true;
     state.navigationPendingId=item.id;
-    if(state.mediaStarted)startMedia();
     renderControls(); renderNavigation();
     navigationNotice('');
     try {
@@ -1899,7 +1945,6 @@ svg{flex-shrink:0}
       else await refreshNavigation();
     } finally {
       state.navigationBusy=false;state.navigationPendingId='';
-      if(state.mediaStarted)startMedia();
       renderNavigation();render();
     }
   }
@@ -1929,7 +1974,7 @@ svg{flex-shrink:0}
       var seconds=Math.round(work.durationMs/1000),minutes=Math.floor(seconds/60);
       time=(minutes?minutes+' 分钟'+(seconds%60?' '+seconds%60+' 秒':''):seconds+' 秒');
     }
-    if(work.status==='working')return time?'已处理 '+time:'处理中';
+    if(work.status==='working')return work.hasAnswer?'处理过程':time?'已处理 '+time:'处理中';
     if(work.status==='stopped')return time?'你在 '+time+' 后停止了':'已停止';
     if(time)return '用时 '+time;
     if(typeof message.duration==='string' && message.duration.trim())return message.duration.slice(0,100);
@@ -1945,7 +1990,8 @@ svg{flex-shrink:0}
     body.textContent = '';
     var commentary=phase==='commentary',processMessage=isProcessPhase(phase)&&!commentary;
     var hasProcess=blocks.some(function(block){return processMessage||isProcessPhase(block.channel);});
-    var hasAnswer=!processMessage && !commentary && blocks.some(function(block){return !isProcessPhase(block.channel) && block.text.trim();});
+    var hasAnswer=!!(message.work && message.work.hasAnswer) ||
+      (!processMessage && !commentary && blocks.some(function(block){return !isProcessPhase(block.channel) && block.text.trim();}));
     var running=active && !hasAnswer && (message.complete===false || (message.work && message.work.status==='working'));
     if(!commentary && !hasProcess && (processMessage||message.work||message.duration)){
       var status=document.createElement('div');status.className='chat-work-status';status.textContent=workLabel(message);body.appendChild(status);
@@ -1969,16 +2015,20 @@ svg{flex-shrink:0}
       var node;
       if (block.kind === 'list') {
         if (!list) { list = document.createElement('ul'); destination.appendChild(list); }
-        node = document.createElement('li');if(blockChannel==='reasoning')node.className='chat-process-reasoning';appendMessageText(node,block);list.appendChild(node);
+        node = document.createElement('li');
+        if(blockChannel==='reasoning'||blockChannel==='commentary')node.className='chat-process-'+blockChannel;
+        appendMessageText(node,block);list.appendChild(node);
         return;
       }
       list = null;
       node = document.createElement(block.kind === 'heading' ? 'h3' : (block.kind === 'code' ? 'pre' : 'p'));
-      if(blockChannel==='reasoning')node.className='chat-process-reasoning';
+      if(blockChannel==='reasoning'||blockChannel==='commentary')node.className='chat-process-'+blockChannel;
       if (block.kind === 'code') {
         var code = document.createElement('code'); code.textContent = block.text; node.appendChild(code);
-      } else if(block.kind==='search'){
-        node.className='chat-process-search';node.appendChild(controlIcon('search'));var label=document.createElement('span');label.textContent=block.text;node.appendChild(label);
+      } else if(block.kind==='search'||block.kind==='operation'){
+        var icon=block.kind==='search'?'search':/^(terminal|edit|tools|image)$/.test(block.icon)?block.icon:'tools';
+        node.className='chat-process-action'+(block.kind==='search'?' chat-process-search':'');
+        node.appendChild(controlIcon(icon));var label=document.createElement('span');label.textContent=block.text;node.appendChild(label);
       } else appendMessageText(node,block);
       destination.appendChild(node);
     });
@@ -1992,11 +2042,12 @@ svg{flex-shrink:0}
     var sameConversation=!!old && old.key===event.key && (old.epoch===event.epoch || event.replace && old.instance && event.instance && old.instance!==event.instance);
     var replace = !sameConversation;
     if(replace){state.queueSequence++;state.queueLoading=false;state.queue=null;state.queueError='';state.queueExpanded={};state.boundDraft=null;clearDraftConflict();state.optionsRoot=null;state.optionsRootAt=0;}
-    var messages = {};
+    var messages = {}, changed = new Set();
     if (!replace && !event.replace) old.messages.forEach(function(message){ messages[message.id] = message; });
     event.messages.forEach(function(message){
       if (typeof message.id !== 'string' || typeof message.text !== 'string' || !/^(user|assistant)$/.test(message.role)) throw new ApiError('对话数据格式异常。', 0);
       messages[message.id] = message;
+      changed.add(message.id);
     });
     var ordered = event.order.map(function(id){ if (!messages[id]) throw new ApiError('对话需要重新同步。', 0); return messages[id]; });
     var list = els.chatMessages;
@@ -2007,7 +2058,11 @@ svg{flex-shrink:0}
     var activeAnswer=last && last.role==='assistant' && (event.generating || (last.work && last.work.status==='working')) ? last.id : '';
     ordered.forEach(function(message, index){
       keep[message.id] = true;
-      var row = state.chatElements[message.id];
+      var row = state.chatElements[message.id],active=message.id===activeAnswer;
+      if(row && !changed.has(message.id) && row.active===active){
+        if(list.children[index]!==row.article)list.insertBefore(row.article,list.children[index]||null);
+        return;
+      }
       if (!row) {
         var article = document.createElement('article');
         article.className = 'chat-message';
@@ -2028,7 +2083,7 @@ svg{flex-shrink:0}
         });
       }
       row.article.setAttribute('data-role', message.role);
-      var processMessage=isProcessPhase(message.phase),active=message.id===activeAnswer;
+      var processMessage=isProcessPhase(message.phase);
       row.article.setAttribute('data-phase', processMessage ? message.phase : 'answer');
       row.article.setAttribute('data-running',String(message.phase==='commentary' && active));
       row.article.setAttribute('aria-label', message.role === 'user' ? '发送的消息' : processMessage?'处理过程':'回复');
@@ -2042,6 +2097,7 @@ svg{flex-shrink:0}
       var signature = JSON.stringify([blocks,message.attachments||[],message.phase||'answer',hasWork?[message.work||null,message.duration||'',message.complete!==false,active]:null]);
       if (row.signature !== signature) { renderMessageBody(row.body, blocks, message.phase,message,active); renderMessageAttachments(row.body,message.attachments);row.signature = signature; }
       row.text = copyText;
+      row.active=active;
       if (list.children[index] !== row.article) list.insertBefore(row.article, list.children[index] || null);
     });
     Object.keys(state.chatElements).forEach(function(id){
@@ -2060,6 +2116,12 @@ svg{flex-shrink:0}
     state.lastChatAt = performance.now();
     if (state.errorSource === 'conversation' || state.errorSource === 'network') clearError();
     applyWindowState(event);
+    if(sameConversation && state.panel==='options' && state.optionsIntent==='prompt' && !state.optionsBusy &&
+       !state.optionsLoading && !state.optionsInvalid && state.options && state.options.prompt &&
+       event.prompt && old.prompt && old.prompt.key===state.options.key && event.prompt.key!==old.prompt.key){
+      acceptOptions(Object.assign({},event.prompt,{epoch:event.epoch}));
+      state.optionsError='';renderOptions();
+    }
     if (bottom) requestAnimationFrame(function(){ list.scrollTop = list.scrollHeight; updateChatLatest(); });
     else updateChatLatest();
   }
@@ -2162,8 +2224,8 @@ svg{flex-shrink:0}
   function statusSentence(){
     if (!state.live) return '正在连接电脑…';
     var status = state.status;
-    if (status === 'ready') return hasCapability('rawInput')?'已连接到 ChatGPT 窗口，可以操作。':'已连接到 ChatGPT 窗口，仅供查看。';
-    if (status === 'rebound') return hasCapability('rawInput')?'已自动重新发现 ChatGPT 窗口，可以继续操作。':'已重新连接 ChatGPT 窗口，画面仅供查看。';
+    if (status === 'ready') return '已连接到 ChatGPT 窗口。';
+    if (status === 'rebound') return '已重新连接 ChatGPT 窗口。';
     if (status === 'waiting') return '原窗口已关闭，正在等待新的 ChatGPT 窗口…';
     if (status === 'ambiguous') return '发现多个候选窗口，请手动选择要控制的窗口。';
     if (status === 'not_selected') return '尚未选择窗口，请先选择 ChatGPT 窗口。';
@@ -2361,6 +2423,11 @@ svg{flex-shrink:0}
   }
   // Old agents omit capabilities; explicit server denials always take precedence.
   function hasCapability(name){return !state.capabilities || state.capabilities[name]!==false;}
+  function hasWindowPointer(){
+    return state.mode==='window' && !!state.capabilities && state.capabilities.windowPointer===true &&
+      state.windows.some(function(row){return row.selected && /^(ChatGPT|Codex)[.]exe$/i.test(row.exe);});
+  }
+  function screenAcceptsPointer(){return hasWindowPointer() || hasCapability('rawInput');}
   function renderCapabilities(){
     var readOnly=!hasCapability('rawInput');
     els.rawControls.hidden=readOnly;
@@ -2368,13 +2435,17 @@ svg{flex-shrink:0}
     els.desktopControl.hidden=!hasCapability('desktop');
     els.desktopTip.hidden=!hasCapability('desktop');
     els.screenTitle.textContent=state.mode==='desktop'?'电脑桌面':'ChatGPT 窗口';
-    els.screen.style.touchAction=readOnly?'pan-x pan-y pinch-zoom':'none';
+    var pointer=screenAcceptsPointer();
+    els.screenShell.setAttribute('data-readonly',String(!pointer));
+    els.screen.style.touchAction=pointer?'none':'pan-x pan-y pinch-zoom';
+    els.screenGestureHint.textContent=pointer?'单指轻点左键 · 双指轻点右键':'窗口预览';
     var prompt=state.options && state.options.prompt;
     var noModelChoices=state.optionsIntent==='model' && state.modelChoices && !state.modelChoices.length && !state.optionsBusy;
     var needsPicture=!!state.optionsError || !!(prompt && prompt.truncated) || !!state.optionsSurface || noModelChoices;
-    els.optionsScreenBtn.textContent=readOnly?'查看电脑画面':'在画面中操作';
+    els.optionsScreenBtn.textContent=pointer?'在画面中操作':'查看电脑画面';
     els.optionsScreenBtn.hidden=!hasCapability('windowView') || !needsPicture;
-    els.screenViewBtn.hidden=!hasCapability('windowView');
+    els.screenViewBtn.hidden=!hasCapability('windowView') || !state.homeActive;
+    els.screenOpenBtn.hidden=!hasCapability('windowView') || els.remoteView.hidden;
   }
   function renderControls(){
     var gate = computeGate();
@@ -2401,22 +2472,31 @@ svg{flex-shrink:0}
     setDisabled(els.computerDraftBtn, !state.live || state.mode !== 'window' || state.navigationBusy || pending.sendText || state.draftBusy);
     var model=state.optionsRoot && state.optionsRoot.items && state.optionsRoot.items.find(function(item){return item.kind==='model';});
     els.modelPickerLabel.textContent=model?(model.label||model.title):'模型';
-    els.modelPickerBtn.setAttribute('aria-label','选择模型'+(model?'，当前 '+(model.label||model.title):''));
+    var cachedModel=validModelCatalog();
+    var fast=!!(cachedModel && cachedModel.choices.some(function(choice){return choice.section==='quick' && choice.item.selected;}));
+    els.modelFastIcon.hidden=!fast;
+    els.modelPickerBtn.setAttribute('aria-label','选择模型'+(model?'，当前 '+(model.label||model.title):'')+(fast?'，快速模式已开启':''));
     setDisabled(els.modelPickerBtn,!state.live||state.mode!=='window'||pending.sendText||state.optionsBusy||state.frozen.active);
     var chat=currentChat();
     var prompt=chat && chat.prompt && chat.prompt.prompt;
+    var otherPending=chat && Array.isArray(chat.pendingRequests) && chat.pendingRequests.length;
+    setNotice('attention',otherPending?'其他对话有待处理请求':'','info');
     els.desktopPromptBtn.hidden=!prompt;
     els.desktopPromptBtn.disabled=!state.live || state.networkTrouble || state.mode!=='window' || state.optionsBusy || state.draftBusy || frozen;
-    els.desktopPromptLabel.textContent=prompt && prompt.approval?'查看审批':'查看电脑待选项';
+    els.desktopPromptLabel.textContent=prompt && prompt.approval?'查看审批':prompt && prompt.questionnaire?'请回答':'查看电脑待选项';
     var hasDraft = !!(chat && chat.composer && chat.composer.hasDraft);
     if (state.draft && !draftStale(state.draft)) hasDraft = state.draft.hasDraft;
     els.computerDraftBtn.hidden=!hasDraft||!!els.message.value.trim()||!draftStale(state.boundDraft)||!draftStale(state.draft);
     els.recoveredUndoBtn.hidden = !(state.recoveredUndo && els.message.value === state.recoveredUndo.merged && !pending.sendText && !state.draftBusy);
-    var sending=state.sending,unknown=sending && sending.previousAgent;
-    els.sendProgress.hidden=!sending || /^(sent|queued|failed)$/.test(sending.state);
+    var sending=state.sending;
+    if(sending && sending.state==='confirming' && !sending.confirmingAt)sending.confirmingAt=Date.now();
+    var unknown=canKeepPendingDraft(sending);
+    els.sendProgress.hidden=sending?/^(sent|queued|failed)$/.test(sending.state):!pending.sendText;
+    els.sendProgress.setAttribute('data-unconfirmed',String(!!unknown));
     els.sendProgressSpinner.hidden=!!unknown;
     els.keepSendDraftBtn.hidden=!unknown;
-    els.sendProgressText.textContent=unknown?'发送结果待核对，请查看对话。':sending && sending.state==='confirming'?'正在确认…':'发送中…';
+    els.sendProgressText.classList.toggle('sr-only',!unknown);
+    els.sendProgressText.textContent=unknown?'发送待核对':sending && sending.state==='confirming'?'正在确认':'正在发送';
     els.message.placeholder = '发消息…';
     renderCapabilities();
     renderSettingChoices();
@@ -2514,7 +2594,6 @@ svg{flex-shrink:0}
     state.windowSigRefreshAt = 0;
     state.gate = { ok: false, reason: '正在连接…' };
     state.actionsInFlight = 0;
-    state.lastRightClickAt = 0;
     state.streamAck = null;
     state.pending = { pair: false, refresh: false, select: false, desktop: false, freeze: false, unpair: false, sendText: false };
     setImmersive(false);
@@ -2558,7 +2637,7 @@ svg{flex-shrink:0}
     clearDraftConflict();state.recoveredUndo=null;
     setPanel('');
     els.remoteView.hidden = true;
-    els.homeView.hidden=true;state.homeActive=false;state.homeRequested=false;state.remoteRequested='';
+    els.homeView.hidden=true;state.homeActive=false;state.homeRequested=false;
     els.pairView.hidden = false;
     document.body.classList.remove('remote-mode');
     document.body.classList.remove('home-mode');
@@ -2589,8 +2668,7 @@ svg{flex-shrink:0}
   }
   function startMedia(restart){
     var view=connectionActive() && !state.homeActive ? state.view : '';
-    if(view==='chat' && state.navigationBusy)view='';
-    if(view==='screen' && (state.panel || state.optionsBusy))view='';
+    if(view==='screen' && (state.panel && state.panel!=='screen' || state.optionsBusy))view='';
     var running=view==='chat'?state.chatAbort:view==='screen'?state.frameAbort:null;
     if(!restart && running && running.signal && !running.signal.aborted)return;
     if (state.frameAbort) state.frameAbort.abort();
@@ -2800,6 +2878,10 @@ svg{flex-shrink:0}
   }
   function actionGate(payload){
     if (state.offline || state.pageSuspended || state.networkTrouble) return {ok:false,reason:'正在重新连接电脑…'};
+    if(payload.kind==='window-pointer' && (!hasWindowPointer() || state.view!=='screen' ||
+        state.panel!=='screen' || state.pending.sendText || !state.displayedFrameId)){
+      return {ok:false,reason:'请打开当前 ChatGPT 窗口画面后操作。'};
+    }
     if(!hasCapability('rawInput') && (/^(text|key|tap|right|scroll)$/.test(payload.kind) || payload.kind==='composer' && payload.operation==='tap')) return {ok:false,reason:'当前连接的 ChatGPT 画面仅供查看，请使用对话控件，或在电脑上完成此操作。'};
     if (payload.kind === 'message') {
       var gate = messageGate(!!payload.draftRevision);
@@ -2961,9 +3043,12 @@ svg{flex-shrink:0}
     return /^(sent|queued)$/.test(task.state);
     }finally{lookupAbort.abort();delete task.done;}
   }
+  function canKeepPendingDraft(task){
+    return !!(task && (task.previousAgent || task.state==='confirming' && task.confirmingAt && Date.now()-task.confirmingAt>=15000));
+  }
   function keepUnconfirmedDraft(){
     var task=state.sending;
-    if(!task || !task.previousAgent || !task.done)return;
+    if(!canKeepPendingDraft(task) || !task.done)return;
     task.stopChecking=true;
     savePhoneSend(null);
     task.done(null);
@@ -3263,6 +3348,7 @@ svg{flex-shrink:0}
     }
 
     state.frameSeen = true;
+    state.displayedFrameId = Number.isSafeInteger(meta.frameId)?meta.frameId:0;
     state.networkTrouble = false;
     state.lastFrameAt = performance.now();
     recordActionFrame(meta.actionSequence, state.lastFrameAt);
@@ -3362,7 +3448,12 @@ svg{flex-shrink:0}
           var meta = packet.meta;
           if (meta.kind === 'status') throw new ApiError(meta.error || '目标窗口暂不可用。', 409);
           if (meta.kind === 'idle') {
-            if (state.frameSeen) state.lastFrameAt = performance.now();
+            if (state.frameSeen) {
+              state.lastFrameAt = performance.now();
+              if(meta.epoch===state.displayedEpoch && Number.isSafeInteger(meta.frameId) && meta.frameId>state.displayedFrameId){
+                state.displayedFrameId=meta.frameId;
+              }
+            }
             continue;
           }
           if (meta.kind !== 'full' && meta.kind !== 'patch') throw new ApiError('画面数据格式异常。', 0);
@@ -3449,132 +3540,110 @@ svg{flex-shrink:0}
   }
 
   /* ---------- 触控 ---------- */
-  function remotePoint(clientX, clientY){
-    var image = els.screen;
-    var width = state.frameW || 0;
-    var height = state.frameH || 0;
-    if (!width || !height) return null;
-    var rect = image.getBoundingClientRect();
-    if (!rect || rect.width < 2 || rect.height < 2) return null;
-    var scale = Math.min(rect.width / width, rect.height / height);
-    if (!scale || !Number.isFinite(scale)) return null;
-    var drawWidth = width * scale;
-    var drawHeight = height * scale;
-    var left = rect.left + (rect.width - drawWidth) / 2;
-    var top = rect.top + (rect.height - drawHeight) / 2;
-    var x = (clientX - left) / drawWidth;
-    var y = (clientY - top) / drawHeight;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-    return { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 };
+  var resetScreenGestures=null;
+  function screenImageBounds(){
+    var width=state.frameW,height=state.frameH;
+    var rect=els.screen.getBoundingClientRect();
+    if(!width||!height||rect.width<2||rect.height<2)return null;
+    var scale=Math.min(rect.width/width,rect.height/height);
+    var drawnWidth=width*scale,drawnHeight=height*scale;
+    return {left:rect.left+(rect.width-drawnWidth)/2,top:rect.top+(rect.height-drawnHeight)/2,
+      width:drawnWidth,height:drawnHeight};
   }
-
+  function remotePoint(clientX,clientY,rect){
+    if(!rect)return null;
+    var x=(clientX-rect.left)/rect.width,y=(clientY-rect.top)/rect.height;
+    if(!(x>=0 && x<=1 && y>=0 && y<=1))return null;
+    return {x:Math.round(x*10000)/10000,y:Math.round(y*10000)/10000};
+  }
+  function showScreenCursor(clientX,clientY,point){
+    els.screenCursor.hidden=!point;
+    if(!point)return;
+    var shell=els.screenShell.getBoundingClientRect();
+    els.screenCursor.style.transform='translate3d('+(clientX-shell.left)+'px,'+(clientY-shell.top)+'px,0)';
+  }
+  function sendScreenClick(operation,point,epoch,frameId){
+    if(!point||!screenAcceptsPointer()||state.view!=='screen'||state.panel!=='screen'||
+       state.pending.sendText||epoch!==state.epoch||!computeGate().ok)return;
+    if(hasWindowPointer()){
+      if(frameId)sendAction(Object.assign({kind:'window-pointer',operation:operation,epoch:epoch,frameId:frameId},point));
+    }else sendAction(Object.assign({kind:operation==='right'?'right':'tap',epoch:epoch},point));
+  }
   function bindScreenGestures(){
-    var image = els.screen;
-    var gesture = null;
-    var longPressTimer = 0;
-    var lastWheelAt = 0;
-
-    function cancelLongPress(){
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = 0; }
+    var image=els.screen,gesture=null;
+    function cancelGesture(){
+      gesture=null;els.screenCursor.hidden=true;
     }
-    function vibrate(ms){
-      try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* ignore */ }
-    }
-
-    image.addEventListener('pointerdown', function(event){
-      if (!hasCapability('rawInput') || event.pointerType === 'mouse' && event.button !== 0) return;
-      if (event.isPrimary === false) return;
-      cancelLongPress();
-      gesture = {
-        id: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        lastY: event.clientY,
-        startedAt: Date.now(),
-        moved: false,
-        longFired: false,
-        acc: 0,
-        lastScrollAt: 0
-      };
-      try { image.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
-      longPressTimer = setTimeout(function(){
-        longPressTimer = 0;
-        if (!hasCapability('rawInput') || !gesture || gesture.id !== event.pointerId || gesture.moved || gesture.longFired) return;
-        var point = remotePoint(gesture.startX, gesture.startY);
-        if (!point) return;
-        gesture.longFired = true;
-        state.lastRightClickAt = Date.now();
-        vibrate(12);
-        sendAction({ kind: 'right', x: point.x, y: point.y });
-      }, LONG_PRESS_MS);
-    }, { passive: true });
-
-    image.addEventListener('pointermove', function(event){
-      if (!hasCapability('rawInput') || !gesture || gesture.id !== event.pointerId) return;
-      var dx = event.clientX - gesture.startX;
-      var dy = event.clientY - gesture.startY;
-      if (Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP) gesture.moved = true;
-      if (gesture.moved) cancelLongPress();
-      if (!gesture.moved || gesture.longFired) return;
-      gesture.acc += (event.clientY - gesture.lastY);
-      gesture.lastY = event.clientY;
-      var now = Date.now();
-      if (Math.abs(gesture.acc) >= 14 && now - gesture.lastScrollAt >= 110) {
-        var delta = clamp(Math.round(-gesture.acc * 1.5), -600, 600);
-        if (delta) queueScroll(delta);
-        gesture.acc = 0;
-        gesture.lastScrollAt = now;
+    resetScreenGestures=cancelGesture;
+    image.addEventListener('pointerdown',function(event){
+      if(event.button!==0 || !screenAcceptsPointer() || !computeGate().ok)return;
+      if(gesture && gesture.epoch!==state.epoch)cancelGesture();
+      if(!gesture){
+        var point=remotePoint(event.clientX,event.clientY,screenImageBounds());
+        if(!point)return;
+        gesture={primary:event.pointerId,points:new Map(),count:0,point:point,at:Date.now(),moved:false,
+          epoch:state.epoch,frameId:state.displayedFrameId,scroll:0};
+        showScreenCursor(event.clientX,event.clientY,point);
       }
-    }, { passive: true });
-
-    function finishGesture(event, cancelled){
-      cancelLongPress();
-      if (!hasCapability('rawInput') || !gesture || gesture.id !== event.pointerId) return;
-      var active = gesture;
-      gesture = null;
-      if (cancelled || active.longFired) return;
-      var dx = event.clientX - active.startX;
-      var dy = event.clientY - active.startY;
-      if (Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP) {
-        if (Math.abs(active.acc) >= 8) {
-          var delta = clamp(Math.round(-active.acc * 1.5), -600, 600);
-          if (delta) queueScroll(delta);
+      gesture.count++;
+      gesture.points.set(event.pointerId,{x:event.clientX,y:event.clientY,lastY:event.clientY});
+      if(gesture.count>2 || (gesture.count>1 && event.pointerType!=='touch'))gesture.moved=true;
+      try{image.setPointerCapture(event.pointerId);}catch(e){ /* optional */ }
+    });
+    image.addEventListener('pointermove',function(event){
+      if(!screenAcceptsPointer()||!computeGate().ok)return;
+      var touch=gesture && gesture.points.get(event.pointerId);
+      if(!touch){
+        if(!gesture && event.pointerType==='mouse'){
+          showScreenCursor(event.clientX,event.clientY,remotePoint(event.clientX,event.clientY,screenImageBounds()));
         }
         return;
       }
-      if (Date.now() - active.startedAt < LONG_PRESS_MS) {
-        var point = remotePoint(active.startX, active.startY);
-        if (point) sendAction({ kind: 'tap', x: point.x, y: point.y });
+      if(Math.abs(event.clientX-touch.x)>CLICK_SLOP || Math.abs(event.clientY-touch.y)>CLICK_SLOP)gesture.moved=true;
+      if(event.pointerId!==gesture.primary)return;
+      showScreenCursor(event.clientX,event.clientY,remotePoint(event.clientX,event.clientY,screenImageBounds()));
+      if(gesture.moved && gesture.count===1 && !hasWindowPointer()){
+        gesture.scroll+=event.clientY-touch.lastY;
+        if(Math.abs(gesture.scroll)>=14){
+          queueScroll(clamp(Math.round(gesture.scroll*1.5),-600,600));
+          gesture.scroll=0;
+        }
       }
-    }
-    image.addEventListener('pointerup', function(event){ finishGesture(event, false); }, { passive: true });
-    image.addEventListener('pointercancel', function(event){ finishGesture(event, true); }, { passive: true });
-
-    image.addEventListener('contextmenu', function(event){
-      if(!hasCapability('rawInput'))return;
-      event.preventDefault();
-      if (Date.now() - state.lastRightClickAt < 800) return;
-      var point = remotePoint(event.clientX, event.clientY);
-      if (!point) return;
-      state.lastRightClickAt = Date.now();
-      sendAction({ kind: 'right', x: point.x, y: point.y });
+      touch.lastY=event.clientY;
     });
-
-    image.addEventListener('wheel', function(event){
+    function finish(event,cancelled){
+      var active=gesture,touch=active && active.points.get(event.pointerId);
+      if(!touch)return;
+      if(cancelled || Math.abs(event.clientX-touch.x)>CLICK_SLOP || Math.abs(event.clientY-touch.y)>CLICK_SLOP)active.moved=true;
+      active.points.delete(event.pointerId);
+      if(active.points.size)return;
+      gesture=null;
+      if(active.moved || Date.now()-active.at>=LONG_PRESS_MS)return;
+      sendScreenClick(active.count===2?'right':'left',active.point,active.epoch,active.frameId);
+    }
+    image.addEventListener('pointerup',function(event){finish(event,false);});
+    image.addEventListener('pointercancel',function(event){finish(event,true);});
+    image.addEventListener('lostpointercapture',function(event){finish(event,true);});
+    image.addEventListener('contextmenu',function(event){
+      if(!screenAcceptsPointer())return;
+      event.preventDefault();
+      if(event.button===2 && event.pointerType!=='touch'){
+        sendScreenClick('right',remotePoint(event.clientX,event.clientY,screenImageBounds()),state.epoch,state.displayedFrameId);
+      }
+    });
+    image.addEventListener('wheel',function(event){
       if(!hasCapability('rawInput'))return;
       event.preventDefault();
-      if (!computeGate().ok) return;
-      var magnitude = Math.min(600, Math.max(120, Math.round(Math.abs(event.deltaY) || 120)));
-      var delta = event.deltaY > 0 ? magnitude : -magnitude;
-      queueScroll(delta);
-    }, { passive: false });
+      if(!computeGate().ok)return;
+      var magnitude=Math.min(600,Math.max(120,Math.round(Math.abs(event.deltaY)||120)));
+      queueScroll(event.deltaY>0?-magnitude:magnitude);
+    },{passive:false});
   }
-
-  /* ---------- 全屏 ---------- */
   function setImmersive(on){
     state.immersive = !!on;
     els.screenShell.classList.toggle('immersive', state.immersive);
+    els.screenPanel.classList.toggle('immersive-screen',state.immersive);
+    els.screenCursor.hidden=true;
     document.body.classList.toggle('immersive-open', state.immersive);
     els.fullscreenBtn.setAttribute('aria-pressed', state.immersive ? 'true' : 'false');
     if (state.immersive) {
@@ -3587,7 +3656,9 @@ svg{flex-shrink:0}
   /* ---------- 事件绑定 ---------- */
   function showPanel(name,opener){
     var previous=state.panel;
+    var screenChanged=name!==previous && (name==='screen' || previous==='screen');
     if(previous==='confirm' && name!=='confirm')state.confirmation=null;
+    if(previous==='navigation' && name!=='navigation')state.navigationMode='browse';
     if(name && !previous){
       var active=opener || document.activeElement;
       state.panelOpener=active && active!==document.body && typeof active.focus==='function'?active:null;
@@ -3601,12 +3672,21 @@ svg{flex-shrink:0}
       var menu=state.options;
       state.optionsSequence++;state.options=null;state.optionsSurface=null;state.optionsLoading=false;state.optionsError='';els.optionsList.textContent='';
       if (menu && menu.menu && !state.optionsBusy && state.live && state.token) dismissOptions(menu,true);
-      state.optionsIntent='';state.modelChoices=null;modelReconnectPending=false;
+      state.optionsIntent='';state.modelChoices=null;modelDraft={};modelPreviewCached=false;modelReconnectPending=false;
       if(modelPickerCleanup){modelPickerCleanup();modelPickerCleanup=null;}
     }
     state.panel=name;
+    if(screenChanged){
+      if(resetScreenGestures)resetScreenGestures();
+      state.view=name==='screen'?'screen':'chat';
+      setImmersive(false);
+      if(name==='screen'){
+        state.frameSeen=false;state.displayedEpoch=-1;state.displayedFrameId=0;state.lastFrameId=0;
+      }
+      if(state.errorSource==='conversation'||state.errorSource==='frame')clearError();
+    }
     renderNotice();
-    ['settings','navigation','options','help','confirm'].forEach(function(panel){
+    ['settings','navigation','options','help','confirm','screen'].forEach(function(panel){
       els[panel+'Panel'].hidden=panel!==name;
     });
     els.sheetBackdrop.hidden=!name && (els.pairView.hidden || els.pairEntry.hidden);
@@ -3623,15 +3703,16 @@ svg{flex-shrink:0}
     if(name==='options' && previous!==name){
       els.optionsCloseBtn.hidden=false;els.optionsCloseBtn.disabled=false;els.optionsBackBtn.hidden=true;
     }
-    var focus=name ? els[name+'CloseBtn'] : state.panelOpener || ({settings:state.homeActive?els.homeSettingsBtn:els.settingsToggleBtn,navigation:els.navigationToggleBtn,options:els.modelPickerBtn})[previous];
+    var focus=name ? els[name+'CloseBtn'] : state.panelOpener || ({settings:state.homeActive?els.homeSettingsBtn:els.settingsToggleBtn,navigation:els.navigationToggleBtn,options:els.modelPickerBtn,screen:els.screenOpenBtn})[previous];
     if(focus===els.desktopPromptBtn && (focus.hidden || focus.disabled))focus=els.composerOptionsBtn;
     if(!name)state.panelOpener=null;
     if (focus) try { focus.focus({preventScroll:true}); } catch(e) { /* optional focus */ }
     if(name!==previous && state.mediaStarted) startMedia();
+    if(screenChanged)render();
   }
   function setPanel(name,opener){
     var promptSheet=name==='options' && opener===els.desktopPromptBtn;
-    if (state.panelBackPending || (name && (state.draftBusy || (state.pending.sendText&&name!=='navigation'&&!promptSheet) || state.optionsBusy))) return false;
+    if (state.panelBackPending || (name && (state.draftBusy || (state.pending.sendText&&name!=='navigation'&&name!=='screen'&&!promptSheet) || state.optionsBusy))) return false;
     if (name===state.panel) return true;
     if(name && state.homeActive && name!=='settings' && name!=='help' && name!=='confirm'){
       applyPhoneSurface(false,true);
@@ -3658,7 +3739,6 @@ svg{flex-shrink:0}
       if(!closingPanel || els.pairEntry.hidden)showPairEntry(!!(event.state && event.state.harmonyRemotePairEntry),false);
       return;
     }
-    if(state.remoteRequested){var requested=state.remoteRequested;state.remoteRequested='';showPanel('');if(state.homeActive)openRemoteView();switchView(requested);return;}
     if(state.homeRequested){state.homeRequested=false;state.homeActive=true;showPanel('');showConnectionHome();return;}
     var surface=event.state && event.state.harmonyRemoteSurface;
     if(state.live && (surface==='home' || surface==='remote')){
@@ -3667,7 +3747,7 @@ svg{flex-shrink:0}
     }
     var name=event.state && event.state.harmonyRemotePanel;
     if(name==='confirm')name='settings';
-    if ((els.remoteView.hidden && els.homeView.hidden) || ['settings','navigation','options','help'].indexOf(name)<0) name='';
+    if ((els.remoteView.hidden && els.homeView.hidden) || ['settings','navigation','options','help','screen'].indexOf(name)<0) name='';
     if(state.homeActive && name && name!=='settings' && name!=='help')name='';
     if(name!=='navigation')state.navigationMode='browse';
     showPanel(name);
@@ -3704,6 +3784,15 @@ svg{flex-shrink:0}
     if(!setPanel('options',els.modelPickerBtn))return;
     state.optionsIntent='model';
     state.modelChoices=null;
+    modelDraft={};
+    modelPreviewCached=false;
+    var cached=validModelCatalog();
+    if(!retry && cached && performance.now()-cached.at<60000){
+      state.options=state.optionsRoot||cached.root;
+      state.optionsInvalid=false;state.optionsError='';
+      state.modelChoices=cached.choices;modelPreviewCached=true;
+      renderOptions();return;
+    }
     if(!retry && state.optionsRoot && state.optionsRoot.epoch===state.epoch && performance.now()-state.optionsRootAt<15000){
       state.options=state.optionsRoot;state.optionsInvalid=false;renderOptions();
     }else await refreshOptions();
@@ -3753,20 +3842,30 @@ svg{flex-shrink:0}
     add(menu,path,'quick',function(item){return item.kind==='quick';});
     add(menu,path,'reset',function(item){return item.kind==='reset';});
     var modelList=modelOption(menu,function(item){return item.kind==='model-list' && item.enabled!==false;});
+    function actualModel(item){
+      return item.kind==='option' && !isEffortOption(item) &&
+        !/^(默认(?:模型|设置)?|使用默认(?:模型|设置)?|(?:Use )?Default(?: model| settings)?)$/i.test(item.title.trim());
+    }
     if(modelList){
       var models=await move(menu,modelList);
-      if(models.menu)add(models,path.concat(modelList),'model',function(item){return item.kind==='option';});
+      if(models.menu)add(models,path.concat(modelList),'model',actualModel);
     }else{
-      add(menu,path,'model',function(item){return item.kind==='option' && !isEffortOption(item);});
+      add(menu,path,'model',actualModel);
     }
     return choices;
   }
   async function applyModelChoice(choice){
     if(state.optionsBusy || state.optionsInvalid || !state.modelChoices || state.modelChoices.indexOf(choice)<0 || choice.item.enabled===false)return;
     if(choice.item.selected && (choice.section==='model'||choice.section==='effort'))return;
-    await runModelTask(async function(snapshot,move){
+    await runModelTask(function(snapshot,move){
+      var current=state.modelChoices.includes(choice)?choice:choice.section==='reset'?modelResetChoice():null;
+      if(!current || current.item.enabled===false)throw new ApiError('电脑选项已变化，请重新读取。',0);
+      return applyObservedModelChoice(snapshot,move,state.modelChoices,current);
+    });
+  }
+  async function applyObservedModelChoice(snapshot,move,choices,choice){
       if(snapshot.key!==choice.source.key){
-        var active=state.modelChoices.find(function(entry){return entry.source.key===snapshot.key;});
+        var active=choices.find(function(entry){return entry.source.key===snapshot.key;});
         var prefix=active && active.path.length && active.path.length<choice.path.length &&
           active.path.every(function(item,index){return item===choice.path[index];});
         if(!prefix)snapshot=await closeModelMenus(snapshot,move);
@@ -3786,16 +3885,39 @@ svg{flex-shrink:0}
         var updated=modelOption(next,function(item){return item.kind===selected.kind &&
           (selected.kind==='quick' ? item.selected!==selected.selected : item.level===selected.level && item.selected);});
         if(!updated)throw new ApiError('电脑尚未确认变更，请重新读取。',0);
-        return state.modelChoices.map(function(entry){
+        return choices.map(function(entry){
           if(entry.source!==choice.source)return entry;
           var current=modelOption(next,function(item){return item.kind===entry.item.kind &&
             (item.kind==='quick' || item.title===entry.item.title);});
           return current?Object.assign({},entry,{source:next,item:current}):null;
         }).filter(Boolean);
       }
-      var choices=await collectModelChoices(await closeModelMenus(next,move),move);
-      if(choice.section==='quick' && !choices.some(function(entry){return entry.section==='quick' && entry.item.selected!==selected.selected;})){
+      var updatedChoices=await collectModelChoices(await closeModelMenus(next,move),move);
+      if(choice.section==='quick' && !updatedChoices.some(function(entry){return entry.section==='quick' && entry.item.selected!==selected.selected;})){
         throw new ApiError('电脑尚未确认快速模式变更，请重新读取。',0);
+      }
+      if(choice.section==='model' && !updatedChoices.some(function(entry){return entry.section==='model' && entry.item.title===selected.title && entry.item.selected;})){
+        throw new ApiError('电脑尚未确认模型变更，请重新读取。',0);
+      }
+      return updatedChoices;
+  }
+  async function applyModelDraft(){
+    if(state.optionsInvalid || state.optionsBusy)return;
+    var draft=modelDraft;
+    await runModelTask(async function(snapshot,move){
+      var choices=state.modelChoices;
+      for(var section of ['model','effort','quick']){
+        var desired=draft[section];
+        if(!desired)continue;
+        var current=choices.find(function(entry){
+          return entry.section===section && entry.item.enabled!==false &&
+            (section==='quick' || entry.item.kind===desired.item.kind && entry.item.title===desired.item.title &&
+              entry.item.levelCount===desired.item.levelCount);
+        });
+        if(!current)throw new ApiError('当前模型的设置已变化，请重新查看后选择。',0);
+        if(section==='quick'?current.item.selected!==desired.item.selected:current.item.selected)continue;
+        choices=await applyObservedModelChoice(snapshot,move,choices,current);
+        state.modelChoices=choices;snapshot=state.options;
       }
       return choices;
     });
@@ -3820,13 +3942,28 @@ svg{flex-shrink:0}
       return next;
     }
     try{
+      if(modelPreviewCached){
+        latest=await requestJson('/api/composer');
+        if(!current())return;
+        if(latest.epoch!==epoch || (scope && latest.scope!==scope))throw new ApiError('电脑对话已变化，请重新读取。',0);
+        acceptOptions(latest);
+        if(latest.prompt)throw new ApiError('电脑有待处理的请求。',0);
+        state.modelChoices=await collectModelChoices(latest,move);
+        modelPreviewCached=false;
+      }
       var choices=await task(latest,move);
-      if(current())state.modelChoices=choices;
+      if(current()){
+        state.modelChoices=choices;
+        if(state.optionsRoot && choices.length){
+          modelCatalog={instance:state.instance,root:state.optionsRoot,choices:choices,at:performance.now()};
+        }
+      }
     }catch(err){
       if(current() && !state.options?.prompt){
-        state.optionsRoot=null;state.optionsInvalid=true;state.optionsError=err.message;
+        modelCatalog=null;state.optionsRoot=null;state.optionsInvalid=true;state.optionsError=err.message;
       }
     }finally{
+      modelDraft={};
       state.optionsBusy=false;
       renderControls();
       if(current())renderOptions();
@@ -3853,7 +3990,43 @@ svg{flex-shrink:0}
     } catch(err) { if (sequence===state.optionsSequence) { state.options=null;state.optionsError=err.message||'暂时无法读取选项。'; } }
     finally { if (sequence===state.optionsSequence) {state.optionsLoading=false;renderOptions();} }
   }
-  var modelPickerCleanup=null, modelWheelPending='', modelWheelFocus=false, modelReconnectPending=false;
+  var modelPickerCleanup=null, modelDraft={}, modelWheelFocus=false, modelReconnectPending=false;
+  var modelCatalog=null,modelPreviewCached=false;
+  function validModelCatalog(){
+    var cache=modelCatalog,root=state.optionsRoot,chat=currentChat();
+    if(!cache || cache.instance!==state.instance || cache.root.epoch!==state.epoch || chat && chat.prompt)return null;
+    if(chat && cache.root.scope && cache.root.scope!==chat.key)return null;
+    if(root && root.scope!==cache.root.scope)return null;
+    if(root){
+      var observed=root.items.find(function(item){return item.kind==='model';});
+      var confirmed=cache.root.items.find(function(item){return item.kind==='model';});
+      if(observed?.title!==confirmed?.title)return null;
+    }
+    return cache;
+  }
+  function modelResetChoice(){
+    return (state.modelChoices||[]).find(function(choice){return choice.section==='reset';});
+  }
+  function renderModelHeader(visible){
+    var reset=visible && modelResetChoice(),preview=visible && Object.keys(modelDraft).length>0;
+    els.optionsResetBtn.hidden=!preview&&!reset;
+    els.optionsResetBtn.textContent=preview?'应用':'恢复默认';
+    els.optionsResetBtn.setAttribute('data-apply',String(preview));
+    els.optionsResetBtn.disabled=state.optionsBusy||state.optionsInvalid||!!(!preview && reset && reset.item.enabled===false);
+  }
+  function stageModelChoice(choice){
+    if(!choice || state.optionsBusy || state.optionsLoading || state.optionsInvalid || choice.item.enabled===false)return;
+    var section=choice.section;
+    if(section==='quick'?modelDraft.quick:choice.item.selected)delete modelDraft[section];
+    else modelDraft[section]=choice;
+    if(section==='model')renderModelHeader(true);
+    else renderOptions();
+  }
+  function modelChoiceSelected(choice){
+    var draft=modelDraft[choice.section];
+    if(!draft)return !!choice.item.selected;
+    return choice.section==='quick'?!choice.item.selected:choice.item.id===draft.item.id;
+  }
   function activateModelPicker(){
     if(typeof ResizeObserver==='undefined')return;
     var disposed=false, wheelCleanup=null;
@@ -3899,14 +4072,13 @@ svg{flex-shrink:0}
     const choices=Array.from(list.querySelectorAll('.model-choice'));
     choices.forEach((choice,i)=>choice.dataset.wheelIndex=String(i));
     list.tabIndex=0;
-    let current=null, pointer=null, timer=0, gesture=false, suppressClick=false, applying=false, disposed=false;
+    let current=null, pointer=null, timer=0, gesture=false, suppressClick=false, disposed=false;
     const base=copies*count;
-    let selected=originals.findIndex(button=>button.getAttribute('aria-pressed')==='true');
-    if(modelWheelPending && originals.every(button=>button.disabled)){
-      const pending=originals.findIndex(button=>button.textContent===modelWheelPending);
-      if(pending!==-1)selected=pending;
-    }else modelWheelPending='';
-    if(selected<0)selected=0;
+    const selected=Math.max(0,originals.findIndex(button=>button.getAttribute('aria-pressed')==='true'));
+    const preview=modelDraft.model?originals.findIndex(button=>button.dataset.modelId===modelDraft.model.item.id):-1;
+    let centered=preview===-1?selected:preview;
+    const tuning=list.parentElement.querySelector('.model-tuning');
+    const modelChoices=state.modelChoices.filter(choice=>choice.section==='model');
     function midpoint(choice){return choice.offsetLeft+choice.offsetWidth/2;}
     function mark(index){
       current?.removeAttribute('data-wheel-current');
@@ -3928,11 +4100,10 @@ svg{flex-shrink:0}
       clearTimeout(timer);gesture=false;
       if(disposed || !list.isConnected)return;
       const local=((index%count)+count)%count, target=originals[local];
-      if(target.disabled){center(base+selected);return;}
-      center(base+local);
-      if(target.getAttribute('aria-pressed')==='true')return;
-      modelWheelFocus=document.activeElement===list;modelWheelPending=target.textContent;
-      applying=true;target.click();applying=false;
+      if(target.disabled){center(base+centered);return;}
+      centered=local;center(base+centered);
+      stageModelChoice(modelChoices[local]);
+      list.setAttribute('aria-label',modelDraft.model?'模型 · 预览 '+target.textContent:'模型');
     }
     function settle(){
       clearTimeout(timer);
@@ -3940,13 +4111,13 @@ svg{flex-shrink:0}
     }
     function resize(){
       if(disposed || !list.clientWidth)return;
-      const area=list.getBoundingClientRect(), tuning=list.parentElement.querySelector('.model-tuning');
+      const area=list.getBoundingClientRect();
       const caption=tuning?.querySelector('.model-current-level'), bolt=tuning?.querySelector('.model-switch .icon');
       const left=caption ? caption.getBoundingClientRect().left-area.left : 0;
       const right=bolt ? bolt.getBoundingClientRect().right-area.left : area.width;
       list.style.setProperty('--fade-left',Math.max(0,left)+'px');
       list.style.setProperty('--fade-right',Math.min(area.width,right)+'px');
-      if(!gesture)center(base+selected);
+      if(!gesture)center(base+centered);
     }
     list.addEventListener('scroll',()=>{
       if(disposed)return;
@@ -3990,19 +4161,22 @@ svg{flex-shrink:0}
       list.scrollLeft+=Math.max(-list.clientWidth,Math.min(list.clientWidth,distance*unit));settle();
     },{passive:false});
     list.addEventListener('keydown',event=>{
+      if(event.key==='Enter' && Object.keys(modelDraft).length && !els.optionsResetBtn.disabled){
+        event.preventDefault();modelWheelFocus=true;els.optionsResetBtn.click();return;
+      }
       if(!copies || !['ArrowLeft','ArrowRight'].includes(event.key))return;
       event.preventDefault();pick(nearest()+(event.key==='ArrowRight'?1:-1));
     });
     list.addEventListener('click',event=>{
-      if(applying)return;
       const choice=event.target.closest('[data-wheel-index]');
       if(!choice && !suppressClick)return;
       event.preventDefault();event.stopImmediatePropagation();
       if(!suppressClick)pick(Number(choice.dataset.wheelIndex));
     },true);
     resize();
+    if(modelDraft.model)list.setAttribute('aria-label','模型 · 预览 '+originals[centered].textContent);
     if(modelWheelFocus)list.focus({preventScroll:true});
-    if(!modelWheelPending)modelWheelFocus=false;
+    if(!state.optionsBusy)modelWheelFocus=false;
     return {resize,dispose(){disposed=true;clearTimeout(timer);}};
   }
   function bindModelTrack(slider){
@@ -4055,14 +4229,15 @@ svg{flex-shrink:0}
       var button=document.createElement('button');
       button.type='button';button.className=style;button.textContent=text;
       button.disabled=state.optionsBusy || state.optionsLoading || state.optionsInvalid || choice.item.enabled===false;
-      button.addEventListener('click',function(){applyModelChoice(choice);});
+      if(choice.section==='model')button.dataset.modelId=choice.item.id;
+      else button.addEventListener('click',function(){stageModelChoice(choice);});
       return button;
     }
     function choiceList(entries,name,style){
       var list=document.createElement('div'),stepped=style==='model-track';
       list.className=style;
       list.setAttribute('role','group');list.setAttribute('aria-label',name);
-      var active=entries.find(function(entry){return entry.item.selected;});
+      var active=entries.find(modelChoiceSelected);
       if(stepped){
         list.style.setProperty('--steps',String(entries.length));
         list.style.setProperty('--level',(active?(active.item.level-1)*100/(entries.length-1):0)+'%');
@@ -4070,12 +4245,12 @@ svg{flex-shrink:0}
       entries.forEach(function(choice){
         var item=choice.item;
         var button=buttonFor(choice,stepped?'':item.label||item.title,stepped?'model-stop':'model-choice');
-        button.setAttribute('aria-pressed',String(!!item.selected));
+        button.setAttribute('aria-pressed',String(style==='model-list'?!!item.selected:modelChoiceSelected(choice)));
         if(stepped){
           button.setAttribute('aria-label','强度 '+item.title+' / '+item.levelCount);
           button.setAttribute('data-past',String(!!active && item.level<active.item.level));
           button.setAttribute('data-level-label',item.label||'');
-        }else if(style!=='model-list' && item.selected)button.appendChild(controlIcon('check'));
+        }else if(style!=='model-list' && modelChoiceSelected(choice))button.appendChild(controlIcon('check'));
         list.appendChild(button);
       });
       return list;
@@ -4089,7 +4264,7 @@ svg{flex-shrink:0}
       var stepped=effort.length>1 && effort.every(function(choice){return choice.item.kind==='effort-step';});
       if(effort.length){
         var title=document.createElement('div');title.className='model-effort-title';
-        var active=stepped && effort.find(function(choice){return choice.item.selected;});
+        var active=stepped && effort.find(modelChoiceSelected);
         if(active){
           var name=active.item.label||active.item.title;
           var selectedModel=models.find(function(choice){return choice.item.selected;});
@@ -4101,7 +4276,7 @@ svg{flex-shrink:0}
       if(quick){
         var toggle=buttonFor(quick,'','model-switch');
         toggle.setAttribute('role','switch');toggle.setAttribute('aria-label','快速模式');
-        toggle.setAttribute('aria-checked',String(!!quick.item.selected));
+        toggle.setAttribute('aria-checked',String(modelChoiceSelected(quick)));
         var pill=document.createElement('span');pill.className='model-fast-pill';
         pill.appendChild(controlIcon('bolt'));
         toggle.appendChild(pill);head.appendChild(toggle);
@@ -4140,9 +4315,7 @@ svg{flex-shrink:0}
     els.optionsPromptCommand.textContent=command;
     els.optionsPromptCommand.hidden=!command;
     els.optionsBackBtn.hidden=!state.optionsSurface;
-    var reset=flat && state.modelChoices.find(function(choice){return choice.section==='reset';});
-    els.optionsResetBtn.hidden=!reset;
-    els.optionsResetBtn.disabled=state.optionsBusy||state.optionsInvalid||!!(reset && reset.item.enabled===false);
+    renderModelHeader(flat);
     els.optionsCloseBtn.hidden=false;
     els.optionsCloseBtn.disabled=state.optionsBusy && !modelView;
     els.optionsBackBtn.disabled=state.optionsBusy||state.optionsLoading;
@@ -4158,17 +4331,35 @@ svg{flex-shrink:0}
       var deny=snapshot.items.find(function(item){return /^(拒绝|拒绝本次|不允许|Deny|Decline|Reject)$/i.test(item.title);});
       var paired=!!(prompt.approval && snapshot.items.length===2 && once && deny);
       els.optionsList.setAttribute('data-decisions',String(paired));
+      var actions=prompt.questionnaire?document.createElement('div'):null;
+      var choices=prompt.questionnaire?document.createElement('div'):null;
+      if(choices){
+        actions.className='question-actions';
+        choices.className='options-list question-choices';choices.setAttribute('role','group');
+        choices.setAttribute('aria-label','回答选项');
+      }
       (paired?[deny,once]:snapshot.items).forEach(function(item){
+        var answer=choices && /^(prompt-radio|prompt-check)$/.test(item.kind);
+        var step=actions && item.kind==='prompt-step';
+        var primary=paired && item===once || step && /^(提交|发送|发送更新|下一步|下一个问题|继续|Submit|Send|Send update|Next|Next question|Continue)$/i.test(item.title);
         var button=document.createElement('button');button.type='button';
-        button.className='prompt-choice'+(paired && item===once?' primary':'');
-        button.textContent=item.title;
+        button.className=answer?'option-row':'prompt-choice'+(primary?' primary':'');
+        if(answer && item.description){
+          var label=document.createElement('span');label.className='option-title';label.textContent=item.title;
+          var caption=document.createElement('span');caption.className='option-caption';caption.textContent=item.description;
+          label.appendChild(caption);button.appendChild(label);
+        }else button.textContent=item.title;
+        button.setAttribute('data-kind',item.kind);
         button.setAttribute('data-selected',String(!!item.selected));
-        if(item.selected)button.setAttribute('aria-current','true');
+        if(item.kind==='prompt-radio'||item.kind==='prompt-check')button.setAttribute('aria-pressed',String(!!item.selected));
+        else if(item.selected)button.setAttribute('aria-current','true');
         button.setAttribute('aria-busy',String(state.optionsBusy && state.optionsPendingId===item.id));
         button.disabled=state.optionsBusy||state.optionsLoading||state.optionsInvalid||item.enabled===false||snapshot.epoch!==state.epoch;
         button.addEventListener('click',function(){invokeOption(item);});
-        els.optionsList.appendChild(button);
+        (answer?choices:step?actions:els.optionsList).appendChild(button);
       });
+      if(choices && choices.children.length)els.optionsList.appendChild(choices);
+      if(actions && actions.children.length)els.optionsList.appendChild(actions);
       return;
     }
     els.optionsList.removeAttribute('data-decisions');
@@ -4250,10 +4441,14 @@ svg{flex-shrink:0}
       else await refreshOptions();
       renderControls();
       if(snapshot.prompt && !state.optionsInvalid){
+        var chat=currentChat();
         if(result && result.options && !result.options.prompt){
-          setPanel('');toast('电脑端已关闭该请求。');
+          if(chat && chat.epoch===snapshot.epoch && chat.prompt && chat.prompt.key===snapshot.key)chat.prompt=null;
+          setPanel('');renderControls();toast(snapshot.prompt.questionnaire?'已提交回答':'电脑端已关闭该请求。');
         }else if(state.options && state.options.key===snapshot.key){
           state.optionsError='已发出选择，等待电脑回读。';renderOptions();
+        }else if(chat && chat.epoch===snapshot.epoch && state.options && state.options.prompt){
+          chat.prompt=state.options;renderControls();
         }
       }
       if(point) {var updated=state.options && state.options.items.find(function(row){return row.id===item.id;});if(updated)await openOptionSurface(updated);}
@@ -4294,19 +4489,22 @@ svg{flex-shrink:0}
     document.body.style.setProperty('--app-bottom',Math.round(bottom)+'px');
   }
   function bindEvents(){
-    els.noticeRetryBtn.addEventListener('click',retryConnection);
+    els.noticeRetryBtn.addEventListener('click',function(){
+      if(activeNotice && activeNotice.source==='queue')return refreshQueue();
+      return retryConnection();
+    });
+    els.noticeOpenBtn.addEventListener('click',openPendingRequests);
     els.noticeDismissBtn.addEventListener('click',function(){
       if(activeNotice)activeNotice.dismissed=true;
       renderNotice();
     });
     if(typeof ResizeObserver!=='undefined'){
       var noticeObserver=new ResizeObserver(positionNotice);
-      ['settingsPanel','navigationPanel','optionsPanel','helpPanel','confirmPanel','pairEntry'].forEach(function(id){
+      ['settingsPanel','navigationPanel','optionsPanel','helpPanel','confirmPanel','screenPanel','pairEntry'].forEach(function(id){
         noticeObserver.observe(els[id]);
         els[id].addEventListener('animationend',positionNotice);
       });
     }
-    els.queueRetryBtn.addEventListener('click',refreshQueue);
     els.pairStartBtn.addEventListener('click',function(){showPairEntry(true,true);});
     els.pairBackBtn.addEventListener('click',closePairEntry);
     els.sheetBackdrop.addEventListener('click',function(){
@@ -4362,8 +4560,9 @@ svg{flex-shrink:0}
     els.desktopPromptBtn.addEventListener('click',openDesktopPrompt);
     els.modelPickerBtn.addEventListener('click',openModelPicker);
     els.optionsResetBtn.addEventListener('click',function(){
-      var reset=state.modelChoices && state.modelChoices.find(function(choice){return choice.section==='reset';});
-      if(reset)applyModelChoice(reset);
+      if(Object.keys(modelDraft).length)return applyModelDraft();
+      var reset=modelResetChoice();
+      if(reset)return applyModelChoice(reset);
     });
     els.optionsRetryBtn.addEventListener('click',function(){if(state.optionsIntent==='model')openModelPicker();else refreshOptions();});
     els.optionsCloseBtn.addEventListener('click',function(){setPanel('');});
@@ -4377,6 +4576,7 @@ svg{flex-shrink:0}
       renderControls();
     });
     els.chatViewBtn.addEventListener('click', function(){ switchView('chat'); });
+    els.screenOpenBtn.addEventListener('click',openScreenView);
     els.screenViewBtn.addEventListener('click',openScreenView);
     els.chatRetryBtn.addEventListener('click',retryConnection);
     els.chatLatestBtn.addEventListener('click', function(){ els.chatMessages.scrollTop = els.chatMessages.scrollHeight; updateChatLatest(); });

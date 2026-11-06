@@ -130,11 +130,11 @@ test('public capability state hides desktop and raw controls and labels the scre
   assert.equal(elements.get('screenTitle').textContent,'ChatGPT 窗口');
   assert.equal(elements.get('desktopPromptBtn').hidden,true);
   assert.equal(elements.get('optionsScreenBtn').textContent,'查看电脑画面');
-  assert.equal(elements.get('screenViewBtn').hidden,false);
+  assert.equal(elements.get('screenOpenBtn').hidden,false);
   assert.equal(elements.get('screen').style.touchAction,'pan-x pan-y pinch-zoom');
-  assert.equal(elements.get('statusText').textContent,'已连接到 ChatGPT 窗口，仅供查看。');
+  assert.equal(elements.get('statusText').textContent,'已连接到 ChatGPT 窗口。');
   hooks.state.status='rebound';
-  assert.equal(hooks.statusSentence(),'已重新连接 ChatGPT 窗口，画面仅供查看。');
+  assert.equal(hooks.statusSentence(),'已重新连接 ChatGPT 窗口。');
 });
 
 test('legacy agents without capabilities keep their existing LAN controls',()=>{
@@ -243,8 +243,8 @@ test('Chinese multiline paragraphs and code retain text and use separate whitesp
 });
 
 test('reported small touch targets have explicit 44px boxes, including short viewports',()=>{
-  assert.match(rule('.screen-return'),/min-height:44px/);
-  assert.match(rule('.screen-return'),/min-width:44px/);
+  assert.match(rule('.panel-icon'),/height:44px/);
+  assert.match(rule('.panel-icon'),/width:44px/);
   assert.match(rule('.chat-copy'),/height:44px/);
   assert.match(rule('.chat-copy'),/width:44px/);
   assert.match(rule('.queue-actions .btn'),/min-height:44px/);
@@ -391,7 +391,7 @@ test('help from the paired home returns to the same device page',async()=>{
   assert.equal(document.activeElement,elements.get('homeHelpBtn'));
 });
 
-test('screen entry from home settings waits for panel history then preserves the chat draft',async()=>{
+test('screen entry from home settings uses the shared sheet and preserves the chat draft',async()=>{
   const {hooks,elements,history}=makePage();
   hooks.state.live=false;hooks.state.view='chat';elements.get('pairView').hidden=true;
   hooks.showConnectionHome();
@@ -399,14 +399,11 @@ test('screen entry from home settings waits for panel history then preserves the
   const messages=elements.get('chatMessages');messages.scrollTop=96;
   hooks.setPanel('settings',elements.get('homeSettingsBtn'));
   hooks.openScreenView();
-  assert.equal(hooks.state.remoteRequested,'screen');
-  await Promise.resolve();
-  assert.equal(hooks.state.remoteRequested,'');
-  assert.equal(hooks.state.panel,'');
+  assert.equal(hooks.state.panel,'screen');
   assert.equal(hooks.state.homeActive,false);
   assert.equal(hooks.state.view,'screen');
   assert.equal(history.state.harmonyRemoteSurface,'remote');
-  assert.equal(elements.get('remoteView').inert,false);
+  assert.equal(elements.get('remoteView').inert,true);
   assert.equal(elements.get('message').value,'不要丢失的输入');
   assert.equal(elements.get('chatMessages'),messages);
   assert.equal(messages.scrollTop,96);

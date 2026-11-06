@@ -142,6 +142,10 @@ class DeliveryStore:
             for record in self.records.values():
                 self._confirm(record, snapshot)
 
+    def needs_observation(self) -> bool:
+        with self.lock:
+            return any(record['state'] in ('sending', 'confirming') for record in self.records.values())
+
     def _deliver(self, record: dict, token: str) -> None:
         command = record['command']
         try:

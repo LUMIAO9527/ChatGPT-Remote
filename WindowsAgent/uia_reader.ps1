@@ -9,6 +9,11 @@ $AE = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 $script:controlTree=$null
+$script:pendingLabels=@{
+    'Needs input'='input'; 'Waiting for input'='input'; '需要用户输入'='input'; '等待输入'='input'
+    'Needs approval'='approval'; 'Awaiting approval'='approval'; '待审批'='approval'; '等待批准'='approval'
+}
+$script:pendingSuffix='^(.+?)\s*('+(($script:pendingLabels.Keys | ForEach-Object {[regex]::Escape($_)}) -join '|') +')$'
 
 function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $optionsOnly=$false) {
     $root = $AE::FromHandle([IntPtr][long]$handle)
@@ -18,18 +23,23 @@ function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $opt
         $AE::ClassNameProperty, $AE::AutomationIdProperty, $AE::IsPasswordProperty,
         $AE::IsEnabledProperty, $AE::IsKeyboardFocusableProperty, $AE::IsOffscreenProperty,
         $AE::BoundingRectangleProperty, $AE::RuntimeIdProperty)) { $cache.Add($property) }
+    if(!$contentOnly){$cache.Add($AE::HelpTextProperty)}
     $active = $cache.Activate()
     $condition=[System.Windows.Automation.Condition]::TrueCondition
     if($controlsOnly -or $contentOnly -or $optionsOnly) {
         $filters=New-Object 'System.Collections.Generic.List[System.Windows.Automation.Condition]'
         $types=@($CT::Document,$CT::Edit,$CT::Button,$CT::Hyperlink,$CT::Header,$CT::ComboBox,$CT::Window,$CT::RadioButton,$CT::CheckBox)
         if($contentOnly){$types+=@($CT::Text,$CT::ListItem,$CT::Image)}
-        if($optionsOnly){$types+=@($CT::Menu,$CT::MenuItem,$CT::List,$CT::ListItem)}
+        if($optionsOnly){$types+=@($CT::Menu,$CT::MenuItem,$CT::List)}
+        if(($controlsOnly -or $optionsOnly) -and !$contentOnly){$types+=$CT::ListItem}
         foreach($type in $types) {
             $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$type))
         }
         $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'sr-only'))
         $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'min-w-0 flex-1 self-center text-start select-text'))
+        foreach($label in $script:pendingLabels.Keys){
+            $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::NameProperty,$label))
+        }
         $condition=[System.Windows.Automation.OrCondition]::new($filters.ToArray())
     }
     try {
@@ -246,7 +256,7 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
         $type = $c.ControlType.ProgrammaticName.Replace('ControlType.', '')
         $name = $c.Name
         if($type -in @('Window','RadioButton','CheckBox') -or
-            ($type -eq 'Button' -and ($name -match $script:promptGrant -or $name -match $script:promptSubmit))){
+            ($type -eq 'Button' -and ($name -match $script:promptGrant -or $name -match $script:promptSeed))){
             if(!$c.IsOffscreen -and !$c.BoundingRectangle.IsEmpty){$promptNodes.Add($node)}
         }
         if ($type -eq 'Document' -and !$title) { $title = $name }
@@ -509,6 +519,20 @@ function Export-Queue($queue) {
         actions=@($queue.actions | ForEach-Object {@{id=$_.id;operation=$_.operation;enabled=$_.enabled}})}
 }
 
+function Find-QueueEdit($snapshot,$anchor) {
+    $documentId=$snapshot.tree.document.GetRuntimeId() -join '.'
+    foreach($candidate in $snapshot.tree.nodes){
+        $item=$candidate.Cached
+        if($item.ControlType -notin @($CT::MenuItem,$CT::Button) -or $item.IsOffscreen -or !$item.IsEnabled -or
+            $item.Name -notmatch '^(编辑消息|编辑|Edit message|Edit queued message)$'){continue}
+        $menu=Get-OptionMenu $candidate
+        if(!$menu -or !(Test-PrimaryDocument $candidate $documentId)){continue}
+        $rect=$menu.Current.BoundingRectangle
+        if(!$rect.IsEmpty -and $rect.Left -le $anchor.Right+40 -and $rect.Right -ge $anchor.Left-40 -and
+            $rect.Top -le $anchor.Bottom+60 -and $rect.Bottom -ge $anchor.Top-60){$candidate}
+    }
+}
+
 function Invoke-Queue($request) {
     $script:controlTree=$null
     $queue=Read-Queue $request.hwnd
@@ -520,27 +544,53 @@ function Invoke-Queue($request) {
     if($matches.Count -ne 1){throw 'queue changed'}
     $choice=$matches[0];$element=$choice.action.element;$pattern=$null
     if($request.action -eq 'edit' -and $queue.hasDraft){throw 'queue draft exists'}
-    if(!$element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){throw 'queue unavailable'}
-    $pattern.Invoke()
-    try{
-        if($request.action -eq 'edit'){
-            Start-Sleep -Milliseconds 120
-            $check=Read-Window $request.hwnd $false $false $true
-            if($check.identity -cne $request.identity){throw 'queue pending'}
-            $menuItems=$check.tree.root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-                [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::MenuItem))
-            $edit=@($menuItems | Where-Object {$_.Current.Name -match '^(编辑消息|编辑|Edit message)$' -and $_.Current.IsEnabled -and !$_.Current.IsOffscreen})
-            if($edit.Count -ne 1){throw 'queue pending'}
-            $pattern=$null
-            if(!$edit[0].TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){throw 'queue pending'}
-            $pattern.Invoke()
-            Start-Sleep -Milliseconds 120
-            $check=Read-Window $request.hwnd $false $false $true
-            if($check.identity -cne $request.identity -or $null -eq $check.draft -or !$check.composer){throw 'queue pending'}
-            return @{ok=$true;edited=$true;identity=$check.identity;text=$check.draft;title=$check.title;truncated=$false}
-        }
+    if($request.action -ne 'edit'){
+        if(!$element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){throw 'queue unavailable'}
+        $pattern.Invoke()
         Start-Sleep -Milliseconds 120
         return @{ok=$true}
+    }
+    if(!$queue.snapshot.composer -or $null -eq $queue.snapshot.draft){throw 'queue edit not started'}
+    $anchor=$element.Current.BoundingRectangle
+    try {
+        # The native dropdown opens on pointer-down or ArrowDown. UIA Invoke
+        # sends a click and can leave the dropdown closed.
+        $expanded=$element.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern) -and
+            $pattern.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded
+        if(!$expanded){Send-FocusedWindowKey $request.hwnd $element 0x28}
+        $wait=[Diagnostics.Stopwatch]::StartNew()
+        do {
+            Start-Sleep -Milliseconds 60
+            $check=Read-Window $request.hwnd $true
+            if($check.identity -cne $request.identity){throw 'queue changed'}
+            $edit=@(Find-QueueEdit $check $anchor)
+        }while(!$edit.Count -and $wait.ElapsedMilliseconds -lt 950)
+        $pattern=$null
+        if($edit.Count -ne 1 -or !$edit[0].TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){
+            throw 'queue edit not started'
+        }
+    }catch{throw 'queue edit not started'}
+    try{
+        $pattern.Invoke()
+        $wait=[Diagnostics.Stopwatch]::StartNew()
+        $expected=([string]$request.text -replace '\s+',' ').Trim()
+        do {
+            Start-Sleep -Milliseconds 70
+            $script:controlTree=$null
+            $check=Read-Window $request.hwnd $false $false $true
+            if($check.identity -cne $request.identity){throw 'queue pending'}
+            if(!$check.composer -or $null -eq $check.draft){continue}
+            $current=Read-Queue $request.hwnd $check
+            if($current.items | Where-Object {$_.id -ceq $request.item}){continue}
+            $actual=($check.draft -replace '\s+',' ').Trim()
+            $matchesDraft=$actual -and ($actual -ceq $expected -or
+                ($expected.EndsWith('…') -and $actual.StartsWith($expected.TrimEnd('…'),[StringComparison]::Ordinal)))
+            if($matchesDraft -or (!$actual -and (Get-ComposerAttachments $check).count -gt 0)){
+                return @{ok=$true;edited=$true;identity=$check.identity;text=$check.draft;title=$check.title;
+                    truncated=$false;queue=(Export-Queue $current)}
+            }
+        }while($wait.ElapsedMilliseconds -lt 1400)
+        throw 'queue pending'
     }catch{throw 'queue pending'}
 }
 
@@ -614,6 +664,7 @@ function Get-ComposerRoot($snapshot, $allowScopeCache=$false) {
         $c=$node.Cached;$b=$c.BoundingRectangle
         if($c.ControlType -eq $CT::Menu -and !$c.IsOffscreen){return $null}
         if($c.ControlType -notin @($CT::Button,$CT::ComboBox) -or $c.IsOffscreen -or !$c.Name -or $b.IsEmpty){continue}
+        if($c.ClassName -match 'app-action-sidebar-thread-selected|(?:^|\s)group/folder-row(?=\s|$)'){continue}
         $near=$b.Top -ge $r.Top-90 -and $b.Bottom -le $r.Bottom+110 -and $b.Right -ge $r.Left-80 -and $b.Left -le $r.Right+80
         $kind=''
         if($c.Name -match '(?i)(^gpt[- .]|^o[134]([-. ]|$)|模型|select model|switch model|^model\b)'){$kind='model'}
@@ -647,15 +698,43 @@ function Test-PrimaryDocument($node, $documentId) {
 
 $script:promptGrant='(?i)^(Allow(?: once| always| for this session)?|Always allow|Approve(?: once| for this session)?|Yes,? (?:allow|proceed)|允许(?:一次|本次|此操作|此会话|本会话)?|始终允许|批准(?:一次|本次|本会话|此会话)?|同意(?:本次|执行)?)$'
 $script:promptDeny='(?i)^(Deny|Decline|Reject|Cancel|No(?:, suggest changes)?|拒绝(?:本次|请求)?|不允许|取消|不同意|否)$'
-$script:promptSubmit='(?i)^(提交|继续|确认|完成|下一步|Submit|Continue|Confirm|Done|Next)$'
-$script:promptClass='(?i)(^|[ /_-])(approval-card|approval-request|request-user-input|user-input-request|tool-confirmation|mcp-elicitation)([ /_-]|$)'
+$script:promptSeed='(?i)^(提交|继续|确认|完成|下一步|Submit|Continue|Confirm|Done|Next)$'
+$script:promptSubmit='(?i)^(提交|继续|确认|完成|下一步|下一个问题|上一个问题|跳过|发送|发送更新|Submit|Continue|Confirm|Done|Next|Next question|Previous question|Skip|Send|Send update)$'
+$script:questionClass='(?i)(?:^|\s)@container/request-card(?=\s|$)|(?:^|[ /_-])(?:request-user-input|user-input-request)(?=[ /_-]|$)'
+$script:promptClass='(?i)(^|[ /_-])(approval-card|approval-request|tool-confirmation|mcp-elicitation)([ /_-]|$)'
 $script:promptCache=New-Object System.Windows.Automation.CacheRequest
-foreach($property in @($AE::ControlTypeProperty,$AE::NameProperty,$AE::IsEnabledProperty,$AE::IsOffscreenProperty,
+foreach($property in @($AE::ControlTypeProperty,$AE::NameProperty,$AE::HelpTextProperty,$AE::IsEnabledProperty,$AE::IsOffscreenProperty,
                        $AE::IsPasswordProperty,$AE::RuntimeIdProperty,$AE::BoundingRectangleProperty)){
     $script:promptCache.Add($property)
 }
+$script:questionTextCache=New-Object System.Windows.Automation.CacheRequest
+$script:questionTextCache.TreeFilter=[System.Windows.Automation.Automation]::RawViewCondition
+$script:questionTextCache.TreeScope=[System.Windows.Automation.TreeScope]::Subtree
+$script:questionTextCache.AutomationElementMode=[System.Windows.Automation.AutomationElementMode]::None
+foreach($property in @($AE::ControlTypeProperty,$AE::NameProperty,$AE::IsOffscreenProperty,$AE::IsPasswordProperty)){
+    $script:questionTextCache.Add($property)
+}
 
-function Read-PromptRegion($region,$identity,$explicit) {
+function Get-QuestionText($region) {
+    # Static headings can be omitted from Chromium's control view. Keep the
+    # text within the request card and leave button names to the action list.
+    $stack=New-Object 'System.Collections.Generic.Stack[System.Windows.Automation.AutomationElement]'
+    $stack.Push($region.GetUpdatedCache($script:questionTextCache))
+    $notes=New-Object 'System.Collections.Generic.List[string]'
+    for($i=0;$stack.Count -gt 0 -and $i -lt 200;$i++){
+        $node=$stack.Pop()
+        $c=$node.Cached
+        if($c.IsPassword -or $c.ControlType -in @($CT::Edit,$CT::Button,$CT::RadioButton,$CT::CheckBox)){continue}
+        if($c.ControlType -in @($CT::Text,$CT::Header) -and !$c.IsOffscreen -and $c.Name -and !$notes.Contains($c.Name)){
+            $notes.Add($c.Name)
+        }
+        $children=$node.CachedChildren
+        for($j=$children.Count-1;$j -ge 0;$j--){$stack.Push($children[$j])}
+    }
+    return $notes.ToArray()
+}
+
+function Read-PromptRegion($region,$identity,$explicit,$questionnaire=$false) {
     $types=@($CT::Document,$CT::Button,$CT::RadioButton,$CT::CheckBox,$CT::Edit,$CT::Text,$CT::Header)
     $filters=[System.Windows.Automation.Condition[]]@($types | ForEach-Object {
         [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$_)
@@ -678,17 +757,34 @@ function Read-PromptRegion($region,$identity,$explicit) {
         $pattern=$null;$selected=$false
         if($node.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)){$selected=$pattern.Current.IsSelected}
         elseif($node.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern,[ref]$pattern)){$selected=$pattern.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On}
-        $actions.Add(@{id=($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.');title=$c.Name;
-            kind='option';enabled=$c.IsEnabled;selected=$selected;element=$node})
+        $kind='option';$label=$c.Name
+        if($questionnaire){
+            if($c.ControlType -eq $CT::RadioButton){$kind='prompt-radio'}
+            elseif($c.ControlType -eq $CT::CheckBox){$kind='prompt-check'}
+            else {
+                $label=($label -replace '\s*[⏎↵↩]\s*$','').Trim()
+                if($label -notmatch $script:promptSubmit){continue}
+                $kind='prompt-step'
+            }
+        }
+        $action=@{id=($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.');title=$label;
+            kind=$kind;enabled=$c.IsEnabled;selected=$selected;element=$node}
+        if($kind -in @('prompt-radio','prompt-check') -and $c.HelpText -and $c.HelpText -cne $label){
+            $action.description=$c.HelpText
+        }
+        $actions.Add($action)
     }
     if(!$actions.Count -or $actions.Count -gt 24){return $null}
-    $approval=($actions.title -match $script:promptGrant) -and ($actions.title -match $script:promptDeny)
+    if($questionnaire -and !($actions | Where-Object {$_.kind -in @('prompt-radio','prompt-check')})){return $null}
+    $approval=!$questionnaire -and ($actions.title -match $script:promptGrant) -and ($actions.title -match $script:promptDeny)
     if(!$explicit -and (!$approval -or !$notes.Count)){return $null}
     # An inline approval is recognized only when allow and refuse share this region.
     if(!$explicit){$actions=@($actions | Where-Object {$_.title -match $script:promptGrant -or $_.title -match $script:promptDeny})}
-    $title=[string]$region.Current.Name
-    if(!$title){$title=if($approval){'电脑审批'}else{'电脑待选项'}}
+    $title=if($questionnaire){'请回答'}else{[string]$region.Current.Name}
+    if(!$title){$title=if($approval){'电脑审批'}elseif($questionnaire){'请回答'}else{'电脑待选项'}}
+    if($questionnaire){$notes=@(Get-QuestionText $region)}
     $details=($notes | Where-Object {$_ -cne $title}) -join "`n"
+    if($questionnaire -and !$details -and $title -eq '请回答'){return $null}
     if($title.Length -gt 240){$title=$title.Substring(0,240-[int][char]::IsHighSurrogate($title[239]))}
     # Bind the full visible request to the action, even when the phone preview is shorter.
     $hash=[Security.Cryptography.SHA256]::Create()
@@ -698,7 +794,7 @@ function Read-PromptRegion($region,$identity,$explicit) {
     if($truncated){$details=$details.Substring(0,8000-[int][char]::IsHighSurrogate($details[7999]))}
     return @{ok=$true;identity=$identity;context=('prompt:'+($region.GetRuntimeId() -join '.')+':'+$revision);
         menu=$false;entries=@($actions | ForEach-Object {$_});category='prompt';
-        prompt=@{title=$title;text=$details;approval=[bool]$approval;truncated=$truncated}}
+        prompt=@{title=$title;text=$details;approval=[bool]$approval;questionnaire=[bool]$questionnaire;truncated=$truncated}}
 }
 
 function Read-DesktopPrompt($snapshot) {
@@ -715,20 +811,79 @@ function Read-DesktopPrompt($snapshot) {
         if($c.ControlType -notin @($CT::Button,$CT::RadioButton,$CT::CheckBox)){continue}
         $grant=$c.ControlType -eq $CT::Button -and $c.Name -match $script:promptGrant
         if(!(Test-PrimaryDocument $node $documentId)){continue}
-        for($depth=0;$depth -lt 8;$depth++){
+        $maxDepth=if($c.ControlType -in @($CT::RadioButton,$CT::CheckBox)){16}else{8}
+        for($depth=0;$depth -lt $maxDepth;$depth++){
             $node=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($node,$script:parentCache)
             if(!$node -or $node.Cached.ControlType -in @($CT::Window,$CT::Document)){break}
-            $explicit=$node.Cached.ClassName -match $script:promptClass
+            $questionnaire=$node.Cached.ClassName -match $script:questionClass
+            $explicit=$questionnaire -or $node.Cached.ClassName -match $script:promptClass
             if(!$explicit -and (!$grant -or $node.Cached.ClassName -match 'thread-scroll-container')){continue}
             $id=$node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
             if(!$seen.Add($id)){continue}
             $rect=$node.Current.BoundingRectangle
             if($rect.IsEmpty -or (!$explicit -and $rect.Height -gt 540)){continue}
-            $prompt=Read-PromptRegion $node $snapshot.identity $explicit
+            $prompt=Read-PromptRegion $node $snapshot.identity $explicit $questionnaire
             if($prompt){return $prompt}
         }
     }
     return $null
+}
+
+function Read-PendingNavigation($tree) {
+    $pending=@{}
+    if(!$tree.document){return $pending}
+    $documentId=$tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
+    foreach($node in $tree.nodes){
+        $c=$node.Cached
+        if(!$c.Name){continue}
+        try {
+            $row=$null
+            if($c.ControlType -in @($CT::Button,$CT::Hyperlink) -and
+                $c.ClassName -match 'app-action-sidebar-thread-selected|(?:^|\s)group/folder-row(?=\s|$)' -and
+                $c.HelpText -and $script:pendingLabels.ContainsKey($c.HelpText.Trim())){
+                $row=$node
+                $status=$script:pendingLabels[$c.HelpText.Trim()]
+            } elseif($script:pendingLabels.ContainsKey($c.Name)){
+                $status=$script:pendingLabels[$c.Name]
+                $parent=$node
+                $indicator=$false
+                for($depth=0;$depth -lt 14 -and $parent;$depth++){
+                    $item=$parent.Cached
+                    if($item.ControlType -eq $CT::Document){break}
+                    if($item.ClassName -match '(?:^|\s)(?:bg-(?:chart-)?blue/15|bg-chart-green/20|group/status-pill)(?=\s|$)'){
+                        $indicator=$true
+                    }
+                    if($item.ClassName -match 'app-action-sidebar-thread-selected|(?:^|\s)group/folder-row(?=\s|$)'){
+                        if($indicator){$row=$parent}
+                        break
+                    }
+                    $parent=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($parent,$script:parentCache)
+                }
+            } elseif($c.ControlType -eq $CT::ListItem -and $c.Name -match $script:pendingSuffix){
+                # Chromium can flatten a badge inside a button. The list item's
+                # name then contains the title and badge, while the button names
+                # just the chat. Require both names and the native row class.
+                $title=$Matches[1].TrimEnd()
+                $status=$script:pendingLabels[$Matches[2]]
+                $condition=[System.Windows.Automation.PropertyCondition]::new($AE::NameProperty,$title)
+                $active=$script:parentCache.Activate()
+                try {
+                    $candidates=@($node.FindAll([Windows.Automation.TreeScope]::Descendants,$condition) | Where-Object {
+                        $_.Cached.ControlType -in @($CT::Button,$CT::Hyperlink) -and
+                            $_.Cached.ClassName -match 'app-action-sidebar-thread-selected|(?:^|\s)group/folder-row(?=\s|$)'
+                    })
+                } finally {$active.Dispose()}
+                if($candidates.Count -eq 1){$row=$candidates[0]}
+            }
+            if(!$row -or !(Test-PrimaryDocument $row $documentId)){continue}
+            $item=$row.Cached
+            $id=$row.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
+            $kind=if($item.ClassName -match 'app-action-sidebar-thread-selected'){'thread'}else{'project'}
+            $selected=$kind -eq 'thread' -and $item.ClassName -match '(?:^|\s)bg-primary-ghost-hover(?=\s|$)'
+            $pending[$id]=@{id=$id;kind=$kind;title=$item.Name;pending=$status;selected=$selected}
+        } catch [System.Windows.Automation.ElementNotAvailableException] {}
+    }
+    return $pending
 }
 
 $script:menuCategory='';$script:menuCategoryContext='';$script:menuCategoryIdentity=''
@@ -750,7 +905,7 @@ function Get-ComposerEffort($menu, $control) {
     }
 }
 
-function Set-ComposerEffort($handle, $choice) {
+function Initialize-WindowKeys {
     if (-not ('RmEffortInput' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -761,6 +916,20 @@ public static class RmEffortInput {
 }
 '@
     }
+}
+function Send-FocusedWindowKey($handle,$control,$key) {
+    Initialize-WindowKeys
+    if([RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle){throw 'window lost focus'}
+    $control.SetFocus()
+    $focused=$AE::FocusedElement
+    if(!$focused -or ($focused.GetRuntimeId() -join '.') -cne ($control.GetRuntimeId() -join '.') -or
+        [RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle){throw 'control lost focus'}
+    [RmEffortInput]::keybd_event($key,0,1,[UIntPtr]::Zero)
+    [RmEffortInput]::keybd_event($key,0,3,[UIntPtr]::Zero)
+}
+
+function Set-ComposerEffort($handle, $choice) {
+    Initialize-WindowKeys
     $control=$choice.element
     $id=$control.GetRuntimeId() -join '.'
     $delta=$choice.position-$choice.effort.position
@@ -796,7 +965,28 @@ function Read-ComposerOptions($handle, $category='') {
         $p=$null
         if($node.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$p) -and $p.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded) {$anchors.Add($r);$anchorIds.Add(($node.GetRuntimeId() -join '.'))}
     }}
-    $menuRects=@($tree.nodes | Where-Object {$_.Cached.ControlType -eq $CT::Menu -and !$_.Cached.IsOffscreen} | ForEach-Object {$_.Cached.BoundingRectangle})
+    $menuRects=New-Object 'System.Collections.Generic.List[object]'
+    foreach($node in $tree.nodes){
+        $c=$node.Cached
+        if($c.IsOffscreen -or $c.BoundingRectangle.IsEmpty){continue}
+        if($c.ControlType -eq $CT::Menu){$menuRects.Add($c.BoundingRectangle)}
+        elseif($c.ControlType -eq $CT::List){
+            $selection=$null
+            if($c.ClassName -match '(?i)select|combo|listbox|dropdown|command|popover' -or
+                $node.TryGetCurrentPattern([Windows.Automation.SelectionPattern]::Pattern,[ref]$selection)){
+                $menuRects.Add($c.BoundingRectangle)
+            }
+        }
+    }
+    if(!$anchors.Count -and !$menuRects.Count){
+        # A closed composer has no popup to traverse. Sidebar list items can
+        # otherwise cause hundreds of cross-process ancestor calls on each open.
+        $root=Get-ComposerRoot $snapshot
+        if($root){
+            $script:menuCategory='';$script:menuCategoryContext='';$script:menuCategoryIdentity=$snapshot.identity
+            return $root
+        }
+    }
     foreach ($node in $tree.nodes) {
         $c = $node.Cached
         if ($c.IsPassword -or $c.IsOffscreen -or !$c.Name -or $null -eq $c.ControlType) { continue }
@@ -805,6 +995,7 @@ function Read-ComposerOptions($handle, $category='') {
         if($c.Name -match '^(?i)(了解更多|了解详情|查看更多说明|Learn more|More info)([\s…\.。!！?？:].*)?$' -or
             $c.ClassName -match '(?i)learn[-_]?more|help[-_]?link|external[-_]?link'){continue}
         if ($type -notin @('Button','ComboBox','MenuItem','ListItem','CheckBox','RadioButton')) { continue }
+        if($c.ClassName -match 'app-action-sidebar-thread-selected|(?:^|\s)group/folder-row(?=\s|$)'){continue}
         $r=$c.BoundingRectangle
         $near=$null -ne $composerRect -and !$composerRect.IsEmpty -and !$r.IsEmpty -and $r.Top -ge $composerRect.Top-90 -and
             $r.Bottom -le $composerRect.Bottom+110 -and $r.Right -ge $composerRect.Left-80 -and $r.Left -le $composerRect.Right+80
@@ -898,6 +1089,7 @@ function Get-ProjectAncestor($node) {
 function Export-ComposerOptions($options) {
     $items=@($options.entries | ForEach-Object {
         $item=@{id=$_.id;title=$_.title;kind=$_.kind;enabled=$_.enabled;selected=$_.selected}
+        if($_.description){$item.description=$_.description}
         if ($_.kind -eq 'effort-step') {
             $item.label=$_.label
             $item.level=$_.position
@@ -912,7 +1104,8 @@ function Export-ComposerOptions($options) {
 }
 
 function Read-Navigation($handle) {
-    $tree = Get-WindowTree $handle
+    $tree = Get-WindowTree $handle $false $false $true
+    $pending=Read-PendingNavigation $tree
     $documentId=if($tree.document){$tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
     $checkedScopes=@{}
     $entries = New-Object 'System.Collections.Generic.List[object]'
@@ -941,6 +1134,7 @@ function Read-Navigation($handle) {
             project=if ($null -ne $project) { $project.GetRuntimeId() -join '.' } else { '' };
             projectTitle=if ($null -ne $project) { $project.Cached.Name } else { '' }; element=$node}
         if($kind -eq 'thread'){$entry.selected=$c.ClassName -match '(^| )bg-primary-ghost-hover( |$)'}
+        if($pending.ContainsKey($entry.id)){$entry.pending=$pending[$entry.id].pending}
         $pattern = $null
         if ($node.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)) {
             $entry.expanded = $pattern.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded
@@ -1061,6 +1255,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 generating=$snapshot.generating;queue=(Export-Queue (Read-Queue $request.hwnd $snapshot));composer=@{available=($null -ne $snapshot.composer -and $null -ne $snapshot.draft);
                 hasDraft=($null -ne $snapshot.draft -and $snapshot.draft.Length -gt 0);options=$(if($rootOptions){Export-ComposerOptions $rootOptions}else{$null})}}
             if($prompt){$reply.prompt=Export-ComposerOptions $prompt}
+            $reply.pendingRequests=@((Read-PendingNavigation $snapshot.tree).Values | Sort-Object -Property id)
         } elseif ($request.operation -eq 'identity') {
             $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity}
         } elseif ($request.operation -in @('attachment_focus','attachments')) {
@@ -1180,7 +1375,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $reason = $_.Exception.Message
         if ($reason -notin @('conversation changed','composer unavailable','draft exists','reply in progress','composer focus rejected',
             'draft changed','send button unavailable','send not confirmed','navigation changed','navigation unavailable',
-            'queue changed','queue unavailable','queue pending','queue draft exists',
+            'queue changed','queue unavailable','queue pending','queue draft exists','queue edit not started','options changed','option changed','option unavailable',
             'clear unavailable','clear not confirmed')) {
             $reason = 'reader unavailable'
         }

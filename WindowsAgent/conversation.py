@@ -254,9 +254,16 @@ class ConversationReader:
         snapshot={field:raw.get(field,default) for field,default in (
             ('identity',''),('items',[]),('actions',[]),('paused',False),('hasDraft',False))}
         key=hashlib.sha256(json.dumps(snapshot,sort_keys=True).encode()).hexdigest()[:24]
-        self.queue_catalogs[key]=(time.monotonic(),hwnd,snapshot)
+        now=time.monotonic()
+        self.queue_used={used:at for used,at in self.queue_used.items() if now-at<120}
+        self.queue_catalogs[key]=(now,hwnd,snapshot)
         while len(self.queue_catalogs)>8:self.queue_catalogs.pop(next(iter(self.queue_catalogs)))
-        return {'key':key,**{k:v for k,v in snapshot.items() if k!='identity'},'available':True}
+        def pending_action(action):
+            return {**action,'enabled':False} if (key,action['id']) in self.queue_used else action
+        return {'key':key,**{k:v for k,v in snapshot.items() if k not in ('identity','items','actions')},
+                'items':[{**row,'actions':[pending_action(action) for action in row.get('actions',[])]}
+                         for row in snapshot['items']],
+                'actions':[pending_action(action) for action in snapshot['actions']],'available':True}
 
     def queue(self, hwnd: int) -> dict:
         with self.lock:
@@ -276,17 +283,26 @@ class ConversationReader:
             row,action=matches[0]
             self.queue_used={k:v for k,v in self.queue_used.items() if time.monotonic()-v<120}
             self.queue_used[key,target]=time.monotonic()
-            reply=self._call(operation='queue_invoke',hwnd=hwnd,identity=snapshot['identity'],
-                             target=target,action=action['operation'],
-                             item=row['id'] if row else '',text=row['text'] if row else '')
-            self.cached=None
+            try:
+                reply=self._call(operation='queue_invoke',hwnd=hwnd,identity=snapshot['identity'],
+                                 target=target,action=action['operation'],
+                                 item=row['id'] if row else '',text=row['text'] if row else '')
+            except TargetError:
+                raise TargetError('操作结果待核对，请查看队列。','queue_pending') from None
+            finally:
+                self.cached=None
             if not reply.get('ok'):
                 reason=reply.get('reason','')
                 if reason=='queue draft exists':
                     self.queue_used.pop((key,target),None)
                     raise TargetError('电脑输入框已有草稿，请先处理后再编辑队列','draft_exists')
+                if reason in ('queue changed','queue unavailable','queue edit not started'):
+                    self.queue_used.pop((key,target),None)
+                    if reason=='queue edit not started':
+                        raise TargetError('未打开队列编辑，请重试。','queue_edit_not_started')
+                    raise TargetError('队列已变化，请刷新后重新选择。','queue_changed')
                 raise TargetError('队列操作未确认，请检查电脑状态后刷新','queue_pending')
-            result={'queue':self._remember_queue(hwnd,self._call(operation='queue',hwnd=hwnd))}
+            result={'queue':self._remember_queue(hwnd,reply.get('queue') or self._call(operation='queue',hwnd=hwnd))}
             def confirmed(current):
                 if self.queue_catalogs[current['key']][2]['identity']!=snapshot['identity']:return False
                 if action['operation'] in ('delete','steer'):
@@ -318,13 +334,16 @@ class ConversationReader:
         for item in raw.get("items", [])[:200]:
             if not isinstance(item.get("id"), str) or not isinstance(item.get("title"), str):
                 continue
-            if INFO_OPTION.fullmatch(item['title'].strip()) or (raw.get('category')=='permission' and PERMISSION_INFO.fullmatch(item['title'].strip())):
+            if raw.get('category')!='prompt' and (INFO_OPTION.fullmatch(item['title'].strip()) or
+                    (raw.get('category')=='permission' and PERMISSION_INFO.fullmatch(item['title'].strip()))):
                 continue
             title = item["title"][:500]
             kind = str(item.get("kind") or "option")
             option = {"id": item["id"], "title": title, "kind": kind,
                       "enabled": bool(item.get("enabled")), "selected": bool(item.get("selected")),
                       **option_labels(title, str(raw.get("category") or ""))}
+            if kind in ('prompt-radio','prompt-check') and isinstance(item.get('description'),str) and item['description']:
+                option['description']=item['description'][:800]
             if kind == "effort-step":
                 level, current, count = (item.get(field) for field in ("level", "currentLevel", "levelCount"))
                 if not (all(type(value) is int for value in (level, current, count)) and
@@ -342,14 +361,18 @@ class ConversationReader:
                 'title': str(prompt.get('title') or '电脑待选项')[:240],
                 'text': str(prompt.get('text') or '')[:8000],
                 'approval': bool(prompt.get('approval')),
+                **({'questionnaire': True} if prompt.get('questionnaire') else {}),
                 'truncated': bool(prompt.get('truncated')),
             }
         key = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()[:24]
         now = time.monotonic()
         if 'prompt' in snapshot:
             self.prompt_attempts = {ident: at for ident, at in self.prompt_attempts.items() if now - at < 120}
-            if key in self.prompt_attempts:
-                items = [{**item, 'enabled': False} for item in items]
+            items = [
+                {**item, 'enabled': False}
+                if key in self.prompt_attempts or f"{key}:{item['id']}" in self.prompt_attempts else item
+                for item in items
+            ]
         self.option_catalogs[key] = (now, hwnd, snapshot)
         while len(self.option_catalogs) > 8:
             self.option_catalogs.pop(next(iter(self.option_catalogs)))
@@ -364,16 +387,25 @@ class ConversationReader:
             if not reference or reference[1] != hwnd or time.monotonic() - reference[0] > 120:
                 raise TargetError("输入框选项已变化，请刷新后重新选择")
             snapshot = reference[2]
-            if 'prompt' in snapshot:
-                if dismiss or time.monotonic() - self.prompt_attempts.get(key, float('-inf')) < 120:
+            prompt = snapshot.get('prompt')
+            if prompt:
+                cutoff = time.monotonic() - 120
+                if dismiss or any(self.prompt_attempts.get(attempt, float('-inf')) > cutoff
+                                  for attempt in (key, f'{key}:{target}')):
                     raise TargetError('电脑请求仍在回读，请刷新查看。', 'prompt_pending')
             matches = [item for item in snapshot["items"] if item["id"] == target and item["enabled"]]
             if (dismiss and not snapshot["menu"]) or (not dismiss and len(matches) != 1):
                 raise TargetError("选项已变化或不可用，请刷新后重新选择")
             # Consume before invocation. An uncertain action is never repeated.
             self.option_catalogs.pop(key, None)
-            if 'prompt' in snapshot:
-                self.prompt_attempts[key] = time.monotonic()
+            attempt = key
+            if prompt and prompt.get('questionnaire'):
+                item = matches[0]
+                if item['kind'] in ('prompt-radio', 'prompt-check') or re.fullmatch(
+                        r'继续|下一步|下一个问题|上一个问题|Continue|Next|Next question|Previous question', item['title'], re.I):
+                    attempt = f"{key}:{item['id']}"
+            if prompt:
+                self.prompt_attempts[attempt] = time.monotonic()
             try:
                 reply = self._call(operation="composer_dismiss" if dismiss else "composer_invoke", hwnd=hwnd,
                                    identity=snapshot["identity"], context=snapshot["context"],
@@ -383,10 +415,19 @@ class ConversationReader:
             finally:
                 self.cached = None
             if not reply.get("ok"):
+                if prompt and reply.get('reason') in ('options changed', 'option changed', 'option unavailable'):
+                    self.prompt_attempts.pop(attempt, None)
                 raise TargetError("电脑选项或当前对话已变化，请刷新后重新选择")
             if refresh:
-                return {"escape": bool(dismiss and reply.get("escape")),
-                        **({"options": self._remember_options(hwnd, reply["next"])} if isinstance(reply.get("next"), dict) else {})}
+                updated = reply.get('next')
+                result = {"escape": bool(dismiss and reply.get("escape"))}
+                if isinstance(updated, dict):
+                    if prompt and updated.get('identity') != snapshot['identity']:
+                        raise TargetError("电脑对话已变化，请重新查看。")
+                    result['options'] = self._remember_options(hwnd, updated)
+                    if attempt != key and result['options']['key'] != key:
+                        self.prompt_attempts.pop(attempt, None)
+                return result
             return bool(dismiss and reply.get("escape"))
 
     def composer_surface(self, hwnd: int, key: str, target: str, consume: bool = False) -> dict:
@@ -440,20 +481,38 @@ class ConversationReader:
 
     def _navigation(self, hwnd: int) -> tuple[dict, dict]:
         raw = self._call(operation="navigation", hwnd=hwnd)
+        raw = self._merge_navigation(raw)
+        return self._remember_navigation(hwnd, raw), raw
+
+    def _merge_navigation(self, raw: dict) -> dict:
         selected=[row.get('title','') for row in raw.get('items',[]) if row.get('kind')=='thread' and row.get('selected')]
         local=self.history.catalog(selected[0]) if len(selected)==1 and self.history.resolve(selected[0]) else None
         if local:
             local_titles={row['title'] for row in local if row['kind']=='thread'}
             # Visible native entries remain usable, including ChatGPT cloud chats.
             for row in raw.get('items',[]):
-                if row.get('kind')=='thread' and row.get('title') not in local_titles:
-                    local.append(row)
+                if row.get('kind')=='thread':
+                    if row.get('title') not in local_titles:
+                        local.append(row)
+                    elif row.get('pending') in ('input','approval'):
+                        matches=[item for item in local if item['kind']=='thread' and
+                                 (item['title'],item['projectTitle'])==(row.get('title'),row.get('projectTitle',''))]
+                        if len(matches)==1:matches[0]['pending']=row['pending']
+                        else:local.append(row)
+                elif row.get('kind')=='project' and row.get('pending') in ('input','approval'):
+                    # Retain the real project button so the phone can reveal
+                    # the pending children of a collapsed desktop group.
+                    matches=[item for item in local if item['kind']=='project' and item['title']==row.get('title')]
+                    if len(matches)==1:
+                        matches[0].update(id=row['id'],nativeProject=row.get('project',''),
+                                          pending=row['pending'],expanded=bool(row.get('expanded')))
+                    else:local.append(row)
             projects={row['title']:row['project'] for row in local if row['kind']=='project'}
             for row in raw.get('items',[]):
                 if row.get('kind')=='new':
                     row=dict(row);row['nativeProject']=row.get('project','');row['project']=projects.get(row.get('projectTitle'),row.get('project',''));local.append(row)
             raw={**raw,'items':local,'complete':True}
-        return self._remember_navigation(hwnd, raw), raw
+        return raw
 
     def _remember_navigation(self, hwnd: int, raw: dict) -> dict:
         if not raw.get("ok"):
@@ -466,6 +525,7 @@ class ConversationReader:
             if "expanded" in item:
                 entry["expanded"] = bool(item["expanded"])
             if 'selected' in item:entry['selected']=bool(item['selected'])
+            if item.get('pending') in ('input','approval'):entry['pending']=item['pending']
             if isinstance(item.get('threadId'),str) and UUID.fullmatch(item['threadId']):entry['threadId']=item['threadId']
             if 'nativeProject' in item:entry['nativeProject']=item['nativeProject']
             items.append(entry)
@@ -533,7 +593,7 @@ class ConversationReader:
                     if after.get("identity") != before.get("identity"):
                         break
             if refresh:
-                return {'kind':item['kind'],'unchanged':bool(reply.get('unchanged')), **({'navigation':self._remember_navigation(hwnd,reply['next'])} if isinstance(reply.get('next'),dict) else {})}
+                return {'kind':item['kind'],'unchanged':bool(reply.get('unchanged')), **({'navigation':self._remember_navigation(hwnd,self._merge_navigation(reply['next']))} if isinstance(reply.get('next'),dict) else {})}
             return item["kind"]
 
     @staticmethod
@@ -603,7 +663,8 @@ class ConversationReader:
         if self.accessible_hwnd != request["hwnd"]:
             self._request_accessibility(request["hwnd"])
             self.accessible_hwnd = request["hwnd"]
-        if self.process is None or self.process.poll() is not None:
+        starting = self.process is None or self.process.poll() is not None
+        if starting:
             self._stop()
             self._start()
         self.sequence += 1
@@ -611,7 +672,9 @@ class ConversationReader:
         try:
             self.process.stdin.write(json.dumps(request, ensure_ascii=True) + "\n")
             self.process.stdin.flush()
-            reply = self.replies.get(timeout=5)
+            # Loading Windows PowerShell and UIAutomation happens only once.
+            # Keep that startup budget separate from subsequent native actions.
+            reply = self.replies.get(timeout=10 if starting or request['operation'] == 'read' else 5)
             if not reply or reply.get("request_id") != self.sequence:
                 raise ValueError("reader stopped")
             return reply
@@ -634,6 +697,13 @@ class ConversationReader:
                 result['queue']=self._remember_queue(hwnd,observed['queue'])
             if isinstance(observed.get('prompt'), dict):
                 result['prompt'] = self._remember_options(hwnd, observed['prompt'])
+            result['pendingRequests'] = [
+                {'id': row['id'], 'title': row['title'][:240], 'kind': row['kind'], 'pending': row['pending']}
+                for row in observed.get('pendingRequests', [])[:40]
+                if (isinstance(row, dict) and isinstance(row.get('id'), str) and isinstance(row.get('title'), str)
+                    and row.get('kind') in ('thread','project') and row.get('pending') in ('input','approval')
+                    and not row.get('selected'))
+            ]
             root_options = result.get('composer', {}).get('options')
             if isinstance(root_options, dict):
                 result['composer'] = {**result['composer'], 'options': self._remember_options(hwnd, root_options)}

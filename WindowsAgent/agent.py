@@ -482,7 +482,8 @@ class MockBackend:
             self.last_capture_ms = captured_ms
             return {"jpeg": data.getvalue(), "epoch": self.tracker.epoch, "mode": self.mode,
                     "captured_ms": captured_ms, "method": "mock",
-                    "width": img.width, "height": img.height}
+                    "width": img.width, "height": img.height,
+                    "pointer_target": (self.window_id, (0, 0, img.width, img.height)) if self.mode == "window" else None}
 
     def capture(self) -> bytes:
         return self.capture_meta()["jpeg"]
@@ -593,7 +594,7 @@ class MockBackend:
                 if command.get("submit"):
                     self.last_action += " + " + ("BUTTON" if submit_method == "button" else submit_method)
                     return {'submission':{'state':'queued' if self.generating else 'sent'}}
-            elif kind in ("tap", "right"):
+            elif kind in ("tap", "right", "window-pointer"):
                 try:
                     fx = float(command["x"])
                     fy = float(command["y"])
@@ -601,7 +602,8 @@ class MockBackend:
                     raise InputError("点击坐标无效")
                 if not (0 <= fx <= 1 and 0 <= fy <= 1):
                     raise InputError("坐标必须在 0~1 之间")
-                self.last_action = f"{kind}:{fx},{fy}"
+                operation = command['operation'] if kind == 'window-pointer' else kind
+                self.last_action = f"{operation}:{fx},{fy}"
             elif kind == "scroll":
                 try:
                     delta = int(command.get("delta", 0))
@@ -643,6 +645,7 @@ class FrameHub:
         # if the Agent restarts while a phone still remembers its last id.
         self.frame_counter = int(time.time() * 1000)
         self.latest: dict[str, Any] | None = None
+        self.pointer_frames: dict[int, tuple] = {}
         self.error: str | None = None
         self.last_poll = 0.0
         self.action_sequence = 0
@@ -676,6 +679,10 @@ class FrameHub:
             self.frame_counter += 1
             frame = {"id": self.frame_counter, **meta, "published_at": time.monotonic()}
             self.latest = frame
+            if frame.get('pointer_target') and frame.get('method') in ('printwindow', 'mock') and frame.get('mode') == 'window':
+                self.pointer_frames[frame['id']] = (frame['epoch'], frame['published_at'], frame['pointer_target'])
+                while len(self.pointer_frames) > 64:
+                    self.pointer_frames.pop(next(iter(self.pointer_frames)))
             self.error = None
             self.cond.notify_all()
             return frame
@@ -1076,12 +1083,21 @@ class AgentState:
 
     def _perform_active_action(self, data: dict[str, Any], token: str = '') -> dict[str, Any]:
         self.check_public_action(data)
-        if data.get("kind") not in ("tap", "right", "scroll", "text", "key", "message", "navigate", "draft", "composer", "queue"):
+        if data.get("kind") not in ("tap", "right", "scroll", "text", "key", "message", "navigate", "draft", "composer", "queue", "window-pointer"):
             raise RemoteError("未授权的操作类型")
         if type(data.get("epoch")) is not int:
             raise RemoteError("缺少有效窗口版本")
         data=dict(data);data.pop('attachmentsOnly',None)
         started = time.monotonic()
+        if data['kind'] == 'window-pointer':
+            if (type(data.get('frameId')) is not int or data.get('operation') not in ('left', 'right') or
+                    any(type(data.get(axis)) not in (int, float) or not 0 <= data[axis] <= 1 for axis in ('x', 'y'))):
+                raise InputError('鼠标操作参数无效。')
+            with self.hub.cond:
+                frame = self.hub.pointer_frames.get(data['frameId'])
+            if not frame or frame[0] != data['epoch'] or started - frame[1] > 3:
+                raise TargetError('画面已更新，请在当前画面重试。', 'pointer_frame_changed')
+            data['pointer_target'] = frame[2]
         if data.get('attachmentIds'):
             if data.get('kind')!='message' or data.get('submit') is not True:raise UploadError('附件只能随当前消息发送')
             with self.uploads.lock:
@@ -1092,7 +1108,7 @@ class AgentState:
                 outcome = self.backend.action(data)
                 for item in attached:item['state']='submitted'
         else:
-            if data.get('kind')=='queue':
+            if data.get('kind')=='queue' and self.deliveries.needs_observation():
                 self.deliveries.observe(self.backend.read_conversation())
             outcome = self.backend.action(data)
         with self.hub.cond:
@@ -1561,7 +1577,7 @@ def make_handler(state: AgentState):
                         if packet is not None:
                             flow.sent(last_id, len(packet))
                         if packet is None and time.monotonic() - last_sent >= 1.0:
-                            packet = FrameEncoder.pack({"kind": "idle"})
+                            packet = FrameEncoder.pack({"kind": "idle", "frameId": last_id, "epoch": result["epoch"]})
                     if packet is not None:
                         if not state.tokens.valid(self.token()):
                             break

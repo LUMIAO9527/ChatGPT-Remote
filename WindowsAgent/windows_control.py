@@ -57,6 +57,9 @@ MOUSEEVENTF_LEFTUP = 0x0004
 MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_WHEEL = 0x0800
+GA_ROOT = 2
+WM_MOUSEMOVE = 0x0200
+WINDOW_BUTTONS = {'left': (0x0201, 0x0202, 1), 'right': (0x0204, 0x0205, 2)}
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 
@@ -325,6 +328,16 @@ class WindowsBackend:
         u32.GetSystemMetrics.restype = ctypes.c_int
         u32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
         u32.SetCursorPos.restype = wintypes.BOOL
+        u32.WindowFromPoint.argtypes = [wintypes.POINT]
+        u32.WindowFromPoint.restype = wintypes.HWND
+        u32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        u32.GetAncestor.restype = wintypes.HWND
+        u32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        u32.GetClientRect.restype = wintypes.BOOL
+        u32.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+        u32.ScreenToClient.restype = wintypes.BOOL
+        u32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        u32.PostMessageW.restype = wintypes.BOOL
         u32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int]
         u32.SendInput.restype = wintypes.UINT
         u32.GetDC.argtypes = [wintypes.HWND]
@@ -597,6 +610,7 @@ class WindowsBackend:
             # Bind provenance to this image. A concurrent capture may change
             # last_capture_method before this image is encoded or published.
             image.info["rm_capture_method"] = method
+            image.info["rm_capture_rect"] = (vx, vy, crop_w, crop_h)
             return image
         finally:
             if mem_dc:
@@ -648,7 +662,9 @@ class WindowsBackend:
             self.last_capture_ms = captured_ms
             return {"jpeg": out.getvalue(), "image": image, "epoch": epoch, "mode": mode,
                     "captured_ms": captured_ms, "method": capture_method,
-                    "width": image.width, "height": image.height}
+                    "width": image.width, "height": image.height,
+                    "pointer_target": (target, image.info["rm_capture_rect"])
+                    if capture_method == "printwindow" and "rm_capture_rect" in image.info else None}
 
     def capture(self) -> bytes:  # compatibility helper
         return self.capture_meta()["jpeg"]
@@ -891,6 +907,32 @@ class WindowsBackend:
         if int(self.u32.GetForegroundWindow() or 0) != hwnd:
             raise TargetError("Windows 拒绝切换窗口焦点；请先在电脑上点一下 ChatGPT 再操作")
 
+    def _post_window_pointer(self, hwnd: int, rect: tuple, command: dict) -> None:
+        if self.mode != 'window' or command.get('pointer_target') != (hwnd, rect):
+            raise TargetError('窗口位置已变化，请等画面更新后再点。', 'pointer_frame_changed')
+        u32 = self.u32
+        pid = wintypes.DWORD()
+        u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if ntpath.basename(self._process_path(pid.value)).casefold() not in _APP_EXES:
+            raise TargetError('请先选择 ChatGPT 或 Codex 桌面窗口。', 'pointer_window_required')
+        x, y, width, height = rect
+        point = wintypes.POINT(x + min(width-1, int(command['x']*width)),
+                              y + min(height-1, int(command['y']*height)))
+        hit = u32.WindowFromPoint(point)
+        if not hit or int(u32.GetAncestor(hit, GA_ROOT) or 0) != hwnd:
+            raise TargetError('点击位置被其他窗口挡住，请把 ChatGPT 放到前面。', 'pointer_window_covered')
+        client = wintypes.RECT()
+        if (not u32.ScreenToClient(hwnd, ctypes.byref(point)) or not u32.GetClientRect(hwnd, ctypes.byref(client))
+                or not (0 <= point.x < min(client.right, 32768) and 0 <= point.y < min(client.bottom, 32768))):
+            raise TargetError('请点击窗口内容区域。', 'pointer_outside_client')
+        packed = point.x | (point.y << 16)
+        down, up, button = WINDOW_BUTTONS[command['operation']]
+        # Target a specific window procedure. This never injects a desktop
+        # mouse event or moves the physical cursor to a remote coordinate.
+        for message, flags in ((WM_MOUSEMOVE, 0), (down, button), (up, 0)):
+            if not u32.PostMessageW(hwnd, message, flags, packed):
+                raise TargetError('Windows 未能接收此次点击，请查看电脑窗口。', 'pointer_unconfirmed')
+
     def action(self, command: dict[str, Any]) -> dict | None:
         kind = command.get("kind")
         if kind == 'queue' and (not isinstance(command.get('queueKey'), str) or not command['queueKey']
@@ -931,9 +973,14 @@ class WindowsBackend:
             x, y, w, h = self._rect()
             if command.get("epoch") != self.tracker.epoch:
                 raise TargetError("目标窗口已经变化，已阻止旧指令；请刷新画面后重试")
+            if kind == 'window-pointer':
+                self._post_window_pointer(self.tracker.current_id, (x, y, w, h), command)
+                return
             if kind == 'queue':
                 if self.mode != 'window':
                     raise TargetError('请返回窗口模式后管理队列')
+                if command['targetId'].endswith('|edit'):
+                    self._focus(self.tracker.current_id)
                 result = self._reader().queue_action(self.tracker.current_id, command['queueKey'], command['targetId'])
                 for field in ('queue', 'queueDraft'):
                     if field in result: result[field]['epoch'] = self.tracker.epoch

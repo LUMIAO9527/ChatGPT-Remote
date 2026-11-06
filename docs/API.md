@@ -1,4 +1,4 @@
-# ChatGPT Remote 1.0.3 Web/Agent API 契约
+# ChatGPT Remote 1.0.4 Web/Agent API 契约
 
 本文件是 Windows Agent（agent.py）与手机页面（web/index.html）之间的接口契约。
 后端按本契约实现；前端只依赖本契约。除本文件列出的字段外，前端不得依赖其他内部结构。
@@ -38,7 +38,7 @@
 ### GET /api/health
 无需配对令牌。返回：
 ```json
-{"ok": true, "name": "ChatGPT Remote", "version": "1.0.3", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
+{"ok": true, "name": "ChatGPT Remote", "version": "1.0.4", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
 ```
 启用访问密钥时仍需有效 Cookie 或 `X-Access-Key`。
 `transport` 为当前进程的非持久化传输诊断；每条活动连接仅含活动控制连接数、未确认帧数/字节数、自适应确认上限、已发送字节数和服务器发送画面至收到绘制确认的往返耗时，不包含图片、窗口标题、设备名或令牌。
@@ -54,7 +54,7 @@ body：`{"pin": "123456", "name": "手机"}`
 ```json
 {
   "ok": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "computerName": "Example-PC",
   "instance": "<本次服务启动编号>",
   "mock": true,
@@ -96,9 +96,10 @@ body：`{"pin": "123456", "name": "手机"}`
 
 ### POST /api/action
 认证。body 为以下之一（必须带当前 `epoch`）：
-- `{"kind":"tap","x":0.42,"y":0.31,"epoch":N}` 左键单击，x/y 为 0~1 归一化坐标
+- `{"kind":"window-pointer","operation":"left","x":0.42,"y":0.31,"frameId":123,"epoch":N}` 点击所选 ChatGPT/Codex 桌面窗口。operation 可为 left 或 right。frameId 必须对应最近 3 秒内的窗口抓取，服务端再次核对窗口、抓取位置、客户区和遮挡。鼠标消息只送往已选窗口。
+- `{"kind":"tap","x":0.42,"y":0.31,"epoch":N}` 局域网原始左键单击，x/y 为 0~1 归一化坐标
 - `{"kind":"right","x":0.42,"y":0.31,"epoch":N}` 右键单击
-- `{"kind":"scroll","delta":-240,"epoch":N}` 负数向上、正数向下
+- `{"kind":"scroll","delta":-240,"epoch":N}` 负数向下、正数向上
 - `{"kind":"text","text":"你好","submit":true,"submitMethod":"button","epoch":N}` Unicode 文本，≤6000 字符；`submit` 可省略，默认 false。`submitMethod` 可省略，默认 `button`，也允许 `CTRL+ENTER`、`ENTER`。自动按钮提交要求窗口模式，定位空输入框后填入文字；显式快捷键模式向当前输入焦点注入文字和提交键。
 - `{"kind":"message","text":"你好","submit":true,"submitMethod":"button","conversationKey":"...","epoch":N}` 定位当前对话输入框，发送前核对对话标识、输入焦点和编辑器内容。电脑输入框为空时填入手机文字，已有完全一致的文字时可直接提交。不同草稿保留并返回 `draft_exists`。按钮方式在提交前重新检查完整文字，等待唯一可用的发送或排队按钮并调用一次。回复中优先原生按钮，其他时候快捷键方式使用所选 Enter 或 Ctrl+Enter。
 - `{"kind":"key","key":"CTRL+ENTER","epoch":N}` 允许：ENTER/CTRL+ENTER/ESC/TAB/BACKSPACE/CTRL+A/CTRL+C/CTRL+V
@@ -257,7 +258,11 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 项目目录可含 `complete:true`，表示当前返回目录中的项目已完成本地读取；空项目可直接显示空状态。缓存项目的展开不受发送或后台目录读取阻塞；同一窗口的状态版本改变时保留缓存并校对目录，实际切换对话使用校对后的目标。
 
-`composer.options` 可包含与 `/api/composer` 相同的已观察根入口（不含 `epoch` 时使用外层事件的 `epoch`）。手机可直接显示，在实际选择时仍验证原生目标。入口缓存最多 120 秒；项目目录在当前手机会话中复用，窗口或账号变化时失效。面板打开期间暂停正文和图片流，关闭后恢复。
+`composer.options` 可包含与 `/api/composer` 相同的已观察根入口（不含 `epoch` 时使用外层事件的 `epoch`）。手机可直接显示，在实际选择时仍验证原生目标。入口缓存最多 120 秒；项目目录在当前手机会话中复用，窗口或账号变化时失效。普通弹层打开时保留正文同步。窗口画面使用同一底部弹层并按需启动图片流，关闭后恢复正文流。模型选项可在同一对话内复用 60 秒，实际应用前重新核对原生选项。
+
+桌面问卷的 prompt 可含 questionnaire=true。单选、复选和操作按钮分别标为 prompt-radio、prompt-check、prompt-step，selected 和 enabled 来自原生回读。重复的未确认提交保持受限，已经回读的改选和逐题操作可继续。pendingRequests 提供电脑侧栏已暴露的其他 thread/project 的 input/approval 状态，导航条目也保留 pending 字段。
+
+模型、档位、快速模式的预览均在手机内存中进行，点「应用」后按模型、档位、快速模式顺序调用并回读。快速模式生效后显示模型名左侧闪电。发送状态在输入框上方以三个点呈现，连接、异常及其他对话待处理使用统一通知。
 
 ### GET /api/conversation/stream
 
@@ -271,9 +276,9 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 操作通过现有 /api/action 或控制连接提交 {"kind":"queue","queueKey":"...","targetId":"...","epoch":N}。服务核对目录时效、窗口、原生对话身份、条目全文、控件身份及启用状态，消费操作引用后只调用一次。删除和引导需要回读条目减少；继续和停止需要回读原生状态。结果未确认返回 queue_pending，客户端只刷新和查看，不重复操作。
 
-编辑调用原生队列菜单，返回真实输入框的 queueDraft（与草稿接口相同字段），原附件由桌面原生编辑状态持有。手机已有输入或附件时先保留当前内容；电脑已有草稿时拒绝进入队列编辑。后续发送带返回的草稿版本，复用原有受保护的草稿替换与原生提交。此接口不写原始对话或队列数据库。
+编辑经原生菜单的键盘打开行为定位「编辑消息」，等待队列项移除和输入框完整回读后返回 queueDraft（与草稿接口相同字段），原附件由桌面原生编辑状态持有。手机已有输入或附件时先保留当前内容；电脑已有草稿时拒绝进入队列编辑。后续发送带返回的草稿版本，复用原有受保护的草稿替换与原生提交。此接口不写原始对话或队列数据库。编辑菜单未打开时返回 queue_edit_not_started，允许用户重新选择；已经发出编辑而回读未完成时返回 queue_pending，只做读取核验。
 
-公开 commentary 消息作为独立过程说明保留；公开思考摘要和活动继续折叠。内部子任务按原始 source 过滤，当前窗口提供的原生对话入口继续保留。同一对话的完整快照按消息编号对齐，保留阅读位置。
+同轮的公开 commentary、公开思考摘要、搜索和工具动作按原生记录顺序放入一条 phase="activity" 消息。工具动作只含通用标签，kind="operation" 和图标名称。原始命令、参数和输出留在电脑。最终回答开始时 work.hasAnswer=true，前端自动折叠过程。内部子任务按原始 source 过滤，当前窗口提供的原生对话入口继续保留。同一对话的完整快照按消息编号对齐，保留阅读位置。
 
 ## 2. 前端必须实现的行为
 

@@ -56,21 +56,22 @@ class HistoryTests(unittest.TestCase):
         self.add('r','reasoning',summary=['公开摘要'],content=['PRIVATE_ANALYSIS'])
         self.add('hidden','agentMessage',phase='analysis',text='PRIVATE_ANALYSIS')
         self.add('tool','commandExecution',command='PRIVATE_COMMAND',aggregatedOutput='PRIVATE_OUTPUT')
+        self.add('p2','agentMessage',phase='commentary',text='来源已找到，正在核对')
         self.add('web','webSearch',query='公开查询')
         self.add('a','agentMessage',phase='final_answer',text='## 结果\n\n**重点**与[来源](https://example.com)。\n\n- 条目\n\n```py\nprint(1)\n```')
         with fixture_db(self.home/'queue_1.sqlite') as db:
             db.execute('INSERT INTO queued_items VALUES(?,?,?,?)',('queued',THREAD,json.dumps({'input':[{'type':'text','text':'稍后发送'}]}),1))
         result=self.reader.snapshot(self.observe)
         self.assertEqual(result['source'],'local-history');self.assertFalse(result['loadedOnly'])
-        user,activity,commentary,answer=result['messages']
-        self.assertEqual(commentary['phase'],'commentary')
-        self.assertEqual(commentary['text'],'正在查找来源')
+        user,activity,answer=result['messages']
         self.assertEqual(user['role'],'user');self.assertEqual(user['text'],'使用 ChatGPT Work')
         self.assertEqual(user['attachments'][0]['kind'],'image')
         self.assertEqual(activity['phase'],'activity');self.assertEqual(activity['work'],{'status':'worked','durationMs':65000})
         self.assertEqual({m['turnId'] for m in result['messages']},{'turn'})
+        self.assertEqual([(block['channel'],block['text']) for block in activity['blocks']],[
+            ('commentary','正在查找来源'),('reasoning','公开摘要'),('activity','运行了命令'),
+            ('commentary','来源已找到，正在核对'),('activity','搜索网页 · 公开查询')])
         self.assertEqual(activity['blocks'][-1]['kind'],'search')
-        self.assertIn('公开摘要',activity['text']);self.assertIn('公开查询',activity['text'])
         self.assertEqual([b['kind'] for b in answer['blocks']],['heading','paragraph','list','code'])
         self.assertEqual(answer['blocks'][1]['runs'][0],{'text':'重点','strong':True})
         self.assertEqual(result['queued'],[{'id':'queued','text':'稍后发送'}])
@@ -109,11 +110,15 @@ class HistoryTests(unittest.TestCase):
     def test_active_turn_has_no_completed_answer_or_elapsed_time(self):
         with fixture_db(self.home/'thread_history_1.sqlite') as db:db.execute("UPDATE thread_turns SET status='inProgress',duration_ms=NULL")
         self.add('p','agentMessage',phase='commentary',text='处理中')
+        self.add('t','commandExecution',status='inProgress',command='PRIVATE_COMMAND')
+        running=self.reader.snapshot(self.observe)['messages'][0]
+        self.assertEqual(running['work'],{'status':'working'})
+        self.assertEqual(running['blocks'][-1]['text'],'运行命令中')
         self.add('a','agentMessage',phase='final_answer',text='尚未结束')
         result=self.reader.snapshot(self.observe)
         self.assertTrue(result['generating']);self.assertTrue(all(not m['complete'] for m in result['messages']))
         self.assertNotIn('duration',result['messages'][0])
-        self.assertEqual(result['messages'][0]['work'],{'status':'working'})
+        self.assertEqual(result['messages'][0]['work'],{'status':'working','hasAnswer':True})
 
     def test_native_work_status_does_not_become_user_or_answer_text(self):
         self.add('u','userMessage',content=[{'type':'text','text':'已处理 20秒'}])

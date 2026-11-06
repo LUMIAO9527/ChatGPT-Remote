@@ -19,7 +19,7 @@ HTML=r'''<!doctype html><meta charset="utf-8"><title>TITLE</title>
 <main class="thread-scroll-container"><h5 class="sr-only">你说：</h5><div class="bg-user-message"><p>独立测试</p></div></main>
 <div class="composer-layout">
 <div id="pause"><span>由于你中断了当前响应，队列已暂停</span><button onclick="pause.hidden=true;stopButton.hidden=false">继续</button></div>
-<div id="queue"></div><div id="menu" role="menu" hidden><button role="menuitem" onclick="beginEdit()">编辑消息</button></div>
+<div id="queue"></div><div id="menu" role="menu" hidden style="position:fixed;background:white"><button role="menuitem" onclick="beginEdit()">编辑消息</button></div>
 <textarea id="prompt-textarea" aria-label="使用 ChatGPT Work" placeholder="使用 ChatGPT Work"></textarea>
 <button id="send" disabled>排队</button><button id="stopButton" hidden onclick="stopButton.hidden=true;pause.hidden=false">停止</button>
 </div>
@@ -33,12 +33,21 @@ function paint(){
   function button(name,action){let b=document.createElement('button');b.setAttribute('aria-label',name);b.textContent=name;b.onclick=action;row.appendChild(b);}
   button('引导',()=>{rows=rows.filter(r=>r!==item);paint();});
   button('删除排队消息',()=>{rows=rows.filter(r=>r!==item);paint();});
-  button('排队消息操作',()=>{selected=item.id;menu.hidden=false;});
+  button('排队消息操作',()=>{});
+  const more=row.lastChild;more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded','false');
+  more.onkeydown=event=>{
+    if(event.key!=='ArrowDown')return;
+    event.preventDefault();selected=item.id;
+    const anchor=more.getBoundingClientRect();
+    menu.style.left=anchor.left+'px';menu.style.top=anchor.bottom+'px';
+    setTimeout(()=>{more.setAttribute('aria-expanded','true');menu.hidden=false;},180);
+  };
   queue.appendChild(row);
  });
 }
-function beginEdit(){let item=rows.find(r=>r.id===selected);editing=item.id;document.getElementById('prompt-textarea').value=item.text;
- rows=rows.filter(r=>r!==item);menu.hidden=true;send.disabled=false;paint();}
+function beginEdit(){let item=rows.find(r=>r.id===selected);menu.hidden=true;setTimeout(()=>{
+ editing=item.id;document.getElementById('prompt-textarea').value=item.text;
+ rows=rows.filter(r=>r!==item);send.disabled=false;paint();},180);}
 document.getElementById('prompt-textarea').addEventListener('input',()=>{send.disabled=!document.getElementById('prompt-textarea').value.trim();});
 send.onclick=()=>{let input=document.getElementById('prompt-textarea');rows.unshift({id:editing||'new',text:input.value});editing='';input.value='';send.disabled=true;paint();};
 paint();
@@ -54,8 +63,9 @@ class NativeQueueTests(unittest.TestCase):
         cls.title='Remote Queue Fixture '+str(os.getpid())
         page=cls.work/'fixture.html';page.write_text(HTML.replace('TITLE',cls.title),encoding='utf8')
         edge=Path(os.environ.get('ProgramFiles(x86)',r'C:\Program Files (x86)'))/'Microsoft/Edge/Application/msedge.exe'
-        cls.process=subprocess.Popen([str(edge),'--user-data-dir='+str(cls.work/'profile'),'--no-first-run',
-            '--no-default-browser-check','--force-renderer-accessibility','--app='+page.as_uri(),'--window-size=900,760'],
+        cls.process=subprocess.Popen([str(edge),'--user-data-dir='+str(cls.work/('profile-'+str(os.getpid()))),'--no-first-run',
+            '--no-default-browser-check','--force-renderer-accessibility=complete','--enable-features=UiaProvider',
+            '--app='+page.as_uri(),'--window-size=900,760'],
             env={**os.environ,'TEMP':str(cls.work),'TMP':str(cls.work)},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         cls.backend=WindowsBackend([cls.title])
         facts={}

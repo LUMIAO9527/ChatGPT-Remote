@@ -16,6 +16,7 @@ const source = script.replace(end, `
     renderQueued, renderMessageBody, startMedia, uploadPhoneFiles, beginPhoneSend, observePhoneSend, awaitPhoneSend, finishPhoneSend, resumePhoneSend,
     showConnectionHome, openRemoteView, returnToComputer, showPairEntry, restorePhonePreferences,
     startControl, stopLive, showOffline, resumeConnection, keepUnconfirmedDraft, openDesktopPrompt,
+    openScreenView, bindScreenGestures, stageModelChoice, applyModelDraft, openPendingRequests,
     openQueue, refreshQueue, renderQueue, invokeQueue, invokeComposerAction };
 })();`);
 
@@ -34,7 +35,7 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     const node = {
     tagName: tag.toUpperCase(),
     textContent: '', value: '', hidden: false, disabled: false, width: 300, height: 150,
-    children: [], parentNode: null, scrollHeight: 500, scrollTop: 0, clientHeight: 400,
+    children: [], dataset: {}, parentNode: null, scrollHeight: 500, scrollTop: 0, clientHeight: 400,
     classList: { add() {}, remove() {}, toggle() {} },
     style: { setProperty() {}, removeProperty() {} },
     setAttribute(name, value) { this[name] = value; },
@@ -51,7 +52,10 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
       if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1);
       this.parentNode = null;
     },
-    addEventListener() {}, focus() {},
+    listeners: {},
+    addEventListener(name, handler) { (this.listeners[name]??=[]).push(handler); },
+    fire(name,event) { (this.listeners[name]||[]).forEach(handler=>handler(event)); },
+    focus() {},
     getContext: () => ({ clearRect() {}, drawImage: (...args) => draws.push(args) })
     };
     let content = '';
@@ -1034,7 +1038,7 @@ test('one model sheet flattens the native model branch, strength positions and f
       ...Array.from({length:6},(_,i)=>({id:'strength-'+(i+1),title:String(i+1),kind:'effort-step',
         label:i+1===level?model+' Max':String(i+1),selected:i+1===level,level:i+1,currentLevel:level,levelCount:6}))
     ];
-    else if(stage==='models')items=['GPT Fixture A','GPT Fixture B'].map((title,i)=>({id:'m-'+i,title,kind:'option',selected:title===model}));
+    else if(stage==='models')items=['GPT Fixture A','GPT Fixture B','默认模型'].map((title,i)=>({id:'m-'+i,title,kind:'option',selected:title===model}));
     else items=[{id:'model',title:model,kind:'model'}];
     return optionsEvent({key:'native-'+revision,scope:'fixture-conversation',category:menu?'model':'',menu,
       items:items.map(item=>({enabled:true,selected:false,...item}))});
@@ -1066,19 +1070,31 @@ test('one model sheet flattens the native model branch, strength positions and f
   assert.equal(fast.textContent,'');
   assert.equal(page.elements.get('optionsResetBtn').hidden,false);
   assert.doesNotMatch(panel.textContent,/选择模型/);
+  assert.doesNotMatch(panel.textContent,/默认模型/);
   assert.equal(page.elements.get('optionsBackBtn').hidden,true);
   const choice=(section,id)=>page.hooks.state.modelChoices.find(row=>row.section===section && row.item.id===id);
-  await page.hooks.applyModelChoice(choice('quick','quick'));
+  const openedActions=actions.length;
+  page.hooks.stageModelChoice(choice('quick','quick'));
+  page.hooks.stageModelChoice(choice('effort','strength-3'));
+  page.hooks.stageModelChoice(choice('model','m-1'));
+  assert.equal(actions.length,openedActions);
+  assert.equal(page.elements.get('optionsResetBtn').textContent,'应用');
+  assert.equal(page.elements.get('modelFastIcon').hidden,true);
+  await page.hooks.applyModelDraft();
   assert.equal(choice('quick','quick').item.selected,true);
-  await page.hooks.applyModelChoice(choice('effort','strength-3'));
   assert.equal(choice('effort','strength-3').item.selected,true);
-  await page.hooks.applyModelChoice(choice('model','m-1'));
   assert.equal(choice('model','m-1').item.selected,true);
   assert.equal(actions.filter(action=>action.targetId==='quick').length,1);
   assert.equal(actions.filter(action=>action.targetId==='strength-3').length,1);
   assert.equal(actions.filter(action=>action.targetId==='m-1').length,1);
   assert.equal(page.hooks.state.panel,'options');
+  assert.equal(page.elements.get('modelFastIcon').hidden,false);
   assert.equal(page.elements.get('message').value,'保留输入');
+  page.hooks.setPanel('');await new Promise(resolve=>setImmediate(resolve));
+  const closedActions=actions.length;
+  await page.hooks.openModelPicker();
+  assert.equal(actions.length,closedActions);
+  assert.equal(choice('quick','quick').item.selected,true);
 });
 
 test('bitmap frames release their image and leave unrelated controls intact',async()=>{
@@ -1194,6 +1210,67 @@ test('a sheet keeps text syncing and pauses an active picture reader',()=>{
   Object.assign(screenPage.hooks.state,{view:'screen',mediaStarted:true,frameAbort:frame});
   screenPage.hooks.setPanel('settings');
   assert.equal(frame.signal.aborted,true);
+});
+
+test('one finger sends one left click, two fingers send one right click, and moving only points',async()=>{
+  const requests=[];
+  const page=makePage(async(path,options)=>{
+    assert.equal(path,'/api/action');
+    requests.push(JSON.parse(options.body));
+    return response({ok:true,epoch:7});
+  });
+  const {hooks,elements}=page;
+  Object.assign(hooks.state,{status:'ready',capabilities:{windowPointer:true,windowView:true,rawInput:false},
+    windows:[{id:1,title:'ChatGPT',exe:'ChatGPT.exe',selected:true}]});
+  hooks.openScreenView();
+  assert.equal(hooks.state.panel,'screen');
+  assert.equal(elements.get('screenCard').hidden,false);
+  Object.assign(hooks.state,{frameW:1000,frameH:600,displayedEpoch:7,displayedFrameId:55,frameSeen:true});
+  const image=elements.get('screen');
+  image.getBoundingClientRect=()=>({left:10,top:40,width:300,height:240});
+  elements.get('screenShell').getBoundingClientRect=image.getBoundingClientRect;
+  hooks.bindScreenGestures();
+  const finger=(event,pointerId,clientX,clientY)=>image.fire(event,{pointerId,clientX,clientY,button:0,pointerType:'touch'});
+  finger('pointerdown',1,160,160);finger('pointerup',1,160,160);
+  finger('pointerdown',2,160,160);finger('pointerdown',3,180,170);
+  finger('pointerup',3,180,170);finger('pointerup',2,160,160);
+  finger('pointerdown',4,160,160);finger('pointermove',4,200,160);finger('pointerup',4,200,160);
+  finger('pointerdown',5,160,160);finger('pointercancel',5,160,160);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(requests,['left','right'].map(operation=>({kind:'window-pointer',operation,epoch:7,frameId:55,x:.5,y:.5})));
+  assert.equal(elements.get('screenCursor').hidden,false);
+  hooks.setPanel('');assert.equal(hooks.state.view,'chat');assert.equal(elements.get('screenCard').hidden,true);
+});
+
+test('message progress stays in the composer while other-chat attention uses the notice',()=>{
+  const page=makePage(),{hooks,elements}=page;
+  hooks.state.pending.sendText=true;
+  hooks.applyConversationEvent(chatEvent({pendingRequests:[{id:'question',pending:'input',kind:'thread',title:'另一条对话'}]}));
+  assert.equal(elements.get('sendProgress').hidden,false);
+  assert.equal(elements.get('sendProgressSpinner').hidden,false);
+  assert.equal(elements.get('keepSendDraftBtn').hidden,true);
+  assert.equal(elements.get('noticeText').textContent,'其他对话有待处理请求');
+  assert.equal(elements.get('noticeOpenBtn').hidden,false);
+  assert.equal(elements.get('desktopPromptBtn').hidden,true);
+  hooks.state.sending={state:'confirming',previousAgent:true};
+  hooks.renderControls();
+  assert.equal(elements.get('sendProgressText').textContent,'发送待核对');
+  assert.equal(elements.get('keepSendDraftBtn').hidden,false);
+});
+
+test('project navigation retains its running conversation stream',async()=>{
+  const controller=new AbortController();
+  const page=makePage(async(path,request)=>{
+    assert.equal(path,'/api/action');
+    const action=JSON.parse(request.body);
+    assert.equal(action.targetId,'p');
+    return response({ok:true,epoch:7,navigation:navigationEvent({key:'expanded'})});
+  });
+  page.hooks.acceptNavigation(navigationEvent({items:[{id:'p',kind:'project',title:'Alpha',expanded:false}]}));
+  Object.assign(page.hooks.state,{view:'chat',mediaStarted:true,chatAbort:controller});
+  await page.hooks.navigateItem(page.hooks.state.navigation.items[0]);
+  assert.equal(page.hooks.state.chatAbort,controller);
+  assert.equal(controller.signal.aborted,false);
 });
 
 test('a stale conversation read resynchronizes without a connection warning',async()=>{
@@ -1518,16 +1595,19 @@ test('native work status is above the answer and never a copied message body or 
 });
 
 test('one native turn disclosure contains commentary, public reasoning and search with elapsed status',()=>{
-  const page=makePage();const blocks=[{kind:'paragraph',text:'检查输入',channel:'activity'},
-    {kind:'paragraph',text:'公开思考摘要',channel:'reasoning'},{kind:'search',text:'正在搜索网页',channel:'activity'}];
+  const page=makePage();const blocks=[{kind:'paragraph',text:'检查输入',channel:'commentary'},
+    {kind:'paragraph',text:'公开思考摘要',channel:'reasoning'},
+    {kind:'operation',icon:'terminal',text:'运行了命令',channel:'activity'},
+    {kind:'paragraph',text:'继续核对',channel:'commentary'},
+    {kind:'search',text:'搜索网页',channel:'activity'}];
   const event=chatEvent({messages:[{id:'m0',role:'assistant',phase:'activity',text:'过程',blocks,
     complete:true,work:{status:'worked',durationMs:20000}}]});
   page.hooks.applyConversationEvent(event);const row=page.hooks.state.chatElements.m0;
   assert.equal(row.body.children.length,1);const details=row.body.children[0];
   assert.equal(details.open,false);assert.equal(details.children[0].textContent,'用时 20 秒');
-  assert.equal(details.children[1].children.length,3);
+  assert.deepEqual(details.children[1].children.map(node=>node.textContent),['检查输入','公开思考摘要','运行了命令','继续核对','搜索网页']);
   assert.equal(details.children[1].children[1].className,'chat-process-reasoning');
-  assert.equal(details.children[1].children[2].className,'chat-process-search');
+  assert.equal(details.children[1].children[2].className,'chat-process-action');
   assert.equal(row.foot.hidden,true);assert.equal(row.copy.hidden,true);
   details.open=true;event.replace=false;event.messages[0].work.durationMs=21000;
   page.hooks.applyConversationEvent(event);assert.equal(row.body.children[0].open,true);
@@ -1539,6 +1619,10 @@ test('active work reveals progress and collapses on completion while a manual co
     blocks:[{kind:'paragraph',text:'检查输入',channel:'activity'}],complete:false,work:{status:'working'}}]});
   page.hooks.applyConversationEvent(event);const row=page.hooks.state.chatElements.m0;
   assert.equal(row.body.children[0].open,true);assert.equal(row.body.children[0].children[0].textContent,'处理中');
+  event.replace=false;event.messages[0].work.hasAnswer=true;
+  page.hooks.applyConversationEvent(event);
+  assert.equal(row.body.children[0].open,false);
+  assert.equal(row.body.children[0].children[0].textContent,'处理过程');
   event.replace=false;event.messages[0].complete=true;event.messages[0].work={status:'worked',durationMs:65000};
   page.hooks.applyConversationEvent(event);assert.equal(row.body.children[0].open,false);
   assert.equal(row.body.children[0].children[0].textContent,'用时 1 分钟 5 秒');
@@ -1817,8 +1901,9 @@ test('a lost queue action reply is not replayed or reported successful',async()=
   let count=0;const page=makePage(async()=>{count++;throw Error('connection interrupted');});
   page.hooks.state.queue=queueSnapshot();
   assert.equal(await page.hooks.invokeQueue(page.hooks.state.queue.items[0].actions[0],page.hooks.state.queue.items[0]),false);
-  assert.equal(count,1);assert.equal(page.hooks.state.queue,null);
-  assert.match(page.elements.get('queueError').textContent,/未确认/);
+  assert.equal(count,1);assert.ok(page.hooks.state.queue);
+  assert.match(page.elements.get('queueError').textContent,/待核对/);
+  assert.equal(page.elements.get('queueItems').children[0].children[0].children[1].children.every(button=>button.disabled),true);
 });
 
 test('a queue catalog from an old window cannot invoke native controls',async()=>{

@@ -26,8 +26,9 @@
     setItem:(k,v)=>memory.set(k,String(v)),removeItem:k=>memory.delete(k),clear:()=>memory.clear()}});
   window.WebSocket = undefined; // Deliberately exercise the real HTTP fallback UI.
   const model = {
-    epoch:1, title:'周末短途计划', key:'review-chat-1', menu:'', model:config.modelCount===1?'默认模型':'示例模型 A', effort:3, quick:false,
+    epoch:1, title:'周末短途计划', key:'review-chat-1', activeThread:'main', menu:'', model:config.modelCount===1?'默认模型':'示例模型 A', effort:3, quick:false,
     generating:config.scenario === 'queue', paused:config.scenario === 'paused',approval:config.scenario === 'approval',
+    questionStep:config.scenario==='questionnaire'?1:0, chosen:new Set(),
     offline:config.scenario === 'offline', draft:config.scenario === 'draft' ? '先把交通方式和预算列出来。' : '',
     messages:[
       {id:'m1',role:'user',text:'周末去杭州，两天，想轻松一点。',timestamp:'10:24'},
@@ -42,8 +43,20 @@
       {id:'q2',text:'再补一份下雨时可以替换的室内行程，不要安排太满。',attachments:[{name:'行程参考.pdf',kind:'file'}]}];
   }
   if (config.scenario === 'queue') {
-    model.messages.push({id:'work',role:'assistant',phase:'commentary',text:'正在核对行程时间和换乘距离。',
-      blocks:[{kind:'paragraph',text:'正在核对行程时间和换乘距离。',channel:'commentary'}],complete:false,work:{status:'working'}});
+    const blocks=[
+      {kind:'paragraph',text:'正在核对行程时间和换乘距离。',channel:'commentary'},
+      {kind:'operation',icon:'terminal',text:'运行了命令',channel:'activity'},
+      {kind:'paragraph',text:'时间够用，再看看下雨时的室内路线。',channel:'commentary'},
+      {kind:'search',text:'搜索网页 · 杭州雨天行程',channel:'activity'}
+    ];
+    model.messages.push({id:'work',role:'assistant',phase:'activity',text:blocks.map(block=>block.text).join('\n\n'),
+      blocks,complete:false,work:{status:'working'}});
+  }
+  if (config.scenario === 'chat') {
+    model.messages.splice(1,0,{id:'work',role:'assistant',phase:'activity',text:'查了西湖周边步行路线。运行了命令',
+      blocks:[{kind:'paragraph',text:'查了西湖周边步行路线。',channel:'commentary'},
+        {kind:'operation',icon:'terminal',text:'运行了命令',channel:'activity'}],
+      complete:true,work:{status:'worked',durationMs:18000}});
   }
   if (config.scenario === 'long') {
     for (let i=0;i<10;i++) model.messages.push({id:'long-'+i,role:i%2?'assistant':'user',complete:true,
@@ -53,6 +66,19 @@
   const approval = () => ({available:true,epoch:model.epoch,key:'approval-fixture',menu:false,category:'prompt',
     prompt:{title:'批准运行命令',text:'读取示例项目目录以核对文件列表。\nGet-ChildItem -Name',approval:true,truncated:false},
     items:[{id:'allow-once',title:'允许一次',kind:'option',enabled:true},{id:'deny',title:'拒绝',kind:'option',enabled:true}]});
+  const pending = () => model.questionStep && model.activeThread!=='other' ?
+    [{id:'other',kind:'thread',title:'下周的阅读清单',pending:'input'}] : [];
+  const currentPrompt = () => {
+    if(model.approval)return approval();
+    if(!model.questionStep || model.activeThread!=='other')return null;
+    const first=model.questionStep===1;
+    const titles=first?['按主题整理','按阅读顺序整理']:['每周阅读量','每篇的阅读重点'];
+    return {available:true,epoch:model.epoch,key:'question-'+model.revision,menu:false,category:'prompt',
+      prompt:{title:'请回答',text:first?'阅读清单要怎么整理？':'还想在清单里看到什么？',questionnaire:true},
+      items:[...titles.map((title,i)=>({id:'choice-'+i,title,kind:first?'prompt-radio':'prompt-check',
+        selected:model.chosen.has('choice-'+i),enabled:true})),
+        {id:first?'next':'submit',title:first?'下一步':'提交',kind:'prompt-step',enabled:model.chosen.size>0}]};
+  };
   const modelNames = config.modelNames || ['默认模型','示例模型 A','示例模型 B','示例模型 C','示例模型 D','示例模型 E','示例模型 F','示例模型 G','示例模型 H'];
   const models = modelNames.slice(0,config.modelCount || (config.scenario==='chat'?3:modelNames.length));
   const levels = ['低','标准','高','超高','Max','Ultra'];
@@ -75,17 +101,18 @@
     text:model.draft,hasDraft:!!model.draft,truncated:false,canClear:true,attachments:[]});
   const windows = () => ({ok:true,version:config.version,instance:'offline-review',mock:true,computerName:'我的主电脑',
     mode:'window',status:'ready',epoch:model.epoch,frozen:{active:false,reason:'',remaining:0},
-    capabilities:{scope:'chatgpt-window',desktop:false,rawInput:false,windowView:true,conversation:true,nativeQueue:true,composerOptions:true},
+    capabilities:{scope:'chatgpt-window',desktop:false,rawInput:false,windowView:true,windowPointer:true,conversation:true,nativeQueue:true,composerOptions:true},
     windows:[{id:1,title:'ChatGPT · '+model.title,exe:'ChatGPT.exe',selected:true}]});
   const snapshot = () => ({...windows(),available:true,key:model.key,title:model.title,messages:clone(model.messages),
     order:model.messages.map(m=>m.id),kind:'conversation',replace:true,revision:'rev-'+model.revision,
     generating:model.generating,queue:queue(),queued:clone(model.queue),loadedOnly:false,truncated:false,notice:'',
-    composer:{available:true,hasDraft:!!model.draft,options:options()},...(model.approval?{prompt:approval()}:{})});
+    composer:{available:true,hasDraft:!!model.draft,options:options()},pendingRequests:pending(),prompt:currentPrompt()});
   const navigation = () => ({ok:true,available:true,key:'navigation',epoch:model.epoch,source:'offline-review',notice:'',items:[
     {id:'project',kind:'project',title:'日常计划',project:'daily',projectTitle:'日常计划',expanded:true},
     {id:'new-global',kind:'new',title:'新对话',project:'',projectTitle:''},
-    {id:'main',kind:'thread',title:'周末短途计划',project:'daily',projectTitle:'日常计划'},
-    {id:'other',kind:'thread',title:'下周的阅读清单',project:'daily',projectTitle:'日常计划'}]});
+    {id:'main',kind:'thread',title:'周末短途计划',project:'daily',projectTitle:'日常计划',selected:model.activeThread==='main'},
+    {id:'other',kind:'thread',title:'下周的阅读清单',project:'daily',projectTitle:'日常计划',selected:model.activeThread==='other',
+      ...(model.questionStep?{pending:'input'}:{})}]});
   const streams = new Set();
   function broadcast(){for(const push of streams)push();}
   function mutate(){model.revision++;broadcast();}
@@ -134,6 +161,18 @@
         model.approval=false;mutate();report('模拟审批已回读');
         return {...result,options:options()};
       }
+      const question=currentPrompt();
+      if(question){
+        const target=question.items.find(item=>item.id===data.targetId && item.enabled);
+        if(data.operation!=='invoke' || data.optionsKey!==question.key || !target)return {ok:false,error:'电脑问题已变化。'};
+        if(target.id==='next'){model.questionStep=2;model.chosen.clear();}
+        else if(target.id==='submit'){model.questionStep=0;report('模拟回答已提交');}
+        else if(target.kind==='prompt-radio')model.chosen=new Set([target.id]);
+        else if(model.chosen.has(target.id))model.chosen.delete(target.id);
+        else model.chosen.add(target.id);
+        mutate();
+        return {...result,options:currentPrompt()||options()};
+      }
       const current=options();
       if(data.optionsKey!==current.key)return {ok:false,error:'模拟选项已变化'};
       if(data.operation==='dismiss')model.menu='';
@@ -151,12 +190,14 @@
       return {...result,options:options()};
     } else if(data.kind==='navigate') {
       if(data.targetId!=='project'){
+        model.activeThread=data.targetId;
         model.epoch++;model.key='review-chat-'+model.epoch;model.title=data.targetId==='other'?'下周的阅读清单':data.targetId==='main'?'周末短途计划':'新对话';
         model.messages=[{id:'hello-'+model.epoch,role:'assistant',text:'这是一段合成示例对话。可以输入文字、切换模型，或返回项目列表。',complete:true}];
         model.queue=[];model.paused=false;model.generating=false;model.draft='';
       }
       result.epoch=model.epoch;result.navigation=navigation();
     } else if(data.kind==='draft')model.draft='';
+    else if(data.kind==='window-pointer')report(data.operation==='right'?'模拟右键':'模拟左键');
     mutate();return result;
   }
   window.fetch = async (path, init={}) => {
@@ -178,7 +219,7 @@
       }
       case '/api/queue':return json({ok:true,...queue()});
       case '/api/navigation':return config.scenario==='navigation-error' ? json({ok:false,error:'项目列表读取失败，请稍后重试。'},503) : json(navigation());
-      case '/api/composer':return json({ok:true,...(model.approval?approval():options())});
+      case '/api/composer':return json({ok:true,...(currentPrompt()||options())});
       case '/api/draft':return json(draft());
       case '/api/action': {const result=action(data);return json(result,result.ok?200:409);}
       case '/api/delivery':return model.receipts.has(url.searchParams.get('id'))?json({ok:true,delivery:model.receipts.get(url.searchParams.get('id'))}):json({ok:false,error:'示例发送记录不存在'},404);

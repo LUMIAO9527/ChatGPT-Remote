@@ -1,7 +1,7 @@
 """Bounded, read-only access to the desktop's structured local conversation data.
 
-Only user-visible messages and reasoning summaries leave this adapter. Database
-paths, tool arguments/outputs and private reasoning content are never exported.
+Only user-visible messages, reasoning summaries and generic activity labels leave
+this adapter. Database paths and raw tool data stay local.
 """
 from __future__ import annotations
 
@@ -17,6 +17,12 @@ import sqlite3
 from urllib.parse import urlsplit
 
 UUID = re.compile(r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$', re.I)
+ACTIVITY_LABELS = {
+    'commandExecution': ('terminal', '运行命令', '运行了命令'),
+    'fileChange': ('edit', '编辑文件', '编辑了文件'),
+    'mcpToolCall': ('tools', '使用工具', '使用了工具'),
+    'imageView': ('image', '查看图片', '查看了图片'),
+}
 INLINE = re.compile(r'(`+)(.+?)\1|\*\*(.+?)\*\*|__(.+?)__|\[([^\]\n]+)\]\((https?://[^\s)]+)\)|(?<!\*)\*([^*\n]+)\*(?!\*)')
 
 
@@ -127,13 +133,28 @@ class LocalHistory:
             with closing(self.connect(path)) as db:
                 turns={r['turn_id']:dict(r) for r in db.execute(
                     'SELECT turn_id,status,duration_ms FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 80',(thread['id'],))}
-                # Reasoning summaries are public; the separate content field is
-                # intentionally excluded before decoding any reasoning item.
-                rows=list(db.execute("""SELECT item_id,turn_id,created_at_ms,item_type,
-                    CASE WHEN item_type='reasoning' THEN json_object('type','reasoning','summary',json_extract(item_json,'$.summary')) ELSE item_json END AS body
+                # Keep the message window independent of tool volume. Select
+                # public summaries and activity states without reading raw tool data.
+                tool_types = ','.join('?' for _ in ACTIVITY_LABELS)
+                rows=list(db.execute(f"""WITH visible AS (
+                    SELECT item_id,turn_id,created_at_ms,item_type,rollout_ordinal,
+                        CASE item_type
+                            WHEN 'reasoning' THEN json_object('summary',json_extract(item_json,'$.summary'))
+                            WHEN 'webSearch' THEN json_object('query',json_extract(item_json,'$.query'))
+                            ELSE item_json END AS body
                     FROM thread_items WHERE thread_id=? AND item_type IN ('userMessage','agentMessage','reasoning','webSearch')
-                    AND (item_type!='reasoning' OR json_array_length(item_json,'$.summary')>0)
-                    ORDER BY rollout_ordinal DESC LIMIT 240""",(thread['id'],)))
+                        AND (item_type!='reasoning' OR json_array_length(item_json,'$.summary')>0)
+                        AND (item_type!='agentMessage' OR json_extract(item_json,'$.phase') IS NOT 'analysis')
+                    ORDER BY rollout_ordinal DESC LIMIT 240
+                ), tools AS (
+                    SELECT item_id,turn_id,created_at_ms,item_type,rollout_ordinal,
+                        json_object('status',json_extract(item_json,'$.status')) AS body
+                    FROM thread_items WHERE thread_id=? AND item_type IN ({tool_types})
+                        AND rollout_ordinal >= coalesce((SELECT min(rollout_ordinal) FROM visible),0)
+                    ORDER BY rollout_ordinal DESC LIMIT 120
+                )
+                SELECT * FROM visible UNION ALL SELECT * FROM tools ORDER BY rollout_ordinal
+                """,(thread['id'],thread['id'],*ACTIVITY_LABELS)))
             if not rows:return None
             messages=[];activities={}
             def activity_for(turn_id,turn,complete):
@@ -146,9 +167,8 @@ class LocalHistory:
                               'role':'assistant','phase':'activity','text':'','blocks':[],'complete':complete,'work':work}
                     activities[turn_id]=activity;messages.append(activity)
                 return activities[turn_id]
-            for row in reversed(rows):
+            for row in rows:
                 item=json.loads(row['body']);kind=row['item_type'];turn=turns.get(row['turn_id'],{})
-                if kind=='agentMessage' and item.get('phase')=='analysis':continue
                 complete=turn.get('status') in ('completed','failed','interrupted')
                 if kind=='userMessage':
                     text,attachments=user_content(item.get('content'))
@@ -157,27 +177,43 @@ class LocalHistory:
                     if attachments:message['attachments']=attachments
                     if row['created_at_ms']:message['timestamp']=datetime.fromtimestamp(row['created_at_ms']/1000).strftime('%H:%M')
                     if text or attachments:messages.append(message)
-                elif kind=='agentMessage' and item.get('phase') not in ('analysis',):
+                elif kind=='agentMessage' and item.get('phase')!='commentary':
                     text=str(item.get('text') or '')[:40000]
                     if text:
-                        commentary=item.get('phase')=='commentary'
-                        if turn.get('status')=='inProgress' or isinstance(turn.get('duration_ms'),(int,float)):
-                            activity_for(row['turn_id'],turn,complete)
+                        if row['turn_id'] in activities or turn.get('status')=='inProgress' or isinstance(turn.get('duration_ms'),(int,float)):
+                            activity=activity_for(row['turn_id'],turn,complete)
+                            if not complete:activity['work']['hasAnswer']=True
                         messages.append({'id':row['item_id'],'sourceId':row['item_id'],'turnId':row['turn_id'],'role':'assistant','text':text,
-                                         'blocks':markdown_blocks(text),'complete':complete,
-                                         **({'phase':'commentary'} if commentary else {})})
+                                         'blocks':markdown_blocks(text),'complete':complete})
                 else:
-                    channel='activity';text=''
-                    if kind=='agentMessage':text=str(item.get('text') or '')[:8000]
+                    if kind=='agentMessage':
+                        blocks=markdown_blocks(str(item.get('text') or '')[:8000],'commentary')
                     elif kind=='reasoning':
-                        channel='reasoning'
-                        text='\n\n'.join(s if isinstance(s,str) else str(s.get('text') or '') for s in item.get('summary',[]) if isinstance(s,(str,dict)))[:8000]
-                    elif kind=='webSearch':text='正在网络上搜索 '+str(item.get('query') or '')[:1000] if item.get('query') else '正在搜索网页'
-                    if not text:continue
-                    activity=activity_for(row['turn_id'],turn,complete)
-                    if sum(len(b['text']) for b in activity['blocks'])<12000:
-                        activity['blocks'].extend([{'kind':'search','text':text,'channel':'activity'}] if kind=='webSearch' else markdown_blocks(text,channel))
-                        activity['text']+=(('\n\n' if activity['text'] else '')+text)
+                        summary=item.get('summary')
+                        text='\n\n'.join(s if isinstance(s,str) else str(s.get('text') or '')
+                                        for s in summary if isinstance(s,(str,dict))) if isinstance(summary,list) else ''
+                        blocks=markdown_blocks(text[:8000],'reasoning')
+                    elif kind=='webSearch':
+                        query=str(item.get('query') or '')[:1000]
+                        blocks=[{'kind':'search','text':'搜索网页'+(' · '+query if query else ''),'channel':'activity'}]
+                    else:
+                        icon,running,done=ACTIVITY_LABELS[kind]
+                        status=item.get('status')
+                        text=running+'中' if status=='inProgress' and not complete else running+'失败' if status=='failed' else done
+                        blocks=[{'kind':'operation','icon':icon,'text':text,'channel':'activity'}]
+                    if blocks:activity_for(row['turn_id'],turn,complete)['blocks'].extend(blocks)
+            process_truncated=False
+            for activity in activities.values():
+                remaining=12000
+                blocks=[]
+                for block in reversed(activity['blocks']):
+                    size=len(block['text'])+2
+                    if size>remaining:
+                        process_truncated=True
+                        break
+                    blocks.append(block);remaining-=size
+                activity['blocks']=list(reversed(blocks))
+                activity['text']='\n\n'.join(block['text'] for block in activity['blocks'])
             kept=[];budget=160000
             for message in reversed(messages[-80:]):
                 if len(message['text'])>budget:break
@@ -189,7 +225,9 @@ class LocalHistory:
                     'generating':generating or bool(observed.get('generating')),
                     'queued':self.queued(thread['id']) or [
                         {'id':item['id'],'text':item['text']} for item in observed.get('queue',{}).get('items',[])],
-                    'loadedOnly':False,'truncated':len(rows)>=240 or len(messages)>len(kept),'source':'local-history','notice':''}
+                    'loadedOnly':False,'truncated':process_truncated or
+                        sum(row['item_type'] not in ACTIVITY_LABELS for row in rows)>=240 or len(messages)>len(kept),
+                    'source':'local-history','notice':''}
         except (OSError,sqlite3.Error,ValueError,TypeError,KeyError,OverflowError):return None
 
     def queued(self, thread_id: str) -> list[dict]:
