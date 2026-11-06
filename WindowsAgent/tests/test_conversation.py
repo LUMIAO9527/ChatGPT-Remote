@@ -455,11 +455,11 @@ ConvertTo-Json -InputObject $r -Compress
         backend._focus = lambda _: None
         backend.u32 = SimpleNamespace(GetForegroundWindow=lambda: 123)
         calls = []
-        def prepare(hwnd, key):
-            calls.append(('prepare', hwnd, key))
+        def prepare(hwnd, key, reuse_text):
+            calls.append(('prepare', hwnd, key, reuse_text))
             return 'observed-key'
         def submit(hwnd, key, text): calls.append(('button', hwnd, key, text))
-        reader = SimpleNamespace(prepare=prepare, submit=submit, prepared_generating=False,
+        reader = SimpleNamespace(prepare=prepare, submit=submit, prepared_generating=False, prepared_text_present=False,
             confirm_input=lambda *args, **kw: calls.append(('verify', args, kw)))
         backend._reader = lambda: reader
         backend._key_chord = lambda *args: calls.append(('paste', args))
@@ -470,6 +470,12 @@ ConvertTo-Json -InputObject $r -Compress
         self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'button'])
         clipboard.assert_not_called()
         self.assertEqual(calls[1][1],command['text'])
+        self.assertEqual(calls[0][3],command['text'])
+        calls.clear()
+        reader.prepared_text_present=True
+        backend.action(command)
+        self.assertEqual([call[0] for call in calls], ['prepare', 'verify', 'button'])
+        reader.prepared_text_present=False
         calls.clear()
         reader.prepared_generating = True
         reader.submit = lambda *args: calls.append(('button', *args)) or {'state':'queued'}
@@ -493,7 +499,7 @@ ConvertTo-Json -InputObject $r -Compress
         from attachments import ClipboardUnavailable
         backend=WindowsBackend.__new__(WindowsBackend);backend.tracker=SimpleNamespace(current_id=123)
         backend._focus=lambda _:None;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:123,GetOpenClipboardWindow=lambda:0)
-        calls=[];reader=SimpleNamespace(prepare=lambda *args:'key',prepared_generating=False,
+        calls=[];reader=SimpleNamespace(prepare=lambda *args:'key',prepared_generating=False,prepared_text_present=False,
             confirm_input=lambda *args,**kw:calls.append('verify'),submit=lambda *args:calls.append('submit'))
         backend._reader=lambda:reader;backend._unicode_text=lambda *args,**kw:calls.append('unicode')
         backend._key_chord=lambda *args:calls.append('paste');command={'submit':True,'conversationKey':'key'}
@@ -514,6 +520,28 @@ ConvertTo-Json -InputObject $r -Compress
             backend._compose_message(command,'长文字'*600,'button')
         self.assertEqual(calls,['paste','verify'])
 
+    def test_attachment_focus_can_be_recovered_before_the_single_paste(self):
+        backend=WindowsBackend.__new__(WindowsBackend)
+        backend.lock=threading.RLock();backend.mode='window';backend.tracker=SimpleNamespace(epoch=7)
+        backend._resolve_target=lambda:123;backend.frozen_info_locked=lambda:{'active':False}
+        foreground=[123]
+        def focus(hwnd):
+            foreground[0]=hwnd
+        def read_focus(hwnd,key):
+            if reader.attachment_focus.call_count==2:
+                foreground[0]=456
+            return {'identity':key}
+        backend._focus=focus;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:foreground[0])
+        backend._key_chord=Mock()
+        reader=SimpleNamespace(attachment_focus=Mock(side_effect=read_focus),confirm_attachments=Mock(return_value={'state':'attached'}))
+        backend._reader=lambda:reader
+        with patch('attachments.paste_files',side_effect=lambda paths,paste:paste()):
+            result=backend.attach_files([Path('phone.jpg')],'chat',7)
+        self.assertEqual(result,{'state':'attached'})
+        self.assertEqual(reader.attachment_focus.call_count,3)
+        backend._key_chord.assert_called_once_with(0x11,0x56)
+        reader.confirm_attachments.assert_called_once_with(123,{'identity':'chat'},['phone.jpg'])
+
     def test_focus_is_recovered_only_before_input_and_rechecks_the_empty_draft(self):
         backend=WindowsBackend.__new__(WindowsBackend);backend.tracker=SimpleNamespace(current_id=123)
         current=[123];calls=[]
@@ -523,7 +551,7 @@ ConvertTo-Json -InputObject $r -Compress
             if calls.count('prepare')==1:current[0]=456
             return 'key'
         backend._focus=focus;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:current[0])
-        reader=SimpleNamespace(prepare=prepare,prepared_generating=False,
+        reader=SimpleNamespace(prepare=prepare,prepared_generating=False,prepared_text_present=False,
             confirm_input=lambda *args,**kw:calls.append('verify'),submit=lambda *args:calls.append('submit'))
         backend._reader=lambda:reader;backend._unicode_text=lambda *args,**kw:calls.append('input')
         command={'submit':True,'conversationKey':'key'}
@@ -554,7 +582,7 @@ ConvertTo-Json -InputObject $r -Compress
             return 'observed-key'
         backend._reader=lambda:SimpleNamespace(clear_draft=lambda *args,**kw:record('clear',*args,**kw),
             prepare=lambda *args:record('prepare',*args),submit=lambda *args:record('submit',*args),
-            confirm_input=lambda *args,**kw:record('verify',*args,**kw),prepared_generating=False)
+            confirm_input=lambda *args,**kw:record('verify',*args,**kw),prepared_generating=False,prepared_text_present=False)
         backend._key_chord=lambda *args:record('paste',*args)
         backend._unicode_text=lambda *args,**kw:record('type',*args,**kw)
         command={'kind':'message','text':'Mobile replacement','submit':True,'epoch':7,

@@ -423,7 +423,7 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
     $composerId=if($composer){$composer.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
     $visibleRecords=@($records | Where-Object {$_.type -ne 'Edit' -or $_.editorId -ceq $composerId})
     $identity = Get-ConversationIdentity $handle $documentId $title $firstMarker $selectedThreads $messageAnchor
-    return @{records=$visibleRecords; title=$title; identity=$identity; composer=$composer;
+    return @{records=$visibleRecords; title=$(if($selectedTitle){$selectedTitle}else{$title}); identity=$identity; composer=$composer;
         draft=$draft; generating=$generating; selectedTitle=$selectedTitle;sendEnabled=$sendEnabled; senders=@($senders);
         truncated=($contentStart -gt 0);tree=$tree;promptNodes=$promptNodes.ToArray()}
 }
@@ -584,7 +584,7 @@ function Get-ComposerAttachments($snapshot) {
         if(!$parent -or $parent.Cached.ControlType -eq $CT::Document){break}
         $class=$parent.Cached.ClassName
         if($class -match '(^|\s)composer-layout(\s|$)'){$scope=$parent;break}
-        if($class -match '_ComposerLayoutBody_'){$bodyFound=$true}
+        if($class -match '(?:^|\s)_?ComposerLayoutBody(?=[_\s-]|$)'){$bodyFound=$true}
         if($bodyFound -and $class -match '(^|\s)flex-col(\s|$)' -and $class -match '(^|\s)gap-2(\s|$)'){$scope=$parent;break}
     }
     $nodes=if($scope){$scope.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)}else{$snapshot.tree.nodes}
@@ -793,7 +793,11 @@ function Read-ComposerOptions($handle, $category='') {
         }
         $kind = ''
         if ($null -ne $menu) {
-            $kind=if ($c.Name -match '(?i)^(强度|推理强度|思考强度|Reasoning effort|Effort)$') {'surface'}
+            $kind=if ($c.Name -match '(?i)^(强度|推理强度|推理等级|思考强度|Reasoning effort|Effort)$') {
+                    $expansion=$null
+                    if($node.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$expansion) -and
+                        $expansion.Current.ExpandCollapseState -ne [System.Windows.Automation.ExpandCollapseState]::LeafNode){'effort'}else{'surface'}
+                }
                 elseif($c.Name -match '(?i)^(文件和文件夹|添加文件|上传文件|从电脑上传|添加照片和文件|Files and folders|Add files|Upload files|Upload from computer|Add photos .{1,4} files)$') {'upload'} else {'option'}
         }
         else {
@@ -1024,7 +1028,9 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         } elseif ($request.operation -eq 'prepare') {
             $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
             if ($null -eq $snapshot.composer -or $null -eq $snapshot.draft) { throw 'composer unavailable' }
-            if ($snapshot.draft.Length -gt 0) { throw 'draft exists' }
+            $expectedText=Normalize-Message $request.text
+            $hadText=$snapshot.draft.Length -gt 0
+            if ($hadText -and (Normalize-Message $snapshot.draft) -cne $expectedText) { throw 'draft exists' }
             $snapshot.composer.SetFocus()
             # Focus can synchronously change the page; inspect again before input.
             $focusWait=[Diagnostics.Stopwatch]::StartNew()
@@ -1032,12 +1038,13 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             $check = Read-Window $request.hwnd $false $false $true
             $check=Confirm-WindowIdentity $request.hwnd $check $request.identity
             if ($null -eq $check.composer -or $null -eq $check.draft) { throw 'composer unavailable' }
-            if ($check.draft.Length -gt 0) { throw 'draft exists' }
+            if ($check.draft.Length -gt 0 -and (Normalize-Message $check.draft) -cne $expectedText) { throw 'draft exists' }
+            if ($hadText -and $check.draft.Length -eq 0) { throw 'draft changed' }
             if($check.composer.Current.HasKeyboardFocus){break}
             if($focusWait.ElapsedMilliseconds -ge 500){throw 'composer focus rejected'}
             Start-Sleep -Milliseconds 15
             } while($true)
-            $reply = @{ok=$true; request_id=$request.request_id;generating=$check.generating}
+            $reply = @{ok=$true; request_id=$request.request_id;generating=$check.generating;present=($check.draft.Length -gt 0)}
         } elseif ($request.operation -in @('submit','input_ready')) {
             $ready = $false
             $readyState=$null

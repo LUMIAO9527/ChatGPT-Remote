@@ -9,7 +9,7 @@ from ctypes import wintypes as wt
 
 PANEL_SIZE = (312, 458)
 PANEL_SIZES = dict.fromkeys(('home', 'settings', 'support', 'support-qr', 'update', 'install', 'uninstall', 'first-use'), PANEL_SIZE)
-BLUR_CHECK_MS = 60
+BLUR_CHECK_MS = 50
 
 
 def popup_position(icon, work, monitor, size, gap=8, margin=8):
@@ -40,6 +40,8 @@ class NativePanel:
         self.tray_identity=tray_identity
         self.page='home';self.visible=False;self.busy=False;self.modal=False
         self.generation=0;self.bound=False;self.ready=False;self.blur_timer=None
+        self.blur_generation=None
+        self.foreground_at_open=None
         self.show_requested=False;self.closed=False
         self.material=None;self.appearance=None;self.material_choice=None
         self.user=ctypes.WinDLL('user32',use_last_error=True)
@@ -174,24 +176,30 @@ class NativePanel:
         self.dispatch(apply)
 
     def on_activate(self,*_):
-        if self.blur_timer:self.blur_timer.Stop()
+        if self.visible and self.blur_timer:
+            self.blur_timer.Start()
 
     def on_blur(self,*_):
-        if self.visible and self.blur_timer:self.blur_timer.Start()
+        if not self.visible or self.blur_generation!=self.generation:return
+        generation=self.generation
+        def check(form):
+            if generation==self.generation:self.check_blur(form)
+        self.dispatch(check)
 
     def check_blur(self, form):
-        if not self.visible or not self.signals.wants_visible():
+        if not self.visible or self.blur_generation!=self.generation or not self.signals.wants_visible():
             self.blur_timer.Stop()
             return
         if self.busy or self.modal:
             return
         hwnd=int(form.Handle.ToInt64())
         foreground=self.user.GetForegroundWindow()
-        if foreground==hwnd:
-            self.blur_timer.Stop()
+        if not foreground:return
+        if foreground==hwnd or self.user.GetAncestor(foreground,3)==hwnd:
+            self.foreground_at_open=None
             return
-        if foreground and self.user.GetAncestor(foreground,3)==hwnd:
-            return
+        # Windows may leave the previous app active when a tray window opens.
+        if foreground==self.foreground_at_open:return
         # Let the tray's button-up event finish toggling a panel that was open.
         if self.anchor and any(self.user.GetAsyncKeyState(button)&0x8000 for button in (1,2)):
             point=wt.POINT()
@@ -213,10 +221,17 @@ class NativePanel:
         def apply(form):
             if token!=self.generation:return
             if self.blur_timer:self.blur_timer.Stop()
-            self.place(form);self.apply_material(form);self.topmost(form,True);form.Show();form.Activate()
+            self.place(form);self.apply_material(form);self.topmost(form,True)
+            previous_foreground=self.user.GetForegroundWindow()
+            form.Show();form.Activate()
             self.user.SetForegroundWindow(int(form.Handle.ToInt64()))
+            self.foreground_at_open=self.user.GetForegroundWindow() or previous_foreground
             self.post(form,'window.remoteShown && window.remoteShown()')
             self.record(form,'panel_shown',started)
+            if self.blur_timer:
+                self.blur_generation=token
+                self.blur_timer.Start()
+                self.check_blur(form)
         self.dispatch(apply)
 
     def hide(self):

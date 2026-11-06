@@ -26,19 +26,24 @@
     setItem:(k,v)=>memory.set(k,String(v)),removeItem:k=>memory.delete(k),clear:()=>memory.clear()}});
   window.WebSocket = undefined; // Deliberately exercise the real HTTP fallback UI.
   const model = {
-    epoch:1, title:'周末短途计划', key:'review-chat-1', menu:'', model:'示例模型 A',
+    epoch:1, title:'周末短途计划', key:'review-chat-1', menu:'', model:'示例模型 A', effort:'标准',
     generating:config.scenario === 'queue', paused:config.scenario === 'paused',approval:config.scenario === 'approval',
     offline:config.scenario === 'offline', draft:config.scenario === 'draft' ? '先把交通方式和预算列出来。' : '',
     messages:[
       {id:'m1',role:'user',text:'周末去杭州，两天，想轻松一点。',timestamp:'10:24'},
       {id:'m2',role:'assistant',text:'可以，两天都住在西湖附近，少花时间在路上。\n\n周六 · 西湖慢走\n上午抵达后放好行李，下午沿湖散步。傍晚找一家小店吃饭。\n\n周日 · 留点余地\n去龙井喝茶，午后返程。下雨就换成博物馆。',complete:true,timestamp:'10:25'}
-    ], queue:[], revision:1, receipts:new Map(), devices:[{id:'demo-mate',name:'我的 Mate80',created:1793923200}],
+    ], queue:[], revision:1, receipts:new Map(), uploads:new Map(), uploadSequence:0,
+    devices:[{id:'demo-mate',name:'我的 Mate80',created:1793923200}],
     preferences:{theme:config.theme,material:'solid',motion:'reduced',autoHide:true}, autoStart:true,
     update:{status:'idle',installable:true,message:'检查是否有新版本'}, running:config.scenario !== 'offline',targetPaused:false
   };
   if (/^(queue|paused)$/.test(config.scenario)) {
     model.queue = [{id:'q1',text:'交通优先选高铁，住在老城区附近。',attachments:[]},
       {id:'q2',text:'再补一份下雨时可以替换的室内行程，不要安排太满。',attachments:[{name:'行程参考.pdf',kind:'file'}]}];
+  }
+  if (config.scenario === 'queue') {
+    model.messages.push({id:'work',role:'assistant',phase:'commentary',text:'正在核对行程时间和换乘距离。',
+      blocks:[{kind:'paragraph',text:'正在核对行程时间和换乘距离。',channel:'commentary'}],complete:false,work:{status:'working'}});
   }
   if (config.scenario === 'long') {
     for (let i=0;i<10;i++) model.messages.push({id:'long-'+i,role:i%2?'assistant':'user',complete:true,
@@ -49,12 +54,12 @@
     prompt:{title:'批准运行命令',text:'读取示例项目目录以核对文件列表。\nGet-ChildItem -Name',approval:true,truncated:false},
     items:[{id:'allow-once',title:'允许一次',kind:'option',enabled:true},{id:'deny',title:'拒绝',kind:'option',enabled:true}]});
   const options = () => ({available:true,epoch:model.epoch,key:'opts-'+model.revision,menu:!!model.menu,category:model.menu,
-    items:model.menu ? (model.menu==='model'?['示例模型 A','示例模型 B']:['标准','高']).map((title,i)=>({id:'choice-'+i,title,enabled:true,selected:title===model.model,kind:'option'})) :
-    [{id:'model',title:model.model,kind:'model',enabled:true},{id:'effort',title:'思考强度：标准',kind:'effort',enabled:true},{id:'tools',title:'添加工具',kind:'tools',enabled:true}]} );
+    items:model.menu ? (model.menu==='model'?['示例模型 A','示例模型 B']:['标准','高']).map((title,i)=>({id:'choice-'+i,title,enabled:true,selected:title===(model.menu==='model'?model.model:model.effort),kind:'option'})) :
+    [{id:'model',title:model.model,kind:'model',enabled:true},{id:'effort',title:'推理等级 · '+model.effort,kind:'effort',enabled:true}]} );
   const queue = () => ({available:true,key:'queue-'+model.revision,epoch:model.epoch,paused:model.paused,hasDraft:!!model.draft,
     items:model.queue.map(row=>({...row,actions:['steer','delete','edit'].map(operation=>({id:row.id+'|'+operation,operation,enabled:true}))})),
     actions:[...(model.paused?[{id:'resume',operation:'resume',enabled:true}]:[]),...(model.generating?[{id:'stop',operation:'stop',enabled:true}]:[])]});
-  const draft = () => ({ok:true,conversationKey:model.key,epoch:model.epoch,revision:'draft-'+model.revision,title:model.title,
+  const draft = () => ({ok:true,conversationKey:model.key,epoch:model.epoch,revision:JSON.stringify([model.key,model.draft]),title:model.title,
     text:model.draft,hasDraft:!!model.draft,truncated:false,canClear:true,attachments:[]});
   const windows = () => ({ok:true,version:config.version,instance:'offline-review',mock:true,computerName:'我的主电脑',
     mode:'window',status:'ready',epoch:model.epoch,frozen:{active:false,reason:'',remaining:0},
@@ -79,10 +84,19 @@
     if(data.kind==='message') {
       if(data.messageId && model.receipts.has(data.messageId)) return {...result,delivery:model.receipts.get(data.messageId)};
       const queued=model.generating||model.paused;
-      if(data.draftRevision)model.draft='';
-      if(queued)model.queue.push({id:'q'+Date.now(),text:data.text,attachments:[]});
+      const draftChanged=data.draftRevision && data.draftRevision!==draft().revision;
+      if(draftChanged || (model.draft && !data.draftRevision && data.text!==model.draft)){
+        const rejection=draftChanged?{error:'电脑草稿已变化。',code:'draft_changed'}:{error:'电脑输入框已有草稿。',code:'draft_exists'};
+        if(!data.messageId)return {ok:false,...rejection};
+        const receipt={id:data.messageId,state:'failed',instance:'offline-review',conversationKey:model.key,epoch:model.epoch,...rejection};
+        model.receipts.set(data.messageId,receipt);
+        return {...result,delivery:receipt};
+      }
+      model.draft='';
+      const attachments=(data.attachmentIds||[]).map(id=>model.uploads.get(id)).filter(Boolean);
+      if(queued)model.queue.push({id:'q'+Date.now(),text:data.text,attachments});
       else {
-        model.messages.push({id:'u'+Date.now(),role:'user',text:data.text,complete:true});
+        model.messages.push({id:'u'+Date.now(),role:'user',text:data.text,attachments,complete:true});
         model.messages.push({id:'a'+Date.now(),role:'assistant',text:'已收到。这是用于检查交互的模拟回复；真实运行时，这里显示电脑当前 ChatGPT 对话的内容。',complete:true});
       }
       const receipt={id:data.messageId,state:queued?'queued':'sent',instance:'offline-review',conversationKey:model.key,epoch:model.epoch};
@@ -109,7 +123,7 @@
         return {...result,options:options()};
       }
       if(data.operation==='dismiss')model.menu='';
-      else if(model.menu){if(model.menu==='model')model.model=options().items.find(i=>i.id===data.targetId)?.title||model.model;model.menu='';}
+      else if(model.menu){const choice=options().items.find(i=>i.id===data.targetId);if(choice)model[model.menu]=choice.title;model.menu='';}
       else model.menu=data.targetId;
       model.revision++;result.options=options();report('模拟选项已回读');
     } else if(data.kind==='navigate') {
@@ -152,7 +166,12 @@
         const bytes=Uint8Array.from(atob(config.frame),c=>c.charCodeAt(0));
         return new Response(bytes,{headers:{'Content-Type':'image/jpeg','X-Frame-Id':String(Date.now()),'X-Target-Epoch':String(model.epoch),'X-Captured-Ms':String(Date.now()),'X-Capture-Method':'offline-review','X-Action-Sequence':String(model.revision)}});
       }
-      case '/api/uploads':return json({ok:true,file:{id:'file-'+Date.now(),name:decodeURIComponent(init.headers['X-File-Name']||'示例附件'),state:'uploaded',size:init.body?.size||0}});
+      case '/api/uploads': {
+        const name=decodeURIComponent(init.headers['X-File-Name']||'示例附件');
+        const file={id:'file-'+(++model.uploadSequence),name,state:'uploaded',size:init.body?.size||0};
+        model.uploads.set(file.id,{id:file.id,name,kind:/\.(png|jpe?g|webp|gif|heic)$/i.test(name)?'image':'file'});
+        return json({ok:true,file});
+      }
       case '/api/uploads/attach':case '/api/uploads/status':return json({ok:true,state:'attached',files:[]});
       case '/api/uploads/discard':case '/api/stream/ack':return json({ok:true});
       case '/api/freeze':return json({...windows(),frozen:{active:!!data.frozen,reason:'manual',remaining:0}});

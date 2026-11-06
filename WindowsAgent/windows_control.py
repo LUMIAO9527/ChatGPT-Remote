@@ -733,7 +733,7 @@ class WindowsBackend:
         result = reader.read(target)
         with self.lock:
             if self.mode != "window" or self.tracker.epoch != epoch or self.tracker.current_id != target:
-                raise TargetError("目标窗口已经变化，正在同步对话")
+                raise TargetError("目标窗口已经变化，正在同步对话", "conversation_changed")
             return {**result, "epoch": epoch, "frozen": self.frozen_info_locked(),
                     "status": self.tracker.status, "mode": self.mode}
 
@@ -828,15 +828,19 @@ class WindowsBackend:
                 if self.frozen_info_locked()['active']:raise TargetError('操作已冻结，文件尚未附加')
                 if self.mode!='window' or epoch!=self.tracker.epoch:raise TargetError('电脑窗口已变化，文件尚未附加')
                 target=self._resolve_target();self._focus(target)
-                self._reader().attachment_focus(target,conversation_key)
+                reader=self._reader()
+                reader.attachment_focus(target,conversation_key)
                 def paste():
                     nonlocal invoked
                     self._focus(target)
-                    before=self._reader().attachment_focus(target,conversation_key)
+                    before=reader.attachment_focus(target,conversation_key)
+                    if int(self.u32.GetForegroundWindow() or 0)!=target:
+                        self._focus(target)
+                        before=reader.attachment_focus(target,conversation_key)
                     if int(self.u32.GetForegroundWindow() or 0)!=target:raise TargetError('电脑焦点已变化，文件尚未附加')
                     invoked=True
                     self._key_chord(0x11,0x56)
-                    try:return self._reader().confirm_attachments(target,before,[path.name for path in paths])
+                    try:return reader.confirm_attachments(target,before,[path.name for path in paths])
                     except TargetError as exc:
                         exc.attachment_before=before
                         raise
@@ -1037,18 +1041,23 @@ class WindowsBackend:
         def enter_text(use_clipboard=False):
             self._focus(self.tracker.current_id)
             reader = self._reader()
-            key = reader.prepare(self.tracker.current_id, command.get("conversationKey"))
+            reuse_text = text if text and command.get("submit") else None
+            key = reader.prepare(self.tracker.current_id, command.get("conversationKey"), reuse_text)
+            already_present = reader.prepared_text_present is True
             if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
                 # Focusing an accessibility control can move the foreground.
                 # No text has been entered: restore once and recheck both the
-                # conversation and empty draft before taking any input action.
+                # conversation and composer before taking any input action.
                 self._focus(self.tracker.current_id)
-                key=reader.prepare(self.tracker.current_id,key)
+                key=reader.prepare(self.tracker.current_id,key,reuse_text)
+                if already_present and reader.prepared_text_present is not True:
+                    raise TargetError("电脑草稿已变化，手机草稿已保留", "send_not_started")
                 if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
                     raise TargetError("电脑焦点已变化，手机草稿已保留")
             if text:
-                if use_clipboard:self._key_chord(0x11, 0x56)
-                else:self._unicode_text(text)
+                if reader.prepared_text_present is not True:
+                    if use_clipboard:self._key_chord(0x11, 0x56)
+                    else:self._unicode_text(text)
                 reader.confirm_input(self.tracker.current_id, key, text, submit=command.get("submit", False))
             if not command.get("submit"):
                 return

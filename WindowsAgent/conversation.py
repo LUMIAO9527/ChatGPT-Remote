@@ -245,6 +245,7 @@ class ConversationReader:
         self.queue_catalogs: dict[str, tuple[float, int, dict]] = {}
         self.queue_used: dict[tuple[str,str], float] = {}
         self.prepared_generating = False
+        self.prepared_text_present = False
         self.history = LocalHistory()
 
     def _remember_queue(self, hwnd: int, raw: dict) -> dict:
@@ -643,18 +644,20 @@ class ConversationReader:
             raise TargetError("暂时无法读取电脑输入框", "composer_unavailable")
         return raw
 
-    def prepare(self, hwnd: int, key: str | None) -> str:
+    def prepare(self, hwnd: int, key: str | None, reuse_text: str | None = None) -> str:
         # Always inspect again before input, including the existing draft.
         with self.lock:
             raw = self._identity(hwnd, key)
             observed_key = hashlib.sha256(str(raw.get("identity") or "").encode()).hexdigest()[:24]
             if key is not None and observed_key != key:
                 raise TargetError("电脑已切换对话，请等手机更新后再发送")
-            reply = self._call(operation="prepare", hwnd=hwnd, identity=raw["identity"])
+            reply = self._call(operation="prepare", hwnd=hwnd, identity=raw["identity"], text=reuse_text)
             self.prepared_generating = bool(reply.get("generating"))
+            self.prepared_text_present = reply.get("present") is True
             self.cached = None
             if not reply.get("ok"):
                 reasons = {"draft exists": "电脑输入框已有草稿，请在“电脑草稿”中取回、清空或替换发送",
+                           "draft changed": "电脑草稿已变化，手机草稿已保留",
                            "composer focus rejected": "无法聚焦电脑输入框，请切换画面后重试",
                            "conversation changed": "电脑已切换对话，请等手机更新后再发送"}
                 raise TargetError(reasons.get(reply.get("reason"), "无法定位消息输入框，请切换画面操作"),

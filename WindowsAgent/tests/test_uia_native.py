@@ -12,7 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'WindowsAgent'))
-from windows_control import WindowsBackend
+from windows_control import TargetError, WindowsBackend
 
 
 @unittest.skipUnless(os.name == 'nt' and os.environ.get('RUN_UIA_E2E') == '1', 'set RUN_UIA_E2E=1 for native UIA')
@@ -28,7 +28,7 @@ class NativeConversationTests(unittest.TestCase):
         html = r'''<!doctype html><meta charset="utf-8"><title>TITLE</title>
 <style>body{font:16px system-ui;margin:20px}.sr-only{position:absolute;left:-9999px}
 .thread-scroll-container{max-height:200px;overflow:auto}.bg-user-message{white-space:pre-wrap}#prompt-textarea{padding:12px;border:1px solid #bbb;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap}
-button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content:'使用 ChatGPT Work';pointer-events:none;color:#888}.file-card{height:58px;padding:5px;border:1px solid #aaa;margin:5px}.composer-layout{padding:8px;border:1px solid #eee}</style>
+button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content:'使用 ChatGPT Work';pointer-events:none;color:#888}.file-card{height:58px;padding:5px;border:1px solid #aaa;margin:5px}.fixture-composer{padding:8px;border:1px solid #eee}</style>
 <aside><ul><li><button class="app-action-sidebar-thread-selected bg-primary-ghost-hover">Fixture conversation</button></li></ul></aside>
 <main class="thread-scroll-container"><div class="relative shrink-0"><h5 class="sr-only">ChatGPT 说：</h5>HISTORY</div>
 <div class="relative shrink-0"><h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture">继续</p></div><span>星期三20:15</span></div>
@@ -40,8 +40,10 @@ button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content
 <ul><li class="_ListItem_fixture"><strong class="font-semibold">列表前半句</strong>：后半句不能丢失</li></ul>
 <button aria-label="复制消息">复制</button></div></main>
 <div class="queued-message"><div class="min-w-0 flex-1 self-center text-start select-text" role="group" tabindex="0"><div class="line-clamp-1 max-h-lh min-w-0"><p class="_Paragraph_fixture">电脑排队内容</p></div></div></div>
-<div class="composer-layout" role="group"><div id="files"></div>
+<div class="fixture-composer flex w-full flex-col gap-2 relative" role="group"><div id="files"></div>
+<div class="relative" role="group"><div class="ComposerLayoutBody-fixture LegacyExpandableBody-fixture" role="group">
 <div id="prompt-textarea" class="ProseMirror" role="textbox" aria-label="使用 ChatGPT Work" aria-multiline="true" contenteditable="true"><p class="placeholder"><br class="ProseMirror-trailingBreak"></p></div>
+</div></div>
 <button id="send" aria-label="排队" disabled>排队</button><button aria-label="停止">停止</button>
 <button id="model" aria-haspopup="listbox" aria-expanded="false">GPT Fixture A</button>
 <button id="open-approval">审批测试入口</button><button id="open-choices">工具选择测试入口</button>
@@ -62,7 +64,12 @@ for(const id of ['approval','choices']){
 model.addEventListener('click',()=>{models.hidden=!models.hidden;model.setAttribute('aria-expanded',String(!models.hidden));});
 models.querySelectorAll('[role=option]').forEach(option=>option.addEventListener('click',()=>{model.textContent=option.textContent;models.querySelectorAll('[role=option]').forEach(row=>row.setAttribute('aria-selected',String(row===option)));models.hidden=true;model.setAttribute('aria-expanded','false');}));
 let count=0;edit.addEventListener('input',()=>{if(edit.textContent.trim())edit.querySelectorAll('.placeholder').forEach(p=>p.classList.remove('placeholder'));send.disabled=!edit.textContent.trim()&&!document.querySelector('#files').children.length;document.querySelector('h5.sr-only').outerHTML='<h5 class="sr-only">ChatGPT 说：</h5>';});
-edit.addEventListener('paste',event=>{if(event.clipboardData.files.length){event.preventDefault();for(const file of event.clipboardData.files){const card=document.createElement('div');card.className='file-card';card.innerHTML='<span></span><button aria-label="移除附件">×</button>';card.querySelector('span').textContent=file.name;document.querySelector('#files').appendChild(card);}send.disabled=false;}});
+edit.addEventListener('paste',event=>{if(event.clipboardData.files.length){event.preventDefault();for(const file of event.clipboardData.files){
+  const card=document.createElement('div');card.className='file-card';
+  if(file.type.startsWith('image/')){const img=new Image(50,50);img.className='object-cover';img.alt='附件预览';img.src=URL.createObjectURL(file);card.appendChild(img);}
+  else{const label=document.createElement('span');label.textContent=file.name;card.appendChild(label);}
+  document.querySelector('#files').appendChild(card);
+}send.disabled=false;}});
 send.addEventListener('click',()=>{count++;const row=document.createElement('div');row.className='relative shrink-0';row.innerHTML='<h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture"></p></div>';row.querySelector('p').textContent=edit.innerText;document.querySelector('main').appendChild(row);edit.innerHTML='<p class="placeholder"><br class="ProseMirror-trailingBreak"></p>';document.querySelector('#files').textContent='';send.disabled=true;document.title='TITLE';});
 </script>'''.replace('TITLE', cls.title).replace('HISTORY', '<p>旧内容</p>' * 6100)
         page = cls.work / 'fixture.html'
@@ -205,21 +212,30 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
         (self.work/'clipboard-locked-result.json').write_text(json.dumps({'samples':samples}),encoding='utf-8')
 
     def test_native_z_attachment_and_placeholder_with_enabled_queue_button(self):
+        from PIL import Image
         reader=self.backend._reader();reader.cached=None
         before=self.backend.read_conversation()
-        path=self.work/'手机附件.txt';path.write_text('owned fixture',encoding='utf-8')
+        self.assertEqual(before['title'],'Fixture conversation')
+        path=self.work/'手机附件.jpg'
+        Image.new('RGB',(64,64),'#4b6584').save(path)
         attached=self.backend.attach_files([path],before['key'],before['epoch'])
         self.assertEqual(attached['state'],'attached')
         draft=reader.draft(self.hwnd)
         self.assertFalse(draft['hasDraft']);self.assertEqual(draft['text'],'')
-        result=self.backend.action({'kind':'message','text':'使用 ChatGPT Work','submit':True,'submitMethod':'button',
-                                    'epoch':before['epoch'],'conversationKey':before['key']})
+        message={'kind':'message','text':'使用 ChatGPT Work','submitMethod':'button',
+                 'epoch':before['epoch'],'conversationKey':before['key']}
+        self.backend.action({**message,'submit':False})
+        self.assertEqual(reader.draft(self.hwnd)['text'],message['text'])
+        with self.assertRaisesRegex(TargetError,'草稿'):
+            self.backend.action({**message,'text':'另一条消息','submit':True})
+        self.assertEqual(reader.draft(self.hwnd)['text'],message['text'])
+        result=self.backend.action({**message,'submit':True,'attachmentsOnly':True})
         self.assertEqual(result['submission']['state'],'queued')
         reader.cached=None;after=self.backend.read_conversation()
         self.assertEqual(sum(m['role']=='user' and m['text']=='使用 ChatGPT Work' for m in after['messages']),1)
         self.assertFalse(after['composer']['hasDraft'])
         (self.work/'attachment-result.json').write_text(json.dumps({'attached':True,'placeholderIsEmpty':True,
-            'literalPromptSentOnce':True}),encoding='utf-8')
+            'differentDraftPreserved':True,'literalPromptSentOnce':True}),encoding='utf-8')
 
 
 if __name__ == '__main__':

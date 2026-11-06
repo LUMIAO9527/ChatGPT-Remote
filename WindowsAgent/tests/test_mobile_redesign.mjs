@@ -15,7 +15,7 @@ const source = script.replace(end, `
     actionGate,sendAction,queueScroll,toggleDesktop,bindScreenGestures,statusSentence,renderStatusText,
     computeGate,setPanel,panelPopState,openModelPicker,renderMessageBody,resetRemote,
     setError,clearError,renderConversationState,retryConnection,restorePhonePreferences,enterRemote,stopLive,
-    showConnectionHome,openRemoteView,openScreenView,renderOptions};
+    showConnectionHome,openRemoteView,openScreenView,renderOptions,confirmSetting,finishConfirmation};
 })();`);
 
 function makePage(fetchImpl = async () => { throw new Error('Unexpected request'); }) {
@@ -127,8 +127,8 @@ test('public capability state hides desktop and raw controls and labels the scre
   assert.equal(elements.get('desktopBtn').disabled,true);
   assert.equal(elements.get('rawControls').hidden,true);
   assert.equal(elements.get('rawControls').open,false);
-  assert.equal(elements.get('scopeHint').hidden,false);
-  assert.equal(elements.get('screenTitle').textContent,'ChatGPT 窗口 · 仅查看');
+  assert.equal(elements.get('screenTitle').textContent,'ChatGPT 窗口');
+  assert.equal(elements.get('desktopPromptBtn').hidden,true);
   assert.equal(elements.get('optionsScreenBtn').textContent,'查看电脑画面');
   assert.equal(elements.get('screenViewBtn').hidden,false);
   assert.equal(elements.get('screen').style.touchAction,'pan-x pan-y pinch-zoom');
@@ -143,7 +143,6 @@ test('legacy agents without capabilities keep their existing LAN controls',()=>{
   assert.equal(hooks.hasCapability('rawInput'),true);
   assert.equal(elements.get('desktopControl').hidden,false);
   assert.equal(elements.get('rawControls').hidden,false);
-  assert.equal(elements.get('scopeHint').hidden,true);
   assert.equal(elements.get('screenTitle').textContent,'ChatGPT 窗口');
   assert.equal(elements.get('optionsScreenBtn').textContent,'在画面中操作');
 });
@@ -412,22 +411,39 @@ test('screen entry from home settings waits for panel history then preserves the
 });
 
 
-test('native model submenus keep a visible level-back action and return focus as menu depth changes',()=>{
+test('native model submenus add Back while the shared close button stays on the right',()=>{
   const {hooks,elements,document}=makePage();
   hooks.setPanel('options',elements.get('modelPickerBtn'));
   hooks.state.optionsIntent='model';
-  for(const key of ['model-menu','model-submenu']){
-    hooks.state.options={key,epoch:7,menu:true,category:'model',items:[]};
-    hooks.renderOptions();
-    assert.equal(elements.get('optionsBackBtn').hidden,false);
-    assert.equal(elements.get('optionsCloseBtn').hidden,true);
-    assert.equal(document.activeElement,elements.get('optionsBackBtn'));
-  }
+  hooks.state.options={key:'model-menu',epoch:7,menu:true,category:'model',items:[]};
+  hooks.state.optionsDepth=1;hooks.renderOptions();
+  assert.equal(elements.get('optionsBackBtn').hidden,true);
+  assert.equal(elements.get('optionsCloseBtn').hidden,false);
+  hooks.state.optionsDepth=2;hooks.renderOptions();
+  assert.equal(elements.get('optionsBackBtn').hidden,false);
+  assert.equal(elements.get('optionsCloseBtn').hidden,false);
+  elements.get('optionsBackBtn').focus();
   hooks.state.options={key:'composer-root',epoch:7,menu:false,items:[]};
+  hooks.state.optionsDepth=0;
   hooks.renderOptions();
   assert.equal(elements.get('optionsCloseBtn').hidden,false);
   assert.equal(elements.get('optionsBackBtn').hidden,true);
   assert.equal(document.activeElement,elements.get('optionsCloseBtn'));
+});
+
+test('a settings confirmation reuses the current sheet history and acts only when accepted',()=>{
+  const {hooks,elements,historyEntries}=makePage();
+  let actions=0;
+  hooks.setPanel('settings');const opener=elements.get('unpairBtn');
+  function open(){hooks.confirmSetting('解除配对','需要重新配对。','解除配对',opener,()=>actions++);}
+  open();
+  assert.equal(hooks.state.panel,'confirm');
+  assert.equal(historyEntries.length,2);
+  hooks.finishConfirmation(false);
+  assert.equal(hooks.state.panel,'settings');
+  assert.equal(actions,0);
+  open();hooks.finishConfirmation(true);
+  assert.equal(actions,1);
 });
 
 test('reopening options clears a stale hidden Close and disabled Back before focusing',()=>{

@@ -254,6 +254,8 @@ class MockBackend:
     controls a real desktop window.
     """
 
+    CHAT_TITLES = {'main': '模拟对话', 'other': '另一段对话'}
+
     def __init__(self) -> None:
         self.tracker = WindowTracker()
         self.mode = "window"
@@ -314,8 +316,9 @@ class MockBackend:
                      {'id':'new-demo','kind':'new','title':'在 演示项目 中开始新聊天','project':'demo','projectTitle':'演示项目'},
                      {'id':'new-global','kind':'new','title':'新聊天','project':'','projectTitle':''}]
             if self.navigation_expanded:
-                items += [{'id':name,'kind':'thread','title':title,'project':'demo','projectTitle':'演示项目'}
-                          for name,title in [('main','模拟对话'),('other','另一段对话')]]
+                items += [{'id':name,'kind':'thread','title':title,'project':'demo','projectTitle':'演示项目',
+                           'selected':name==self.current_chat}
+                          for name,title in self.CHAT_TITLES.items()]
             return {'available':True,'epoch':self.tracker.epoch,
                     'source':'mock-window','key':'nav-mock','items':items,'notice':''}
 
@@ -336,7 +339,7 @@ class MockBackend:
             if self.mode != 'window' or not self.tracker.resolve(self._enumerate()):
                 raise TargetError('请先选择电脑窗口')
             identity = f'mock-draft|{self.tracker.epoch}|{self.current_chat}'
-            result = draft_snapshot({'ok':True,'identity':identity,'title':'模拟对话','text':self.draft})
+            result = draft_snapshot({'ok':True,'identity':identity,'title':self.CHAT_TITLES.get(self.current_chat,'新对话'),'text':self.draft})
             result['conversationKey'] = f'mock-{self.tracker.epoch}'
             return {**result,'epoch':self.tracker.epoch}
 
@@ -352,7 +355,7 @@ class MockBackend:
         with self.lock:
             if self.mode != "window" or not self.tracker.resolve(self._enumerate()):
                 raise TargetError("请先选择对话窗口")
-            return {"available": True, "key": f"mock-{self.tracker.epoch}", "title": "模拟对话",
+            return {"available": True, "key": f"mock-{self.tracker.epoch}", "title": self.CHAT_TITLES.get(self.current_chat,'新对话'),
                     "messages": [dict(m) for m in self.messages], "epoch": self.tracker.epoch,
                     "status": self.tracker.status, "mode": self.mode, "frozen": self.frozen_info_locked(),
                     "composer": {"available": True, "hasDraft": bool(self.draft),
@@ -546,6 +549,8 @@ class MockBackend:
                     raise InputError('对话不存在')
                 if target == 'project-demo':
                     self.navigation_expanded = command.get('expanded',True)
+                elif target == self.current_chat:
+                    return {'navigationUnchanged':True}
                 else:
                     self.chat_store[self.current_chat] = self.messages
                     self.current_chat=target if target not in ('new-demo','new-global') else 'new-'+str(self.tracker.epoch)
@@ -1494,7 +1499,10 @@ def make_handler(state: AgentState):
                         break
                     current = state.conversation()
             except (RemoteError, TargetError) as exc:
-                packet = (json.dumps({"kind": "status", "error": str(exc)}, ensure_ascii=False) + "\n").encode("utf-8")
+                status = {"kind": "status", "error": str(exc)}
+                if isinstance(exc, TargetError) and exc.code:
+                    status["code"] = exc.code
+                packet = (json.dumps(status, ensure_ascii=False) + "\n").encode("utf-8")
                 try:
                     self.wfile.write(f"{len(packet):X}\r\n".encode("ascii") + packet + b"\r\n0\r\n\r\n")
                 except OSError:
