@@ -143,6 +143,9 @@ svg{flex-shrink:0}
 .conversation-card{position:relative;display:flex;flex:1;min-height:min(72px,20dvh);border-radius:0;flex-direction:column;overflow:hidden}
 .chat-messages{overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scroll-padding:20px;flex:1;min-height:0;padding:22px max(22px,var(--safe-right)) 24px max(22px,var(--safe-left));overflow-anchor:none;-webkit-overflow-scrolling:touch}
 .chat-message{margin:0 0 24px;min-width:0}
+/* Long conversations skip rendering off-screen messages; short ones keep the
+   exact measured flow so "jump to latest" never lands on an estimate. */
+.chat-messages[data-dense] .chat-message{content-visibility:auto;contain-intrinsic-size:auto 140px}
 .chat-message:last-child{margin-bottom:0}
 .chat-message-body{font-size:16px;line-height:1.8;overflow-wrap:anywhere;min-width:0}
 .chat-message-body p,.chat-message-body li{white-space:pre-wrap}
@@ -2078,19 +2081,20 @@ svg{flex-shrink:0}
         article.dataset.messageId = message.id;
         state.chatElements[message.id] = row;
       }
-      row.article.setAttribute('data-role', message.role);
       var processMessage=isProcessPhase(message.phase);
-      row.article.setAttribute('data-phase', processMessage ? message.phase : 'answer');
-      row.article.setAttribute('data-running',String(message.phase==='commentary' && active));
-      row.article.setAttribute('aria-label', message.role === 'user' ? '发送的消息' : processMessage?'处理过程':'回复');
-      row.timestamp.textContent = typeof message.timestamp === 'string' ? message.timestamp.slice(0,80) : '';
-      row.timestamp.hidden = !row.timestamp.textContent;
       var quick = [message.text.length, message.text.charCodeAt(message.text.length - 1) || 0, message.phase || 'answer',
         message.complete === false ? '0' : '1', active ? '1' : '0', message.duration || '',
         message.work ? JSON.stringify(message.work) : '',
-        (message.attachments || []).length, (message.blocks || []).length].join(':');
+        (message.attachments || []).length, (message.blocks || []).length,
+        typeof message.timestamp === 'string' ? message.timestamp : ''].join(':');
       if (row.quick !== quick) {
         row.quick = quick;
+        row.article.setAttribute('data-role', message.role);
+        row.article.setAttribute('data-phase', processMessage ? message.phase : 'answer');
+        row.article.setAttribute('data-running',String(message.phase==='commentary' && active));
+        row.article.setAttribute('aria-label', message.role === 'user' ? '发送的消息' : processMessage?'处理过程':'回复');
+        row.timestamp.textContent = typeof message.timestamp === 'string' ? message.timestamp.slice(0,80) : '';
+        row.timestamp.hidden = !row.timestamp.textContent;
         var blocks = messageBlocks(message);
         var copyText = message.role==='assistant' ? blocks.filter(function(block){return !isProcessPhase(block.channel);}).map(function(block){return (block.kind==='list'?'• ':'')+block.text;}).join('\n\n') : message.text;
         row.copy.hidden=!copyText.trim() || (message.role==='assistant' && (active || message.complete===false || processMessage));
@@ -2103,6 +2107,8 @@ svg{flex-shrink:0}
       row.active=active;
       if (list.children[index] !== row.article) list.insertBefore(row.article, list.children[index] || null);
     });
+    if (ordered.length > 30) list.setAttribute('data-dense', '');
+    else if (list.hasAttribute && list.hasAttribute('data-dense')) list.removeAttribute('data-dense');
     Object.keys(state.chatElements).forEach(function(id){
       if (!keep[id]) { state.chatElements[id].article.remove(); delete state.chatElements[id]; }
     });
