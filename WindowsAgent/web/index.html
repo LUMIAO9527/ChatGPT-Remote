@@ -2085,14 +2085,21 @@ svg{flex-shrink:0}
       row.article.setAttribute('aria-label', message.role === 'user' ? '发送的消息' : processMessage?'处理过程':'回复');
       row.timestamp.textContent = typeof message.timestamp === 'string' ? message.timestamp.slice(0,80) : '';
       row.timestamp.hidden = !row.timestamp.textContent;
-      var blocks = messageBlocks(message);
-      var copyText = message.role==='assistant' ? blocks.filter(function(block){return !isProcessPhase(block.channel);}).map(function(block){return (block.kind==='list'?'• ':'')+block.text;}).join('\n\n') : message.text;
-      row.copy.hidden=!copyText.trim() || (message.role==='assistant' && (active || message.complete===false || processMessage));
-      row.foot.hidden=(row.copy.hidden && row.timestamp.hidden)||processMessage;
-      var hasWork=message.work||message.duration||processMessage||blocks.some(function(block){return isProcessPhase(block.channel);});
-      var signature = JSON.stringify([blocks,message.attachments||[],message.phase||'answer',hasWork?[message.work||null,message.duration||'',message.complete!==false,active]:null]);
-      if (row.signature !== signature) { renderMessageBody(row.body, blocks, message.phase,message,active); renderMessageAttachments(row.body,message.attachments);row.signature = signature; }
-      row.text = copyText;
+      var quick = [message.text.length, message.text.charCodeAt(message.text.length - 1) || 0, message.phase || 'answer',
+        message.complete === false ? '0' : '1', active ? '1' : '0', message.duration || '',
+        message.work ? JSON.stringify(message.work) : '',
+        (message.attachments || []).length, (message.blocks || []).length].join(':');
+      if (row.quick !== quick) {
+        row.quick = quick;
+        var blocks = messageBlocks(message);
+        var copyText = message.role==='assistant' ? blocks.filter(function(block){return !isProcessPhase(block.channel);}).map(function(block){return (block.kind==='list'?'• ':'')+block.text;}).join('\n\n') : message.text;
+        row.copy.hidden=!copyText.trim() || (message.role==='assistant' && (active || message.complete===false || processMessage));
+        row.foot.hidden=(row.copy.hidden && row.timestamp.hidden)||processMessage;
+        var hasWork=message.work||message.duration||processMessage||blocks.some(function(block){return isProcessPhase(block.channel);});
+        var signature = JSON.stringify([blocks,message.attachments||[],message.phase||'answer',hasWork?[message.work||null,message.duration||'',message.complete!==false,active]:null]);
+        if (row.signature !== signature) { renderMessageBody(row.body, blocks, message.phase,message,active); renderMessageAttachments(row.body,message.attachments);row.signature = signature; }
+        row.text = copyText;
+      }
       row.active=active;
       if (list.children[index] !== row.article) list.insertBefore(row.article, list.children[index] || null);
     });
@@ -4474,8 +4481,14 @@ svg{flex-shrink:0}
     els.message.style.height = 'auto';
     els.message.style.height = Math.min(150, Math.max(58, els.message.scrollHeight)) + 'px';
   }
+  var latestFrame = 0;
   function updateChatLatest(){
-    els.chatLatestBtn.hidden = els.chatMessages.scrollHeight - els.chatMessages.scrollTop - els.chatMessages.clientHeight < 100;
+    // Scroll fires at frame rate; reading layout once per frame is enough.
+    if (latestFrame) return;
+    latestFrame = requestAnimationFrame(function(){
+      latestFrame = 0;
+      els.chatLatestBtn.hidden = els.chatMessages.scrollHeight - els.chatMessages.scrollTop - els.chatMessages.clientHeight < 100;
+    });
   }
   function updateViewport(){
     var viewport = window.visualViewport;
