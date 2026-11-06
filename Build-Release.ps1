@@ -39,6 +39,11 @@ foreach($name in @('desktop.html','desktop.ico','desktop-light.ico','desktop-dar
   if($name -in @('assets','web')){$arguments[$arguments.Count-1]=(Join-Path $agent $name)+';'+$name}
 }
 $arguments+=Join-Path $agent 'remote_main.py'
+$hasWgc = $false
+try { & $PythonPath -c "import windows_capture" 2>$null; $hasWgc = ($LASTEXITCODE -eq 0) } catch { $hasWgc = $false }
+if($hasWgc){
+  $arguments+=@('--hidden-import','windows_capture','--collect-binaries','windows_capture')
+}
 if($DiagnosticConsole){$arguments[$arguments.IndexOf('--windowed')]='--console'}
 & $PythonPath @arguments
 if($LASTEXITCODE){throw 'Program packaging failed.'}

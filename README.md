@@ -49,6 +49,12 @@
 
 需要 64 位 Python 3.10 或更新版本、PowerShell 7。先执行 `WindowsAgent/setup_desktop.ps1 -InstallDependencies`，再打开生成的快捷方式。源码运行数据在 `WindowsAgent/data`，依赖和缓存放在 `_wip`。源码更新使用源码包或 Git；内置程序替换只适用于独立 EXE。
 
+## 画面采集
+
+默认优先使用 Windows Graphics Capture（GPU 路径，窗口内容不变时不出帧，静态画面不耗 CPU），初始化失败、窗口最小化或多窗口同名时会回退到原有的 GDI `PrintWindow`。需要安装 `windows-capture` 与 `numpy` 后生效，未安装时与之前完全一致。`RM_CAPTURE=screen` 可强制 GDI，用于排查与对比。
+
+实测（1555×1022 窗口，10 fps 配置）：GDI 采集 63.5 ms，WGC 采集 8.6 ms。
+
 ## 开发与检查
 
 ```powershell
