@@ -12,10 +12,11 @@ const source = script.replace(end, `
   globalThis.pageTest = { state, request, requestJson, refreshWindows, displayFrame, renderStats, FrameParser, acknowledgeFrame,
     sendAction, sendText, queueScroll, applyConversationEvent, computeGate, controlRequest, stopControl, recordActionFrame,
     renderNavigation, refreshNavigation, setNavigation, navigateItem, acceptNavigation, openNewChat, applyWindowState, openDraft, closeDraft, refreshDraft, resolveDraft, renderDraft, mergeDraftText, renderControls,
-    setPanel, panelPopState, openOptions, refreshOptions, invokeOption, dismissOptions, openOptionSurface, showPairView,
+    setPanel, panelPopState, openOptions, openModelPicker, refreshOptions, invokeOption, dismissOptions, openOptionSurface, showPairView,
     renderQueued, renderMessageBody, startMedia, uploadPhoneFiles, beginPhoneSend, observePhoneSend, awaitPhoneSend, finishPhoneSend, resumePhoneSend,
     showConnectionHome, openRemoteView, returnToComputer, showPairEntry, restorePhonePreferences,
-    openQueue, refreshQueue, renderQueue, invokeQueue };
+    startControl, stopLive, showOffline, resumeConnection, keepUnconfirmedDraft, openDesktopPrompt,
+    openQueue, refreshQueue, renderQueue, invokeQueue, invokeComposerAction };
 })();`);
 
 function makePage(fetchImpl = async () => { throw new Error('Unexpected request'); }) {
@@ -95,7 +96,9 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     displayedEpoch: 7, status: 'ready', view: 'screen', frameSeen: true, activeChatKey:'chat-a',activeChatEpoch:7 });
   return { hooks, elements, draws, revoked, history, storage, historyEntries:entries, backCount:()=>backCount, setNow: value => { now = value; },
     setWallOffset: value => { wallOffset = value; }, failDecode: () => { decodeFails = true; },
-    setImageSize: (width, height) => { imageWidth = width; imageHeight = height; } };
+    setImageSize: (width, height) => { imageWidth = width; imageHeight = height; },
+    setBitmapDecoder: decoder => {context.createImageBitmap=decoder;},
+    setControlEnvironment: controls => {Object.assign(context,controls);} };
 }
 
 function frame(id) {
@@ -113,12 +116,12 @@ test('computer home uses observed metadata and pauses both heavy readers without
   const page=makePage(async()=>{requests++;throw new Error('Home must not load chat or frames');});
   const state=page.hooks.state;
   const files=[{name:'phone.png',id:'attachment-a'}],queued=[{key:'chat-a',text:'下一条',at:1000}];
-  Object.assign(state,{computerName:'MatebookGT14',windows:[{id:1,title:'ChatGPT · App Lab',selected:true}],
+  Object.assign(state,{computerName:'Example-PC',windows:[{id:1,title:'ChatGPT · App Lab',selected:true}],
     phoneFiles:files,localQueued:queued,mediaStarted:true,chatAbort:{abort(){aborts++;}},frameAbort:{abort(){aborts++;}}});
   page.elements.get('message').value='正在编辑的消息';
   page.hooks.showConnectionHome();page.hooks.startMedia();
   assert.equal(requests,0);assert.ok(aborts>=2);
-  assert.equal(page.elements.get('homeComputerName').textContent,'MatebookGT14');
+  assert.equal(page.elements.get('homeComputerName').textContent,'Example-PC');
   assert.equal(page.elements.get('homeWindowName').textContent,'ChatGPT · App Lab');
   assert.equal(page.elements.get('homeStatus').textContent,'已连接');
   assert.equal(page.elements.get('remoteView').hidden,true);
@@ -127,15 +130,14 @@ test('computer home uses observed metadata and pauses both heavy readers without
   assert.equal(state.phoneFiles,files);assert.equal(state.localQueued.length,1);assert.equal(state.localQueued[0],queued[0]);
 });
 
-test('settings always return to the conversation and keep the phone input',async()=>{
+test('settings opened from the computer home return there and keep the phone input',async()=>{
   const page=makePage();page.elements.get('message').value='保留输入';
   page.hooks.showConnectionHome();page.hooks.setPanel('settings');
   assert.equal(page.elements.get('remoteView').inert,true);
   page.history.back();await Promise.resolve();
-  assert.equal(page.hooks.state.panel,'');assert.equal(page.hooks.state.homeActive,false);
-  assert.equal(page.elements.get('remoteView').inert,false);
-  assert.equal(page.elements.get('remoteView').hidden,false);
-  assert.equal(page.elements.get('message').value,'保留输入');
+  assert.equal(page.hooks.state.panel,'');assert.equal(page.hooks.state.homeActive,true);
+  assert.equal(page.elements.get('homeView').inert,false);
+  assert.equal(page.elements.get('remoteView').hidden,true);
   assert.equal(page.elements.get('message').value,'保留输入');
 });
 
@@ -686,6 +688,73 @@ test('a dropped control connection rejects unconfirmed actions without automatic
   assert.equal(sent.length, 1);
 });
 
+test('missing WebSocket handshake and heartbeat each reopen control with HTTP available between sockets',async()=>{
+  const sockets=[],timers=new Map(),intervals=new Map(),paths=[];
+  let sequence=0;
+  const schedule=map=>(callback,ms)=>{const id=++sequence;map.set(id,{callback,ms});return id;};
+  const fire=ms=>{
+    const found=[...timers].find(([,timer])=>timer.ms===ms);
+    assert.ok(found,'expected timer at '+ms);
+    timers.delete(found[0]);found[1].callback();
+  };
+  class TestSocket {
+    constructor(){this.readyState=0;this.bufferedAmount=0;this.sent=[];sockets.push(this);}
+    close(){this.readyState=3;this.onclose?.();}
+    send(raw){this.sent.push(JSON.parse(raw));}
+  }
+  const page=makePage(async(path)=>{paths.push(path);return response({ok:true,epoch:7});});
+  page.setControlEnvironment({WebSocket:TestSocket,setTimeout:schedule(timers),clearTimeout:id=>timers.delete(id),
+    setInterval:schedule(intervals),clearInterval:id=>intervals.delete(id)});
+  const {hooks}=page;
+  try{
+    hooks.startControl();assert.equal(sockets.length,1);
+    fire(5000);assert.equal(sockets[0].readyState,3);assert.equal(hooks.state.control,null);
+    await hooks.sendAction({kind:'key',key:'ENTER'});assert.deepEqual(paths,['/api/action']);
+    fire(timers.get(hooks.state.controlRetry).ms);
+    const live=sockets[1];live.readyState=1;live.onopen();
+    live.onmessage({data:JSON.stringify({type:'auth',ok:true})});
+    assert.equal(timers.size,0);
+    [...intervals.values()][0].callback();
+    assert.deepEqual(live.sent.map(item=>item.type),['auth','ping']);
+    fire(5000);
+    assert.equal(live.readyState,3);assert.equal(intervals.size,0);
+    assert.equal(timers.size,1);
+    assert.deepEqual(paths,['/api/action']);
+  }finally{hooks.stopControl();}
+});
+
+test('entry authorization failures keep pairing while a confirmed token rejection clears it',async()=>{
+  let code='access_required';
+  const page=makePage(async()=>({ok:false,status:401,json:async()=>({code,error:'授权需要恢复'})}));
+  const {hooks}=page,token=hooks.state.token;
+  await assert.rejects(hooks.requestJson('/api/windows'),error=>error.code==='access_required');
+  assert.equal(hooks.state.token,token);
+  code='pairing_required';
+  await assert.rejects(hooks.requestJson('/api/windows'),error=>error.code==='pairing_required');
+  assert.equal(hooks.state.token,'');
+  assert.equal(page.elements.get('pairEntry').hidden,false);
+});
+
+test('offline cancels the old status request and only the resumed snapshot can update the session',async()=>{
+  const pending=[];
+  const page=makePage((path,{signal})=>new Promise(resolve=>pending.push({path,signal,resolve})));
+  const {hooks,elements}=page;
+  hooks.state.homeActive=true;
+  elements.get('message').value='未发草稿';
+  const old=hooks.refreshWindows();
+  hooks.state.offline=true;hooks.showOffline();
+  assert.equal(pending[0].signal.aborted,true);
+  assert.equal(hooks.state.networkTrouble,true);
+  hooks.state.offline=false;hooks.resumeConnection();hooks.resumeConnection();
+  assert.equal(pending.length,2);
+  pending[1].resolve(response({...info,instance:'after'}));await new Promise(resolve=>setImmediate(resolve));
+  pending[0].resolve(response({...info,epoch:100,instance:'before'}));await old;
+  assert.equal(hooks.state.instance,'after');
+  assert.equal(hooks.state.epoch,7);
+  assert.equal(hooks.state.networkTrouble,false);
+  assert.equal(elements.get('message').value,'未发草稿');
+});
+
 test('a delayed scroll is cancelled when its window epoch changes', async () => {
   const sent = [];
   const page = makePage(async (path, options) => { sent.push(options); return response({ok:true,epoch:7}); });
@@ -895,6 +964,33 @@ test('panels share one history entry and back restores the main view with its ph
 const optionsEvent=(overrides={})=>({ok:true,key:'options-a',epoch:7,available:true,menu:false,
   items:[{id:'model',kind:'model',title:'Model <script>',enabled:true,selected:false}],...overrides});
 
+test('the model shortcut opens the native model choices and keeps the phone draft',async()=>{
+  const actions=[];
+  const page=makePage(async(path,request)=>{
+    assert.equal(path,'/api/action');const command=JSON.parse(request.body);actions.push(command);
+    return response({ok:true,epoch:7,options:command.targetId==='model'
+      ?optionsEvent({key:'models',category:'model',menu:true,items:[{id:'choice',kind:'option',title:'Model B',enabled:true}]})
+      :optionsEvent({key:'changed',items:[{id:'model',kind:'model',title:'Model B',enabled:true}]})});
+  });
+  page.elements.get('message').value='保留手机草稿';
+  page.hooks.state.optionsRoot=optionsEvent();page.hooks.state.optionsRootAt=1000;
+  await page.hooks.openModelPicker();
+  assert.equal(page.hooks.state.options.menu,true);assert.equal(actions.length,1);
+  await page.hooks.invokeOption(page.hooks.state.options.items[0]);
+  assert.equal(actions.length,2);assert.equal(page.elements.get('modelPickerLabel').textContent,'Model B');
+  assert.equal(page.elements.get('message').value,'保留手机草稿');
+});
+
+test('bitmap frames release their image and leave unrelated controls intact',async()=>{
+  const page=makePage();let releases=0;
+  page.setBitmapDecoder(async()=>({width:900,height:600,close(){releases++;}}));
+  await page.hooks.displayFrame({},frame(1),{aborted:false});
+  const control=page.elements.get('submitChoices').children[0];
+  await page.hooks.displayFrame({},frame(2),{aborted:false});
+  assert.equal(releases,2);assert.equal(page.revoked.length,0);
+  assert.equal(page.elements.get('submitChoices').children[0],control);
+});
+
 test('a late option read cannot reopen a panel after browser back',async()=>{
   let release;
   const page=makePage(()=>new Promise(resolve=>{release=resolve;}));
@@ -949,11 +1045,88 @@ test('synced composer entries open immediately without an extra read and actions
   assert.deepEqual(paths,['/api/action']);assert.equal(page.hooks.state.options.menu,true);
 });
 
-test('opening a panel pauses conversation and frame readers',()=>{
-  const page=makePage();const chat=new AbortController(),frame=new AbortController();
-  page.hooks.state.chatAbort=chat;page.hooks.state.frameAbort=frame;
-  page.hooks.setPanel('settings');
-  assert.equal(chat.signal.aborted,true);assert.equal(frame.signal.aborted,true);
+test('desktop approvals open from chat while a send is pending and only an explicit choice invokes the computer',async()=>{
+  const actions=[];
+  const prompt={epoch:7,key:'prompt-catalog',menu:false,category:'prompt',
+    prompt:{title:'批准命令',text:'读取示例目录。\nGet-ChildItem -Name',approval:true,truncated:false},
+    items:[{id:'allow',title:'允许一次',kind:'option',enabled:true},{id:'deny',title:'拒绝',kind:'option',enabled:true}]};
+  const page=makePage(async(path,options)=>{
+    if(path==='/api/composer')return response(prompt);
+    assert.equal(path,'/api/action');
+    actions.push(JSON.parse(options.body));
+    return response({ok:true,epoch:7,options:{epoch:7,key:'root-options',menu:false,items:[]}});
+  });
+  const {hooks,elements}=page;
+  Object.assign(hooks.state,{view:'chat',pending:{...hooks.state.pending,sendText:true}});
+  hooks.applyConversationEvent(chatEvent({prompt,capabilities:{rawInput:false}}));
+  assert.equal(elements.get('desktopPromptBtn').hidden,false);
+  await hooks.openDesktopPrompt();
+  assert.equal(elements.get('optionsPromptText').textContent,'读取示例目录。');
+  assert.equal(elements.get('optionsPromptCommand').textContent,'Get-ChildItem -Name');
+  assert.deepEqual(elements.get('optionsList').children.map(button=>button.textContent),['拒绝','允许一次']);
+  assert.equal(elements.get('optionsRetryBtn').hidden,true);
+  assert.equal(elements.get('optionsScreenBtn').hidden,true);
+  hooks.setPanel('');await Promise.resolve();
+  assert.equal(actions.length,0);
+  await hooks.openDesktopPrompt();
+  await hooks.invokeOption(hooks.state.options.items[0]);
+  assert.deepEqual(actions,[{epoch:7,kind:'composer',operation:'invoke',optionsKey:'prompt-catalog',targetId:'allow'}]);
+  assert.equal(elements.get('optionsPanel').hidden,true);
+  assert.equal(hooks.state.pending.sendText,true);
+});
+
+test('a sheet keeps text syncing and pauses an active picture reader',()=>{
+  const chatPage=makePage(),chat=new AbortController();
+  Object.assign(chatPage.hooks.state,{view:'chat',mediaStarted:true,chatAbort:chat});
+  chatPage.hooks.setPanel('settings');
+  assert.equal(chat.signal.aborted,false);
+  assert.equal(chatPage.elements.get('sheetBackdrop').hidden,false);
+  const screenPage=makePage(),frame=new AbortController();
+  Object.assign(screenPage.hooks.state,{view:'screen',mediaStarted:true,frameAbort:frame});
+  screenPage.hooks.setPanel('settings');
+  assert.equal(frame.signal.aborted,true);
+});
+
+test('a blocked text stream falls back to snapshots and preserves rows, scroll and draft',async()=>{
+  const paths=[];
+  const page=makePage(async path=>{
+    paths.push(path);
+    if(path.endsWith('/stream'))return {ok:false,status:415,json:async()=>({error:'stream unavailable'})};
+    assert.equal(path,'/api/conversation');
+    return response(chatEvent({revision:'2'}));
+  });
+  const {hooks,elements}=page;
+  hooks.state.view='chat';
+  hooks.applyConversationEvent(chatEvent());
+  const row=hooks.state.chatElements.m0;
+  elements.get('chatMessages').scrollTop=5;
+  elements.get('message').value='手机草稿';
+  hooks.startMedia();
+  try{
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(paths,['/api/conversation/stream','/api/conversation']);
+    assert.equal(hooks.state.chat.revision,'2');
+    assert.equal(hooks.state.chatConnected,true);
+    assert.equal(hooks.state.chatElements.m0,row);
+    assert.equal(elements.get('chatMessages').scrollTop,5);
+    assert.equal(elements.get('message').value,'手机草稿');
+  }finally{hooks.stopLive();}
+});
+
+test('a restarted Agent can report a lower epoch and delayed data from the old process is ignored',()=>{
+  const {hooks,elements}=makePage();
+  hooks.applyConversationEvent(chatEvent({instance:'first',epoch:17}));
+  const row=hooks.state.chatElements.m0;
+  elements.get('message').value='草稿';
+  hooks.applyWindowState({...info,instance:'second',epoch:1});
+  assert.equal(hooks.state.epoch,1);
+  assert.equal(hooks.state.chatConnected,false);
+  hooks.applyConversationEvent(chatEvent({instance:'second',epoch:1}));
+  hooks.applyWindowState({...info,instance:'first',epoch:18});
+  assert.equal(hooks.state.instance,'second');
+  assert.equal(hooks.state.epoch,1);
+  assert.equal(hooks.state.chatElements.m0,row);
+  assert.equal(elements.get('message').value,'草稿');
 });
 
 test('reasoning collapses separately while body and queue keep their own locations',()=>{
@@ -967,8 +1140,8 @@ test('reasoning collapses separately while body and queue keep their own locatio
   assert.equal(body.children[1].textContent,'Answer');
   assert.equal(body.textContent.includes('Pending user text'),false);
   assert.equal(page.elements.get('queuedStrip').hidden,false);
-  assert.equal(page.elements.get('queuedPreview').textContent,'Pending user text');
-  assert.equal(page.elements.get('queuedList').hidden,true);
+  assert.equal(page.elements.get('queuedList').textContent,'Pending user text');
+  assert.equal(page.elements.get('queuedList').hidden,false);
   body.children[0].open=true;
   page.hooks.renderMessageBody(body,[{kind:'paragraph',text:'Updated process',channel:'reasoning'},{kind:'paragraph',text:'Answer'}]);
   assert.equal(body.children[0].open,true);
@@ -982,7 +1155,7 @@ test('a confirmed queued send clears input and reconciles with the native queue 
   page.elements.get('message').value='Queue this';
   assert.equal(await page.hooks.sendText(true),true);
   assert.equal(page.elements.get('message').value,'');
-  assert.equal(page.elements.get('queuedCount').textContent,'排队中');
+  assert.equal(page.elements.get('queueStatus').textContent,'排队中');
   page.hooks.state.chat.queued=[{id:'native',text:'Queue this'}];page.hooks.renderQueued();
   assert.equal(page.elements.get('queuedList').children.length,1);
   page.hooks.state.chat.queued=[];page.hooks.state.chat.messages=[{role:'user',text:'Queue this'}];page.hooks.renderQueued();
@@ -1362,17 +1535,74 @@ test('a request that never arrived is resolved before re-enabling send',async()=
   assert.equal(page.elements.get('sendEnterBtn').disabled,false);
 });
 
+test('an unrecoverable receipt after Agent restart waits for the user to keep the draft',async()=>{
+  const paths=[];
+  const id='send_previous_startup';
+  const page=makePage(async path=>{
+    paths.push(path);
+    if(path==='/api/delivery?id='+id)return {ok:false,status:404,json:async()=>({error:'发送记录不存在'})};
+    assert.equal(path,'/api/delivery/resolve');
+    return response({ok:true,delivery:{id,state:'confirming'}});
+  });
+  const {hooks,elements,storage}=page;
+  hooks.state.instance='second';
+  storage.set('chatgpt-harmony-pending-send',JSON.stringify({id,text:'待核对文字',key:'chat-a',epoch:7,instance:'first',
+    state:'confirming',sources:[],matches:0,empty:true,queueIds:[],attachmentIds:[]}));
+  const waiting=hooks.resumePhoneSend();
+  for(let attempt=0;attempt<20 && !hooks.state.sending?.previousAgent;attempt++)await new Promise(resolve=>setTimeout(resolve,25));
+  assert.equal(elements.get('keepSendDraftBtn').hidden,false);
+  assert.equal(elements.get('sendEnterBtn').disabled,true);
+  hooks.keepUnconfirmedDraft();await waiting;
+  assert.equal(elements.get('message').value,'待核对文字');
+  assert.equal(elements.get('sendEnterBtn').disabled,false);
+  assert.equal(storage.size,0);
+  assert.deepEqual(paths,['/api/delivery?id='+id,'/api/delivery/resolve']);
+});
+
 function queueSnapshot(){
   return {ok:true,key:'observed-queue',epoch:7,paused:true,items:[{id:'q1',text:'待处理的原生消息',actions:[
     {id:'delete-q1',operation:'delete',enabled:true},{id:'edit-q1',operation:'edit',enabled:true}]}],
     actions:[{id:'resume',operation:'resume',enabled:true}]};
 }
 
-test('queue management opens during receipt confirmation and shows native controls',async()=>{
+test('the composer stops from an empty input and uses the same button to send a queued draft',async()=>{
+  const actions=[];
+  const paused=queueSnapshot();
+  const running={...paused,paused:false,actions:[{id:'observed-stop',operation:'stop',enabled:true}]};
+  const page=makePage(async(path,options)=>{
+    assert.equal(path,'/api/action');
+    const action=JSON.parse(options.body);actions.push(action);
+    return response(action.kind==='queue'?{ok:true,epoch:7,queue:paused}:{ok:true,epoch:7,submission:{state:'queued'}});
+  });
+  const {hooks,elements}=page;
+  const button=elements.get('sendEnterBtn'),message=elements.get('message');
+  hooks.state.view='chat';
+  hooks.applyConversationEvent(chatEvent({generating:true,queue:running}));
+  assert.equal(button.getAttribute('data-mode'),'stop');
+  assert.equal(button.getAttribute('aria-label'),'停止当前回复');
+  assert.equal(elements.get('queueActions').children.length,0);
+  assert.equal(await hooks.invokeComposerAction(),true);
+  assert.equal(actions[0].kind,'queue');
+  assert.equal(actions[0].targetId,'observed-stop');
+  assert.equal(elements.get('queueActions').children[0].textContent,'继续');
+  assert.equal(button.getAttribute('data-mode'),'send');
+  assert.equal(button.disabled,true);
+  hooks.applyConversationEvent(chatEvent({generating:true,queue:running,revision:'2'}));
+  message.value='加入队列';hooks.renderControls();
+  assert.equal(button.getAttribute('data-mode'),'send');
+  assert.equal(await hooks.invokeComposerAction(),true);
+  assert.equal(actions.length,2);
+  assert.equal(actions[1].kind,'message');
+  assert.equal(actions[1].text,'加入队列');
+});
+
+test('queue controls stay inline during receipt confirmation without navigating or blocking chat',async()=>{
   const page=makePage(async path=>{assert.equal(path,'/api/queue');return response(queueSnapshot());});
   page.hooks.state.pending.sendText=true;
   await page.hooks.openQueue();
-  assert.equal(page.hooks.state.panel,'queue');
+  assert.equal(page.hooks.state.panel,'');
+  assert.equal(page.historyEntries.length,1);
+  assert.equal(page.elements.get('queuePanel').hidden,false);
   assert.match(page.elements.get('queueStatus').textContent,/暂停/);
   assert.match(page.elements.get('queueItems').textContent,/待处理的原生消息/);
   assert.doesNotMatch(page.elements.get('queueItems').textContent,/编辑|删除排队消息/);
@@ -1381,7 +1611,7 @@ test('queue management opens during receipt confirmation and shows native contro
   assert.equal(actions[1]['aria-label'],'排队消息操作');
   page.hooks.state.queueMenu='q1';page.hooks.renderQueue();
   assert.match(page.elements.get('queueItems').textContent,/编辑/);
-  assert.equal(page.elements.get('queueActions').children[0].textContent,'继续队列');
+  assert.equal(page.elements.get('queueActions').children[0].textContent,'继续');
 });
 
 test('queue edit uses one observed action and takes back the actual computer draft',async()=>{
@@ -1392,7 +1622,7 @@ test('queue edit uses one observed action and takes back the actual computer dra
     return response({ok:true,epoch:7,queue:{...queueSnapshot(),items:[]},
       queueDraft:{text:'电脑原生全文',conversationKey:'chat-a',epoch:7,revision:'revision',hasDraft:true}});
   });
-  page.hooks.state.queue=queueSnapshot();page.hooks.state.panel='queue';
+  page.hooks.state.queue=queueSnapshot();
   assert.equal(await page.hooks.invokeQueue(page.hooks.state.queue.items[0].actions[1],page.hooks.state.queue.items[0]),true);
   assert.equal(count,1);assert.equal(page.elements.get('message').value,'电脑原生全文');
   assert.equal(page.hooks.state.queueEdit.revision,'revision');
@@ -1401,14 +1631,14 @@ test('queue edit uses one observed action and takes back the actual computer dra
 
 test('queue edit never overwrites an existing phone draft',async()=>{
   let count=0;const page=makePage(async()=>{count++;throw Error('must not invoke');});
-  page.hooks.state.queue=queueSnapshot();page.hooks.state.panel='queue';page.elements.get('message').value='手机原稿';
+  page.hooks.state.queue=queueSnapshot();page.elements.get('message').value='手机原稿';
   assert.equal(await page.hooks.invokeQueue(page.hooks.state.queue.items[0].actions[1],page.hooks.state.queue.items[0]),false);
   assert.equal(count,0);assert.equal(page.elements.get('message').value,'手机原稿');
 });
 
 test('a lost queue action reply is not replayed or reported successful',async()=>{
   let count=0;const page=makePage(async()=>{count++;throw Error('connection interrupted');});
-  page.hooks.state.queue=queueSnapshot();page.hooks.state.panel='queue';
+  page.hooks.state.queue=queueSnapshot();
   assert.equal(await page.hooks.invokeQueue(page.hooks.state.queue.items[0].actions[0],page.hooks.state.queue.items[0]),false);
   assert.equal(count,1);assert.equal(page.hooks.state.queue,null);
   assert.match(page.elements.get('queueError').textContent,/未确认/);
@@ -1416,16 +1646,32 @@ test('a lost queue action reply is not replayed or reported successful',async()=
 
 test('a queue catalog from an old window cannot invoke native controls',async()=>{
   let count=0;const page=makePage(async()=>{count++;throw Error('must not invoke');});
-  page.hooks.state.queue=queueSnapshot();page.hooks.state.panel='queue';page.hooks.state.epoch=8;
+  page.hooks.state.queue=queueSnapshot();page.hooks.state.epoch=8;
   assert.equal(await page.hooks.invokeQueue(page.hooks.state.queue.items[0].actions[0],page.hooks.state.queue.items[0]),false);
   assert.equal(count,0);
 });
 
-test('a late queue read cannot restore a closed panel',async()=>{
+test('a late queue read cannot restore another conversation queue',async()=>{
   let deliver;const page=makePage(()=>new Promise(resolve=>{deliver=resolve;}));
   const opening=page.hooks.openQueue();
-  page.hooks.setPanel('');deliver(response(queueSnapshot()));await opening;
+  page.hooks.state.activeChatKey='other-conversation';deliver(response(queueSnapshot()));await opening;
   assert.equal(page.hooks.state.queue,null);assert.equal(page.elements.get('queuePanel').hidden,true);
+});
+
+test('unchanged inline queue retains its controls while other content renders',()=>{
+  const page=makePage();page.hooks.state.queue=queueSnapshot();page.hooks.renderQueue();
+  const item=page.elements.get('queueItems').children[0];
+  page.hooks.renderControls();page.hooks.renderQueue();
+  assert.equal(page.elements.get('queueItems').children[0],item);
+});
+
+test('late queue editing result cannot replace the draft in a different conversation',async()=>{
+  let reply;const page=makePage(()=>new Promise(resolve=>{reply=resolve;}));
+  page.hooks.state.queue=queueSnapshot();
+  const action=page.hooks.invokeQueue(page.hooks.state.queue.items[0].actions[1],page.hooks.state.queue.items[0]);
+  page.hooks.state.activeChatKey='another';page.elements.get('message').value='另一段对话草稿';
+  reply(response({ok:true,epoch:7,queue:queueSnapshot(),queueDraft:{text:'旧消息',revision:'old'}}));
+  assert.equal(await action,false);assert.equal(page.elements.get('message').value,'另一段对话草稿');
 });
 
 test('a full reconnect snapshot of the same conversation keeps rows and reading position',()=>{

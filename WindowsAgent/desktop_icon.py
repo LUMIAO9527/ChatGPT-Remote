@@ -11,9 +11,9 @@ def vector(theme='dark') -> str:
         return (source.replace('fill="#171717"', 'fill="#ffffff" stroke="#d7d7d7" stroke-width="0.75"')
                 .replace('stroke="#ffffff"', 'stroke="#171717"'))
     if theme == 'auto':
-        style = ('<style>#rm-tile{fill:#fff;stroke:#d7d7d7;stroke-width:.75}'
-                 '#rm-letters{stroke:#171717}@media(prefers-color-scheme:dark){'
-                 '#rm-tile{fill:#171717;stroke:none}#rm-letters{stroke:#fff}}</style>')
+        style = ('<style>@media(prefers-color-scheme:dark){'
+                 '#rm-tile{fill:#fff;stroke:#d7d7d7;stroke-width:.75}'
+                 '#rm-letters{stroke:#171717}}</style>')
         return source.replace('</svg>', style + '</svg>')
     return source
 

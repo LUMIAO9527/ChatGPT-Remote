@@ -1,4 +1,4 @@
-# ChatGPT Remote v0.18.1 — Web/Agent API 契约
+# ChatGPT Remote 1.0.0 Web/Agent API 契约
 
 本文件是 Windows Agent（agent.py）与手机页面（web/index.html）之间的接口契约。
 后端按本契约实现；前端只依赖本契约。除本文件列出的字段外，前端不得依赖其他内部结构。
@@ -15,10 +15,13 @@
   Origin 必须与 Host 同源（http 或 https）；客户端地址为环回（已允许）。
 - 所有 JSON 错误响应：非 2xx，body `{"ok": false, "error": "<中文提示>"}`，可选 `code` 为稳定错误标识；`draft_exists` 表示发送遇到草稿，客户端打开草稿面板，`draft_changed` 表示草稿或对话变化，须刷新后重新选择。WebSocket 错误回复携带相同的可选 `code`。
 - 所有 JSON 成功响应：body 至少含 `{"ok": true, ...}`。
+- `access_required` 表示入口 Cookie 或访问密钥需要恢复。 `pairing_required` 表示当前设备令牌已失效。入口授权失败时客户端保留设备令牌。
 - 时间字段均为 Unix 毫秒（`*_ms`）。
 - 局域网默认只允许私有地址；外网访问必须经受信 HTTPS 入口，不要裸端口映射。
 
-手机发送采用独立状态：非空输入可提交，空内容、提交中、冻结、导航、选项操作或草稿处理中暂停。对话读取状态只影响阅读；窗口模式下两个视图均使用 `message`，携带最后观察的 `conversationKey` 与 `epoch`。首次快照尚未返回时，发送先请求一次 `/api/conversation`；读取期间目标变化则保留输入并要求确认。所有提交仍由后端重新核对输入框和目标，失败或结果未知时保留手机文字，不自动重发。
+窗口模式下使用 `message` 发送，并携带最后观察的 `conversationKey` 与 `epoch`。空输入且原生队列提供 `stop` 时，同一个按钮改为提交 `queue` 停止动作。首次发送前按需读取 `/api/conversation`。目标变化或结果待确认时保留文字，按原消息编号读取回执。
+
+持续文字连接失效时，手机临时轮询 `GET /api/conversation` 并周期性重试增量流。控制 WebSocket 握手或回包超时后自动重建，新操作通过 HTTP 发送。已观察的 `instance` 变化时重新建立窗口版本基线。
 
 设置、项目列表、草稿和对话选项共用一层页面内历史：首次打开 `pushState`，切换面板 `replaceState`，关闭消费该层历史。`popstate` 恢复主界面或对应面板，保留手机输入；配对失效时关闭面板并移除预览。面板打开期间主界面设为 `inert`，焦点在面板内循环；关闭后回到入口按钮。对话选项按需读取，关闭或目标窗口变化后，迟到响应不再更新面板。
 
@@ -35,7 +38,7 @@
 ### GET /api/health
 无需配对令牌。返回：
 ```json
-{"ok": true, "name": "ChatGPT Remote", "version": "0.17.1", "computerName": "MatebookGT14", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
+{"ok": true, "name": "ChatGPT Remote", "version": "1.0.0", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
 ```
 启用访问密钥时仍需有效 Cookie 或 `X-Access-Key`。
 `transport` 为当前进程的非持久化传输诊断；每条活动连接仅含活动控制连接数、未确认帧数/字节数、自适应确认上限、已发送字节数和服务器发送画面至收到绘制确认的往返耗时，不包含图片、窗口标题、设备名或令牌。
@@ -51,8 +54,8 @@ body：`{"pin": "123456", "name": "手机"}`
 ```json
 {
   "ok": true,
-  "version": "0.17.1",
-  "computerName": "MatebookGT14",
+  "version": "1.0.0",
+  "computerName": "Example-PC",
   "instance": "<本次服务启动编号>",
   "mock": true,
   "windows": [
@@ -136,6 +139,8 @@ body：`{"pin": "123456", "name": "手机"}`
 ```
 
 `kind` 为 `model`、`permission`、`effort`、`tools`、`option`、`upload` 或 `surface`。`upload` 由手机打开自身文件选择器，不调用电脑文件对话框。菜单可附带 `category`；条目可带 `label` 和 `description`，权限名称与说明分开显示，帮助、了解更多等链接不作为可选项。条目来自选定窗口的主文档，嵌入网页另有文档身份时不纳入；菜单条目与输入区分类入口分别返回。当前添加菜单的扁平按钮仅在已观察到输入区触发器展开时识别。菜单目录只在内存中保留，最多八份。
+
+当前窗口出现可识别的审批或选择弹窗时，`GET /api/composer` 返回 `category: "prompt"` 和 `prompt: {title, text, approval, truncated}`，对话快照也可附带同一份目录。选择使用 `composer/invoke` 及这份目录的 `optionsKey` 和 `targetId`。服务端核对当前窗口、会话、弹窗摘要与按钮，提交后重新读取。手机收起弹层只改变本地界面。
 
 ### POST /api/uploads、/api/uploads/attach、/api/uploads/status、/api/uploads/discard
 

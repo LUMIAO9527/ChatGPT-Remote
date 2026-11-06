@@ -13,7 +13,8 @@ from desktop_installation import installation_record, plain_path, atomic_json
 
 def owned_targets(root, keep):
     root=plain_path(root)
-    targets=[root/'ChatGPTRemote.exe',root/'_wip/desktop-runtime',root/'_wip/update',root/'_wip/clipboard-runtime']
+    targets=[root/'ChatGPTRemote.exe',root/'_wip/desktop-runtime',root/'_wip/update',root/'_wip/clipboard-runtime',
+             root/'_wip/runtime',root/'_wip/run']
     if not keep:targets += [root/'_data',root/'.chatgptremote-install.json']
     for target in targets:plain_path(target)
     return targets
@@ -39,7 +40,7 @@ def prepare(keep, *, pids=(), root=ROOT, executable=EXECUTABLE, resources=HERE,
     atomic_json(batch/'plan.json',plan)
     powershell=Path(os.environ.get('WINDIR',r'C:\Windows'))/'System32/WindowsPowerShell/v1.0/powershell.exe'
     process=popen([str(powershell),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(batch/'uninstall.ps1'),'-Plan',str(batch/'plan.json')],
-                  cwd=batch,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),
+                  cwd=batch,creationflags=(0x09000000 if os.name=='nt' else 0),
                   stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     deadline=time.monotonic()+15
     while time.monotonic()<deadline and process.poll() is None:

@@ -594,6 +594,9 @@ class WindowsBackend:
                 image = self._stretch_crop(mem_dc, left, top, crop_w, crop_h,
                                            target_w, target_h)
             self.last_capture_method = method
+            # Bind provenance to this image. A concurrent capture may change
+            # last_capture_method before this image is encoded or published.
+            image.info["rm_capture_method"] = method
             return image
         finally:
             if mem_dc:
@@ -617,7 +620,9 @@ class WindowsBackend:
             raise Win32Error("无法获取屏幕 DC")
         try:
             self.last_capture_method = "screen"
-            return self._stretch_crop(screen_dc, x, y, w, h, target_w, target_h)
+            image = self._stretch_crop(screen_dc, x, y, w, h, target_w, target_h)
+            image.info["rm_capture_method"] = "screen"
+            return image
         finally:
             self.u32.ReleaseDC(0, screen_dc)
 
@@ -633,6 +638,7 @@ class WindowsBackend:
             quality = min(int(quality), 60)
         else:
             image = self._grab_window(target, max_width)
+        capture_method = getattr(image, "info", {}).get("rm_capture_method", "unknown")
         out = io.BytesIO()
         image.save(out, format="JPEG", quality=max(30, min(90, int(quality))), optimize=False)
         captured_ms = int(time.time() * 1000)
@@ -640,8 +646,8 @@ class WindowsBackend:
             if self.tracker.epoch != epoch or self.mode != mode:
                 raise TargetError("目标窗口已经变化，正在同步新画面")
             self.last_capture_ms = captured_ms
-            return {"jpeg": out.getvalue(), "epoch": epoch,
-                    "captured_ms": captured_ms, "method": self.last_capture_method,
+            return {"jpeg": out.getvalue(), "image": image, "epoch": epoch, "mode": mode,
+                    "captured_ms": captured_ms, "method": capture_method,
                     "width": image.width, "height": image.height}
 
     def capture(self) -> bytes:  # compatibility helper
@@ -795,6 +801,7 @@ class WindowsBackend:
                 and crop['x'] + crop['width'] <= vx + vw and crop['y'] + crop['height'] <= vy + vh):
             raise TargetError('当前菜单超出窗口，请在画面中操作')
         image = self._grab_window(target, max_width=2560)
+        capture_method = getattr(image, "info", {}).get("rm_capture_method", "unknown")
         scale = image.width / vw
         left, top = (crop['x'] - vx) * scale, (crop['y'] - vy) * scale
         image = image.crop((round(left), round(top), round(left + crop['width'] * scale), round(top + crop['height'] * scale)))
@@ -802,7 +809,8 @@ class WindowsBackend:
         with self.lock:
             if self.mode != 'window' or self.tracker.epoch != epoch or self.tracker.current_id != target:
                 raise TargetError('目标窗口已变化，请重新打开选项')
-        return {'epoch': epoch, 'key': key, 'targetId': target_id, 'image': 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode('ascii'),
+        return {'epoch': epoch, 'mode': 'window', 'method': capture_method,
+                'key': key, 'targetId': target_id, 'image': 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode('ascii'),
                 'bounds': {'x': (r['x']-crop['x'])/crop['width'], 'y': (r['y']-crop['y'])/crop['height'],
                            'width': r['width']/crop['width'], 'height': r['height']/crop['height']}}
 

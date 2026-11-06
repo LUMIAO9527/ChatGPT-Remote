@@ -509,8 +509,9 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(status, 400)
         status, _, _ = self.req("POST", "/api/unpair", {}, authorized=True)
         self.assertEqual(status, 200)
-        status, _, _ = self.req("GET", "/api/windows", authorized=True)
+        status, _, body = self.req("GET", "/api/windows", authorized=True)
         self.assertEqual(status, 401)
+        self.assertEqual(json.loads(body)["code"], "pairing_required")
 
     def test_health_and_page_headers(self):
         status, headers, body = self.req("GET", "/api/health")
@@ -999,8 +1000,9 @@ class AccessAndProxyTests(unittest.TestCase):
         status, _, body = self.req("GET", "/", headers={"Cookie": cookie_pair})
         self.assertEqual(status, 200)
         self.assertIn("ChatGPT Remote", body.decode("utf-8"))
-        status, _, _ = self.req("GET", "/api/health")
+        status, _, body = self.req("GET", "/api/health")
         self.assertEqual(status, 401)
+        self.assertEqual(json.loads(body)["code"], "access_required")
         status, _, body = self.req("GET", "/api/health", headers={"Cookie": cookie_pair})
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["version"], VERSION)
@@ -1098,7 +1100,7 @@ class AccessAndProxyTests(unittest.TestCase):
 
     def test_profile_presets(self):
         self.assertEqual(resolve_profile("lan", None, None, None), (8.0, 1280, 65))
-        self.assertEqual(resolve_profile("remote", None, None, None), (12.0, 900, 55))
+        self.assertEqual(resolve_profile("remote", None, None, None), (20.0, 900, 55))
         self.assertEqual(resolve_profile("remote", 5, 1000, 60), (5.0, 1000, 60))
 
 

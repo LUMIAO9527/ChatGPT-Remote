@@ -6,6 +6,7 @@ HERE=Path(__file__).resolve().parent
 
 
 def render_html(theme='light', native=True):
+    theme = theme if theme in {'light', 'dark'} else 'light'
     html=(HERE/'desktop.html').read_text(encoding='utf-8')
     for marker,name in [('TOKENS','ui-tokens.css'),('MATERIAL','ui-material.css'),
                         ('MOTION','desktop-motion.js'),('PREFERENCES','desktop-preferences.js'),('LIFECYCLE','desktop-lifecycle.js')]:

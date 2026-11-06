@@ -20,7 +20,7 @@ class GeometryTests(unittest.TestCase):
     def test_region_uses_a_sixteen_pixel_radius_at_each_dpi(self):
         panel=NativePanel.__new__(NativePanel);panel.user=Mock()
         dwm,gdi=Mock(),Mock();gdi.CreateRoundRectRgn.return_value=123
-        with patch('desktop_platform.ctypes.WinDLL',side_effect=lambda name:dwm if name=='dwmapi' else gdi):
+        with patch('desktop_platform.ctypes.WinDLL',create=True,side_effect=lambda name:dwm if name=='dwmapi' else gdi):
             panel.round_window(11,546,802,168)
         gdi.CreateRoundRectRgn.assert_called_once_with(0,0,547,803,56,56)
 
@@ -36,8 +36,9 @@ class GeometryTests(unittest.TestCase):
         def dpi(_,kind,x,y):x._obj.value=y._obj.value=168;return 0
         shcore.GetDpiForMonitor.side_effect=dpi
         form=Mock();form.Handle.ToInt64.return_value=0x987654321
-        with patch('desktop_tray.tray_rect',side_effect=[(1800,1040,1824,1080),(1300,1040,1324,1080)]) as locate, \
-             patch('desktop_platform.ctypes.WinDLL',return_value=shcore):
+        locate=Mock(side_effect=[(1800,1040,1824,1080),(1300,1040,1324,1080)])
+        with patch.dict(sys.modules,{'desktop_tray':SimpleNamespace(tray_rect=locate)}), \
+             patch('desktop_platform.ctypes.WinDLL',create=True,return_value=shcore):
             panel.place(form);first=panel.user.SetWindowPos.call_args.args[2:6]
             panel.place(form);second=panel.user.SetWindowPos.call_args.args[2:6]
         self.assertNotEqual(first[0],second[0]);self.assertEqual(second[2:],(546,802))
@@ -50,8 +51,8 @@ class GeometryTests(unittest.TestCase):
         panel=NativePanel.__new__(NativePanel);panel.user=Mock()
         for dpi in (96,120,168,192):
             regions=[];panel.user.SetWindowRgn.side_effect=lambda hwnd,rgn,redraw:regions.append(rgn) or 1
-            width,height=round(312*dpi/96),round(458*dpi/96)
-            with patch('desktop_platform.ctypes.WinDLL',side_effect=lambda name:gdi if name=='gdi32' else Mock()):
+            width,height=round(PANEL_SIZE[0]*dpi/96),round(PANEL_SIZE[1]*dpi/96)
+            with patch('desktop_platform.ctypes.WinDLL',create=True,side_effect=lambda name:gdi if name=='gdi32' else Mock()):
                 panel.round_window(1,width,height,dpi)
             region=regions[0]
             try:
@@ -157,8 +158,10 @@ class PanelHostTests(unittest.TestCase):
         self.notify=Mock();self.host=PanelHost(lambda:(1,2,3,4),self.notify)
         self.connector=patch('desktop_app.Signals.connect',return_value=None).start()
         self.launcher=patch('desktop_app.subprocess.Popen').start()
+        patch('desktop_app.subprocess.CREATE_NO_WINDOW',new=0x08000000,create=True).start()
         self.child=self.launcher.return_value;self.child.poll.return_value=None
-        self.foreground=patch('desktop_app.ctypes.windll.user32.AllowSetForegroundWindow').start()
+        native_dll=patch('desktop_app.ctypes.windll',new=Mock(),create=True).start()
+        self.foreground=native_dll.user32.AllowSetForegroundWindow
         self.addCleanup(patch.stopall)
 
     def test_startup_prewarms_hidden_and_does_not_request_foreground(self):

@@ -1,0 +1,8 @@
+{
+  "name": "chatgpt-remote-review",
+  "private": true,
+  "scripts": {
+    "dev": "python3 tools/serve_review.py",
+    "review": "python3 tools/build_review.py"
+  }
+}

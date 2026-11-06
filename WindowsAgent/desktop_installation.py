@@ -73,6 +73,31 @@ def register_application(executable):
         for name in ('NoModify','NoRepair'): winreg.SetValueEx(key,name,0,winreg.REG_DWORD,1)
 
 
+def refresh_application(executable, *, log=None):
+    """Refresh changed metadata without making Windows registration a startup gate."""
+    import winreg
+    executable = Path(executable).resolve()
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, APP_KEY) as key:
+            location = winreg.QueryValueEx(key, 'InstallLocation')[0]
+            if Path(location).resolve() != executable.parent:
+                raise ValueError('已在其他位置安装 ChatGPT Remote。')
+            version = winreg.QueryValueEx(key, 'DisplayVersion')[0]
+            if version == APP_VERSION:
+                return True
+    except FileNotFoundError:
+        pass
+    except PermissionError as error:
+        if log: log.warning('registration_read_deferred code=%s', error.winerror)
+        return False
+    try:
+        register_application(executable)
+        return True
+    except OSError as error:
+        if log: log.warning('registration_write_deferred code=%s', getattr(error, 'winerror', None))
+        return False
+
+
 class Installation:
     def __init__(self, executable=EXECUTABLE, *, frozen=FROZEN, register=register_application):
         self.executable = Path(executable).resolve()

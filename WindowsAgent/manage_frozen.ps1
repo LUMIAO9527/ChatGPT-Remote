@@ -13,7 +13,9 @@ if($root -eq [IO.Path]::GetPathRoot($root).TrimEnd('\')){throw 'Invalid installa
 $executable=Join-Path $root 'ChatGPTRemote.exe'
 $marker=Get-Content -LiteralPath (Join-Path $root '.chatgptremote-install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 if($marker.app -ne 'lumiao.chatgpt.remote' -or $marker.schema -ne 1 -or $marker.root -ne $root -or !(Test-Path -LiteralPath $executable -PathType Leaf)){throw 'Installation ownership could not be verified.'}
-$names=@{agent=('ChatGPTHarmonyRemote-Agent'+$TaskNamespace);tray=('ChatGPTRemote-Tray'+$TaskNamespace)}
+$names=@{agent=('ChatGPTRemote-Agent'+$TaskNamespace);tray=('ChatGPTRemote-Tray'+$TaskNamespace)}
+$legacyAgent='ChatGPTHarmonyRemote-Agent'+$TaskNamespace
+if(!(Get-ScheduledTask -TaskName $names.agent -ErrorAction SilentlyContinue) -and (Get-ScheduledTask -TaskName $legacyAgent -ErrorAction SilentlyContinue)){$names.agent=$legacyAgent}
 function Owned([string]$role){
   $task=Get-ScheduledTask -TaskName $names[$role] -ErrorAction SilentlyContinue
   if($task){

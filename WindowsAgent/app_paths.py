@@ -6,10 +6,11 @@ import sys
 
 FROZEN = bool(getattr(sys, 'frozen', False))
 HERE = Path(__file__).resolve().parent
-ROOT = Path(sys.executable).resolve().parent if FROZEN else HERE.parent
+_launcher = os.environ.get('CHATGPTREMOTE_LAUNCHER_EXE') if FROZEN else None
+EXECUTABLE = Path(_launcher or sys.executable).resolve() if FROZEN else Path(sys.executable)
+ROOT = EXECUTABLE.parent if FROZEN else HERE.parent
 DATA = ROOT / '_data' if FROZEN else HERE / 'data'
 RUNTIME = ROOT / '_wip' / 'desktop-runtime'
-EXECUTABLE = ROOT / 'ChatGPTRemote.exe' if FROZEN else Path(sys.executable)
 
 
 def launch_command(role='tray', *arguments):
@@ -27,6 +28,18 @@ def child_environment():
     environment.pop('CHATGPTREMOTE_SETUP_RUNTIME', None)
     if FROZEN:
         environment['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
+    return environment
+
+
+def external_environment():
+    """Windows tools use the host's module paths rather than our Python bundle."""
+    environment = child_environment()
+    for name in list(environment):
+        if name.startswith('_PYI_') or name in ('_MEIPASS2', 'PYTHONHOME', 'PYTHONPATH'):
+            environment.pop(name, None)
+    # PowerShell 7 passes its own PSModulePath to children. Windows PowerShell
+    # needs to construct its normal inbox-module path for ScheduledTasks/CIM.
+    environment.pop('PSModulePath', None)
     return environment
 
 

@@ -110,7 +110,7 @@ def window_main(args):
         from desktop_ui import render_html
         manager=DesktopManager();theme=initial_theme(manager.preferences())
         if args.update_ack:
-            if os.environ.get('CHATGPTREMOTE_RESTORE_SERVICE')=='1':manager.service('start')
+            manager.restore_service=os.environ.get('CHATGPTREMOTE_RESTORE_SERVICE')=='1'
             manager.update_ack=(args.update_ack,args.update_token)
         html=render_html(theme)
         class Bridge:
@@ -232,7 +232,7 @@ def tray_main(args):
                          lambda:icon.notify('连接面板启动失败，点击重新打开。','ChatGPT Remote',action=open_window),
                          identity=lambda:icon.identity() if icon else None,
                          update_args=['--update-ack',args.update_ack,'--update-token',args.update_token] if args.update_ack else [])
-    icon=TrayIcon({theme:str(HERE/('desktop-'+theme+'.ico')) for theme in ('light','dark')},
+    icon=TrayIcon({'light':str(HERE/'desktop-dark.ico'), 'dark':str(HERE/'desktop-light.ico')},
                   'ChatGPT Remote · Rm',panel_host.toggle,menu,log=log)
     icon.run_detached();log.info('tray_ready pid=%s',os.getpid())
     panel_host.prepare()

@@ -19,7 +19,7 @@ import webbrowser
 
 from desktop_control import DesktopClient, DesktopControl, DesktopControlError
 
-from app_paths import HERE, ROOT, RUNTIME, DATA, FROZEN, EXECUTABLE
+from app_paths import HERE, ROOT, RUNTIME, DATA, FROZEN, EXECUTABLE, external_environment
 PREFERENCES = DATA / 'desktop_settings.json'
 sys.path.insert(0, str(RUNTIME / 'libs'))
 
@@ -53,10 +53,13 @@ def task_command(action: str, *, enabled: bool | None = None) -> dict:
         args += ['-Enabled', '1' if enabled else '0']
     try:
         result = subprocess.run(args, cwd=HERE, capture_output=True, text=True, encoding='utf-8',
-                                errors='replace', timeout=35, creationflags=subprocess.CREATE_NO_WINDOW)
+                                errors='replace', timeout=35, creationflags=subprocess.CREATE_NO_WINDOW,
+                                env=external_environment())
     except (OSError, subprocess.TimeoutExpired):
         raise DesktopControlError('服务管理未完成，请稍后重试') from None
     if result.returncode:
+        import logging
+        logging.getLogger('remote.startup').warning('task_command_failed action=%s code=%s', action, result.returncode)
         raise DesktopControlError('无法管理后台服务，请检查 Windows 计划任务')
     try:
         value = json.loads(result.stdout.lstrip('\ufeff').strip())
@@ -114,6 +117,7 @@ class DesktopManager:
         self.installation = Installation()
         self.relaunch_executable = None
         self.update_ack = None
+        self.restore_service = False
         self.last_status = None
         self.panel = None
         from agent import VERSION
@@ -134,12 +138,13 @@ class DesktopManager:
 
     def status(self) -> dict:
         try:
-            result = self.client.request('status', timeout=2)
+            result = {**self.client.request('status', timeout=2), 'stale': False}
             self.last_status = result
             return result
         except DesktopControlError as exc:
             if str(exc) == '后台暂时没有响应' and self.last_status:
-                return dict(self.last_status)
+                # Preserve the last live snapshot; only this response is stale.
+                return {**self.last_status, 'stale': True}
             from agent import VERSION
             devices = []
             try:
@@ -243,7 +248,6 @@ class DesktopManager:
             return {'update':self.updates.snapshot()}
         if action in ('updates.install','uninstall'):
             from lifecycle_processes import application_pids
-            from app_paths import EXECUTABLE
             if not FROZEN:raise DesktopControlError('此操作适用于独立程序。源码模式请使用项目维护说明。')
             with self.operation_lock:
                 running=bool(self.status().get('running'))
@@ -334,11 +338,20 @@ class DesktopManager:
             return {}
         if action == 'window.ready':
             if self.panel:self.panel.present()
+            import logging
+            logging.getLogger('remote.desktop').info('panel_ready pid=%s', os.getpid())
             if self.update_ack:
-                from desktop_updates import startup_ack
                 ack,token=self.update_ack
-                startup_ack(ROOT,EXECUTABLE,ack,token)
                 self.update_ack=None
+                def acknowledge():
+                    try:
+                        if self.restore_service:self.service('start')
+                        from desktop_updates import startup_ack
+                        startup_ack(ROOT,EXECUTABLE,ack,token)
+                        logging.getLogger('remote.desktop').info('update_ready service_restored=%s', self.restore_service)
+                    except Exception as error:
+                        logging.getLogger('remote.desktop').error('update_readiness_failed type=%s', type(error).__name__)
+                threading.Thread(target=acknowledge,name='update-ready',daemon=True).start()
             return {}
         if action == 'window.appearance':
             if payload.get('theme') not in ('light','dark'):raise DesktopControlError('外观无效')

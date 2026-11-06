@@ -10,7 +10,7 @@ $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 $script:controlTree=$null
 
-function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false) {
+function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $optionsOnly=$false) {
     $root = $AE::FromHandle([IntPtr][long]$handle)
     if ($null -eq $root) { throw 'window unavailable' }
     $cache = New-Object System.Windows.Automation.CacheRequest
@@ -20,10 +20,11 @@ function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false) {
         $AE::BoundingRectangleProperty, $AE::RuntimeIdProperty)) { $cache.Add($property) }
     $active = $cache.Activate()
     $condition=[System.Windows.Automation.Condition]::TrueCondition
-    if($controlsOnly -or $contentOnly) {
+    if($controlsOnly -or $contentOnly -or $optionsOnly) {
         $filters=New-Object 'System.Collections.Generic.List[System.Windows.Automation.Condition]'
-        $types=@($CT::Document,$CT::Edit,$CT::Button,$CT::Hyperlink,$CT::Header,$CT::ComboBox)
+        $types=@($CT::Document,$CT::Edit,$CT::Button,$CT::Hyperlink,$CT::Header,$CT::ComboBox,$CT::Window,$CT::RadioButton,$CT::CheckBox)
         if($contentOnly){$types+=@($CT::Text,$CT::ListItem,$CT::Image)}
+        if($optionsOnly){$types+=@($CT::Menu,$CT::MenuItem,$CT::List,$CT::ListItem)}
         foreach($type in $types) {
             $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$type))
         }
@@ -197,7 +198,7 @@ function Get-NodeStyle($node, $document) {
 
 function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $controlsOnly=$false) {
     $script:rawPathCache=@{}
-    $tree = Get-WindowTree $handle $controlsOnly ($includeContent -and !$optionsOnly -and !$controlsOnly)
+    $tree = Get-WindowTree $handle $controlsOnly ($includeContent -and !$optionsOnly -and !$controlsOnly) $optionsOnly
     $root = $tree.root
     $nodes = $tree.nodes
     $documentId=if($tree.document){$tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
@@ -205,6 +206,7 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
     $composers = New-Object 'System.Collections.Generic.List[object]'
     $preferredComposers = New-Object 'System.Collections.Generic.List[object]'
     $senders = New-Object 'System.Collections.Generic.List[object]'
+    $promptNodes = New-Object 'System.Collections.Generic.List[object]'
     $selectedThreads = New-Object 'System.Collections.Generic.List[string]'
     $selectedTitle=''
     $title = ''
@@ -243,6 +245,10 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
         if ($null -eq $c.ControlType -or [string]::IsNullOrEmpty($c.ControlType.ProgrammaticName)) { continue }
         $type = $c.ControlType.ProgrammaticName.Replace('ControlType.', '')
         $name = $c.Name
+        if($type -in @('Window','RadioButton','CheckBox') -or
+            ($type -eq 'Button' -and ($name -match $script:promptGrant -or $name -match $script:promptSubmit))){
+            if(!$c.IsOffscreen -and !$c.BoundingRectangle.IsEmpty){$promptNodes.Add($node)}
+        }
         if ($type -eq 'Document' -and !$title) { $title = $name }
         $isMarker = $c.ClassName -match 'sr-only' -and $name -match '^(你说[：:]|ChatGPT 说[：:]|You said:|ChatGPT said:|用户[：:]|助手[：:])$' -and
             (Test-PrimaryDocument $node $documentId)
@@ -418,7 +424,8 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
     $visibleRecords=@($records | Where-Object {$_.type -ne 'Edit' -or $_.editorId -ceq $composerId})
     $identity = Get-ConversationIdentity $handle $documentId $title $firstMarker $selectedThreads $messageAnchor
     return @{records=$visibleRecords; title=$title; identity=$identity; composer=$composer;
-        draft=$draft; generating=$generating; selectedTitle=$selectedTitle;sendEnabled=$sendEnabled; senders=@($senders); truncated=($contentStart -gt 0);tree=$tree}
+        draft=$draft; generating=$generating; selectedTitle=$selectedTitle;sendEnabled=$sendEnabled; senders=@($senders);
+        truncated=($contentStart -gt 0);tree=$tree;promptNodes=$promptNodes.ToArray()}
 }
 
 function Read-Queue($handle, $snapshot=$null) {
@@ -542,6 +549,10 @@ function Get-OptionMenu($node) {
         $node = $walker.GetParent($node,$script:parentCache)
         if ($null -eq $node) { return $null }
         $c = $node.Cached
+        if($c.ControlType -eq $CT::List){
+            $selection=$null
+            if($node.TryGetCurrentPattern([Windows.Automation.SelectionPattern]::Pattern,[ref]$selection)){return $node}
+        }
         if ($c.ControlType -eq $CT::Menu -or ($c.ControlType -eq $CT::List -and $c.ClassName -match '(?i)select|combo|listbox|dropdown|command|popover') -or
             $c.ClassName -match '(^|[ _-])(dropdown-menu|popover-content|menu-content|select-content|command-list)([ _-]|$)') { return $node }
         if ($c.ControlType -eq $CT::Window -or $c.ControlType -eq $CT::Document) { return $null }
@@ -634,9 +645,97 @@ function Test-PrimaryDocument($node, $documentId) {
     return $false
 }
 
+$script:promptGrant='(?i)^(Allow(?: once| always| for this session)?|Always allow|Approve(?: once| for this session)?|Yes,? (?:allow|proceed)|允许(?:一次|本次|此操作|此会话|本会话)?|始终允许|批准(?:一次|本次|本会话|此会话)?|同意(?:本次|执行)?)$'
+$script:promptDeny='(?i)^(Deny|Decline|Reject|Cancel|No(?:, suggest changes)?|拒绝(?:本次|请求)?|不允许|取消|不同意|否)$'
+$script:promptSubmit='(?i)^(提交|继续|确认|完成|下一步|Submit|Continue|Confirm|Done|Next)$'
+$script:promptClass='(?i)(^|[ /_-])(approval-card|approval-request|request-user-input|user-input-request|tool-confirmation|mcp-elicitation)([ /_-]|$)'
+$script:promptCache=New-Object System.Windows.Automation.CacheRequest
+foreach($property in @($AE::ControlTypeProperty,$AE::NameProperty,$AE::IsEnabledProperty,$AE::IsOffscreenProperty,
+                       $AE::IsPasswordProperty,$AE::RuntimeIdProperty,$AE::BoundingRectangleProperty)){
+    $script:promptCache.Add($property)
+}
+
+function Read-PromptRegion($region,$identity,$explicit) {
+    $types=@($CT::Document,$CT::Button,$CT::RadioButton,$CT::CheckBox,$CT::Edit,$CT::Text,$CT::Header)
+    $filters=[System.Windows.Automation.Condition[]]@($types | ForEach-Object {
+        [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$_)
+    })
+    $active=$script:promptCache.Activate()
+    try { $nodes=$region.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.OrCondition]::new($filters)) }
+    finally { $active.Dispose() }
+    if($nodes.Count -gt 140){return $null}
+    $actions=New-Object 'System.Collections.Generic.List[object]'
+    $notes=New-Object 'System.Collections.Generic.List[string]'
+    foreach($node in $nodes){
+        $c=$node.Cached
+        if($c.ControlType -eq $CT::Document -or $c.IsPassword){return $null}
+        if($c.IsOffscreen -or $c.BoundingRectangle.IsEmpty -or !$c.Name){continue}
+        if($c.ControlType -in @($CT::Text,$CT::Header)){
+            if(!$notes.Contains($c.Name)){$notes.Add($c.Name)}
+            continue
+        }
+        if($c.ControlType -notin @($CT::Button,$CT::RadioButton,$CT::CheckBox) -or $c.Name.Length -gt 500){continue}
+        $pattern=$null;$selected=$false
+        if($node.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)){$selected=$pattern.Current.IsSelected}
+        elseif($node.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern,[ref]$pattern)){$selected=$pattern.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On}
+        $actions.Add(@{id=($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.');title=$c.Name;
+            kind='option';enabled=$c.IsEnabled;selected=$selected;element=$node})
+    }
+    if(!$actions.Count -or $actions.Count -gt 24){return $null}
+    $approval=($actions.title -match $script:promptGrant) -and ($actions.title -match $script:promptDeny)
+    if(!$explicit -and (!$approval -or !$notes.Count)){return $null}
+    # An inline approval is recognized only when allow and refuse share this region.
+    if(!$explicit){$actions=@($actions | Where-Object {$_.title -match $script:promptGrant -or $_.title -match $script:promptDeny})}
+    $title=[string]$region.Current.Name
+    if(!$title){$title=if($approval){'电脑审批'}else{'电脑待选项'}}
+    $details=($notes | Where-Object {$_ -cne $title}) -join "`n"
+    if($title.Length -gt 240){$title=$title.Substring(0,240-[int][char]::IsHighSurrogate($title[239]))}
+    # Bind the full visible request to the action, even when the phone preview is shorter.
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try { $revision=[Convert]::ToBase64String($hash.ComputeHash($utf8.GetBytes($region.Current.Name+"`n"+$details))) }
+    finally { $hash.Dispose() }
+    $truncated=$details.Length -gt 8000
+    if($truncated){$details=$details.Substring(0,8000-[int][char]::IsHighSurrogate($details[7999]))}
+    return @{ok=$true;identity=$identity;context=('prompt:'+($region.GetRuntimeId() -join '.')+':'+$revision);
+        menu=$false;entries=@($actions | ForEach-Object {$_});category='prompt';
+        prompt=@{title=$title;text=$details;approval=[bool]$approval;truncated=$truncated}}
+}
+
+function Read-DesktopPrompt($snapshot) {
+    $tree=$snapshot.tree
+    if(!$tree.document){return $null}
+    $documentId=$tree.document.GetRuntimeId() -join '.'
+    $seen=New-Object 'System.Collections.Generic.HashSet[string]'
+    for($index=$snapshot.promptNodes.Count-1;$index -ge 0;$index--){
+        $node=$snapshot.promptNodes[$index];$c=$node.Cached
+        if($c.ControlType -eq $CT::Window -and (Test-PrimaryDocument $node $documentId)){
+            $prompt=Read-PromptRegion $node $snapshot.identity $true
+            if($prompt){return $prompt}
+        }
+        if($c.ControlType -notin @($CT::Button,$CT::RadioButton,$CT::CheckBox)){continue}
+        $grant=$c.ControlType -eq $CT::Button -and $c.Name -match $script:promptGrant
+        if(!(Test-PrimaryDocument $node $documentId)){continue}
+        for($depth=0;$depth -lt 8;$depth++){
+            $node=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($node,$script:parentCache)
+            if(!$node -or $node.Cached.ControlType -in @($CT::Window,$CT::Document)){break}
+            $explicit=$node.Cached.ClassName -match $script:promptClass
+            if(!$explicit -and (!$grant -or $node.Cached.ClassName -match 'thread-scroll-container')){continue}
+            $id=$node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
+            if(!$seen.Add($id)){continue}
+            $rect=$node.Current.BoundingRectangle
+            if($rect.IsEmpty -or (!$explicit -and $rect.Height -gt 540)){continue}
+            $prompt=Read-PromptRegion $node $snapshot.identity $explicit
+            if($prompt){return $prompt}
+        }
+    }
+    return $null
+}
+
 $script:menuCategory='';$script:menuCategoryContext='';$script:menuCategoryIdentity=''
 function Read-ComposerOptions($handle, $category='') {
     $snapshot = Read-Window $handle $true
+    $prompt=Read-DesktopPrompt $snapshot
+    if($prompt){return $prompt}
     $tree = $snapshot.tree
     $documentId=if($null -ne $tree.document) {$tree.document.GetRuntimeId() -join '.'} else {''}
     $entries = New-Object 'System.Collections.Generic.List[object]'
@@ -677,7 +776,7 @@ function Read-ComposerOptions($handle, $category='') {
             $dx=[Math]::Max(0,[Math]::Max($r.Left-$a.Right,$a.Left-$r.Right));$dy=[Math]::Max(0,[Math]::Max($r.Top-$a.Bottom,$a.Top-$r.Bottom))
             if(!$r.IsEmpty -and $r.Width -le 1600 -and $r.Height -le 200 -and $dx -le 80 -and $dy -le 1000) {$portalPossible=$true;break}
         }}
-        if (!$rootKind -and !$insideMenu -and !$portalPossible -and $type -notin @('MenuItem','CheckBox','RadioButton')) {continue}
+        if (!$rootKind -and !$insideMenu -and !$portalPossible -and $type -notin @('MenuItem','ListItem','CheckBox','RadioButton')) {continue}
         if (!(Test-PrimaryDocument $node $documentId)) { continue }
         $menu = Get-OptionMenu $node
         $portalContext=''
@@ -733,7 +832,9 @@ function Get-ProjectAncestor($node) {
 
 function Export-ComposerOptions($options) {
     $items=@($options.entries | ForEach-Object {@{id=$_.id;title=$_.title;kind=$_.kind;enabled=$_.enabled;selected=$_.selected}})
-    return @{ok=$true;identity=$options.identity;context=$options.context;menu=$options.menu;items=$items;category=$options.category}
+    $result=@{ok=$true;identity=$options.identity;context=$options.context;menu=$options.menu;items=$items;category=$options.category}
+    if($options.prompt){$result.prompt=$options.prompt}
+    return $result
 }
 
 function Read-Navigation($handle) {
@@ -826,7 +927,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     if ($request.refresh) {
                         $category=if($request.item.kind -in @('model','permission','tools','effort')){$request.item.kind}else{$options.category}
                         $next=Read-ComposerOptions $request.hwnd $category
-                        if(!$next.menu -and !$options.menu -and $request.item.kind -in @('model','permission','tools','effort')) {
+                        if(!$next.menu -and !$next.prompt -and !$options.menu -and $request.item.kind -in @('model','permission','tools','effort')) {
                             # A read may straddle the desktop popup animation.
                             # Re-read once; the invocation itself is never repeated.
                             Start-Sleep -Milliseconds 80
@@ -873,9 +974,12 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $snapshot = Read-Window $request.hwnd ($request.operation -eq 'identity') ($request.operation -eq 'read') $compact
         if ($request.operation -eq 'observe') {
             $rootOptions=Get-ComposerRoot $snapshot $true
+            $prompt=$null
+            try {$prompt=Read-DesktopPrompt $snapshot} catch [System.Windows.Automation.ElementNotAvailableException] {}
             $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity;selectedTitle=$snapshot.selectedTitle;
                 generating=$snapshot.generating;queue=(Export-Queue (Read-Queue $request.hwnd $snapshot));composer=@{available=($null -ne $snapshot.composer -and $null -ne $snapshot.draft);
                 hasDraft=($null -ne $snapshot.draft -and $snapshot.draft.Length -gt 0);options=$(if($rootOptions){Export-ComposerOptions $rootOptions}else{$null})}}
+            if($prompt){$reply.prompt=Export-ComposerOptions $prompt}
         } elseif ($request.operation -eq 'identity') {
             $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity}
         } elseif ($request.operation -in @('attachment_focus','attachments')) {

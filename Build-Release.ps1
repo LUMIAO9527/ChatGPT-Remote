@@ -26,8 +26,8 @@ $helper=Join-Path $batch 'ChatGPTRemote.Update.exe'
 $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.Web.Extensions.dll (('/out:')+$helper) (Join-Path $agent 'update_common.cs') (Join-Path $agent 'update_helper.cs')
 if($LASTEXITCODE){throw 'Update helper compilation failed.'}
-$arguments=@('-B','-m','PyInstaller','--noconfirm','--clean','--onefile','--windowed','--name','ChatGPTRemote',
-  '--distpath',$OutputDirectory,'--workpath',(Join-Path $batch 'work'),'--specpath',$batch,
+$arguments=@('-B','-m','PyInstaller','--noconfirm','--clean','--onedir','--windowed','--name','ChatGPTRemote.Core',
+  '--distpath',(Join-Path $batch 'dist'),'--workpath',(Join-Path $batch 'work'),'--specpath',$batch,
   '--paths',$agent,'--paths',$DependencyPath,'--icon',(Join-Path $agent 'desktop.ico'),
   '--version-file',(Join-Path $batch 'version-info.txt'),
   '--hidden-import','webview.platforms.winforms','--hidden-import','qrcode',
@@ -43,6 +43,8 @@ if($DiagnosticConsole){$arguments[$arguments.IndexOf('--windowed')]='--console'}
 & $PythonPath @arguments
 if($LASTEXITCODE){throw 'Program packaging failed.'}
 $program=Join-Path $OutputDirectory 'ChatGPTRemote.exe'
+& $PythonPath -B (Join-Path $agent 'build_launcher.py') (Join-Path $batch 'dist\ChatGPTRemote.Core') $program
+if($LASTEXITCODE){throw 'Launcher packaging failed.'}
 $report=Join-Path $batch 'program-self-test.json'
 if(Test-Path -LiteralPath $report){Remove-Item -LiteralPath $report -Force}
 $start=[Diagnostics.ProcessStartInfo]::new()

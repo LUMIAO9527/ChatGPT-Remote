@@ -43,9 +43,24 @@ button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content
 <div class="composer-layout" role="group"><div id="files"></div>
 <div id="prompt-textarea" class="ProseMirror" role="textbox" aria-label="使用 ChatGPT Work" aria-multiline="true" contenteditable="true"><p class="placeholder"><br class="ProseMirror-trailingBreak"></p></div>
 <button id="send" aria-label="排队" disabled>排队</button><button aria-label="停止">停止</button>
+<button id="model" aria-haspopup="listbox" aria-expanded="false">GPT Fixture A</button>
+<button id="open-approval">审批测试入口</button><button id="open-choices">工具选择测试入口</button>
 </div>
+<div id="models" role="listbox" aria-label="模型" hidden><div role="option" tabindex="0" aria-selected="true">GPT Fixture A</div><div role="option" tabindex="0" aria-selected="false">GPT Fixture B</div></div>
+<section id="approval" class="approval-card" hidden style="position:fixed;bottom:15px;background:white;padding:12px;border:1px solid">
+<h3>示例命令审批</h3><p>仅列出测试目录</p><button>允许一次</button><button>拒绝</button></section>
+<section id="choices" role="dialog" aria-label="选择测试方案" hidden style="position:fixed;bottom:15px;background:white;padding:12px;border:1px solid">
+<p>选择下一步</p><button>使用方案 A</button><button>使用方案 B</button></section>
 <script>
 const edit=document.querySelector('#prompt-textarea'),send=document.querySelector('#send');
+const model=document.querySelector('#model'),models=document.querySelector('#models');
+for(const id of ['approval','choices']){
+  const panel=document.getElementById(id);
+  document.getElementById('open-'+id).addEventListener('click',()=>{panel.hidden=false;});
+  panel.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{panel.hidden=true;}));
+}
+model.addEventListener('click',()=>{models.hidden=!models.hidden;model.setAttribute('aria-expanded',String(!models.hidden));});
+models.querySelectorAll('[role=option]').forEach(option=>option.addEventListener('click',()=>{model.textContent=option.textContent;models.querySelectorAll('[role=option]').forEach(row=>row.setAttribute('aria-selected',String(row===option)));models.hidden=true;model.setAttribute('aria-expanded','false');}));
 let count=0;edit.addEventListener('input',()=>{if(edit.textContent.trim())edit.querySelectorAll('.placeholder').forEach(p=>p.classList.remove('placeholder'));send.disabled=!edit.textContent.trim()&&!document.querySelector('#files').children.length;document.querySelector('h5.sr-only').outerHTML='<h5 class="sr-only">ChatGPT 说：</h5>';});
 edit.addEventListener('paste',event=>{if(event.clipboardData.files.length){event.preventDefault();for(const file of event.clipboardData.files){const card=document.createElement('div');card.className='file-card';card.innerHTML='<span></span><button aria-label="移除附件">×</button>';card.querySelector('span').textContent=file.name;document.querySelector('#files').appendChild(card);}send.disabled=false;}});
 send.addEventListener('click',()=>{count++;const row=document.createElement('div');row.className='relative shrink-0';row.innerHTML='<h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture"></p></div>';row.querySelector('p').textContent=edit.innerText;document.querySelector('main').appendChild(row);edit.innerHTML='<p class="placeholder"><br class="ProseMirror-trailingBreak"></p>';document.querySelector('#files').textContent='';send.disabled=true;document.title='TITLE';});
@@ -54,9 +69,10 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
         page.write_text(html, encoding='utf-8')
         edge = Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')) / 'Microsoft/Edge/Application/msedge.exe'
         env = {**os.environ, 'TEMP': str(cls.work), 'TMP': str(cls.work)}
-        cls.process = subprocess.Popen([str(edge), '--user-data-dir=' + str(cls.work / 'profile'),
-            '--no-first-run', '--no-default-browser-check', '--force-renderer-accessibility',
-            '--app=' + page.as_uri(), '--window-size=720,650'],
+        cls.process = subprocess.Popen([str(edge), '--user-data-dir=' + str(cls.work / ('profile-' + str(os.getpid()))),
+            '--no-first-run', '--no-default-browser-check', '--force-renderer-accessibility=complete',
+            '--enable-features=UiaProvider',
+            '--app=' + page.as_uri(), '--window-size=720,800'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         cls.backend = WindowsBackend([cls.title])
         for _ in range(60):
@@ -64,6 +80,7 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
             if len(windows) == 1:
                 cls.hwnd = windows[0]['id']
                 cls.backend.select(cls.hwnd)
+                cls.backend._focus(cls.hwnd)
                 break
             time.sleep(.1)
         else:
@@ -132,6 +149,37 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
         report = {'identityMatches': True, 'structuredContent': True, 'exactlyOneNewMessage': True,
                   'elapsedMs': round((time.monotonic()-started)*1000)}
         (self.work / 'result.json').write_text(json.dumps(report), encoding='utf-8')
+
+    def test_native_x_model_listbox_changes_selection_and_preserves_draft(self):
+        reader=self.backend._reader()
+        root=self.backend.composer_options()
+        trigger=next(item for item in root['items'] if item['kind']=='model')
+        draft=reader.draft(self.hwnd)
+        opened=reader.composer_action(self.hwnd,root['key'],trigger['id'],refresh=True)['options']
+        self.assertTrue(opened['menu'], opened)
+        choice=next(item for item in opened['items'] if item['title']=='GPT Fixture B')
+        changed=reader.composer_action(self.hwnd,opened['key'],choice['id'],refresh=True)['options']
+        self.assertFalse(changed['menu'])
+        self.assertTrue(any(item['kind']=='model' and item['title']=='GPT Fixture B' for item in changed['items']), changed)
+        self.assertEqual(reader.draft(self.hwnd)['text'],draft['text'])
+
+    def test_native_xx_desktop_approval_and_dialog_choices_can_be_read_and_invoked(self):
+        def invoke(snapshot, label):
+            target = next(item for item in snapshot['items'] if item['title'] == label)
+            return self.backend.action({'kind': 'composer', 'operation': 'invoke', 'optionsKey': snapshot['key'],
+                                        'targetId': target['id'], 'epoch': snapshot['epoch']})['options']
+
+        for trigger, text, choice, approval in (
+            ('审批测试入口', '仅列出测试目录', '允许一次', True),
+            ('工具选择测试入口', '选择下一步', '使用方案 B', False),
+        ):
+            current = invoke(self.backend.composer_options(), trigger)
+            self.assertEqual(current['prompt']['approval'], approval)
+            self.assertIn(text, current['prompt']['text'])
+            streamed = self.backend.read_conversation()['prompt']
+            self.assertEqual(streamed['key'], current['key'])
+            next_options = invoke(current, choice)
+            self.assertNotIn('prompt', next_options)
 
     def test_native_y_text_does_not_require_clipboard_access(self):
         import ctypes

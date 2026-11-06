@@ -4,8 +4,24 @@ import json
 import os
 import sys
 import tempfile
+import logging
+from logging.handlers import RotatingFileHandler
+import traceback
 
 sys.dont_write_bytecode=True
+
+
+def startup_logger():
+    from app_paths import RUNTIME
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    log = logging.getLogger('remote.startup')
+    if not log.handlers:
+        handler = RotatingFileHandler(RUNTIME/'startup.log', maxBytes=64000,
+                                      backupCount=1, encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+        log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    return log
 
 def set_launcher_identity(arguments):
     # The tray's outer bootloader owns the update. Its panel is a separate
@@ -63,13 +79,19 @@ def main():
         return 0
     if app_paths.FROZEN:
         set_launcher_identity(arguments)
-        from lifecycle_storage import secure_path
-        app_paths.DATA.mkdir(exist_ok=True)
-        secure_path(app_paths.DATA)
-        from desktop_installation import register_application, installation_record
-        register_application(app_paths.EXECUTABLE)
+        log = startup_logger()
+        log.info('start version=%s role=%s pid=%s', APP_VERSION,
+                 'window' if '--window' in arguments else 'tray', os.getpid())
+        if not app_paths.DATA.exists():
+            from lifecycle_storage import secure_path
+            app_paths.DATA.mkdir()
+            secure_path(app_paths.DATA)
+        from desktop_installation import refresh_application, installation_record
+        refresh_application(app_paths.EXECUTABLE, log=log)
         record=installation_record(app_paths.ROOT)
-        record['version']=APP_VERSION;atomic_json(app_paths.ROOT/MARKER,record)
+        if record.get('version') != APP_VERSION:
+            record['version']=APP_VERSION
+            atomic_json(app_paths.ROOT/MARKER,record)
     if '--uninstall' in arguments:
         atomic_json(app_paths.DATA/'uninstall-request.json',{'schema':1})
         arguments.remove('--uninstall')
@@ -82,7 +104,13 @@ def main():
 
 if __name__=='__main__':
     try:raise SystemExit(main())
-    except Exception:
+    except Exception as error:
+        try:
+            locations=';'.join(f'{Path(frame.filename).name}:{frame.lineno}' for frame in traceback.extract_tb(error.__traceback__))
+            startup_logger().error('startup_failed type=%s code=%s locations=%s',
+                                   type(error).__name__, getattr(error,'winerror',None), locations)
+        except OSError:
+            pass
         if os.name=='nt' and '--self-test' not in sys.argv:
             import ctypes
             ctypes.windll.user32.MessageBoxW(None,'启动未完成，请查看程序文件夹的运行日志或重新下载完整程序。','ChatGPT Remote',0x10)

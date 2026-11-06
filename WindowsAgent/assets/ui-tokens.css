@@ -29,9 +29,9 @@
   --ink: #171717; --muted: #686868; --line: #e8e8e8; --inverse: #fff;
   --danger: #a84037; --danger-muted: #a9554d; --action: #181818; --action-ink: #fff; --ok: #1f8c53;
   --shadow-window: 0 18px 56px #00000018, 0 0 0 1px #0000000a;
-  --shadow-selected: 0 1px 4px #0000000c;
-  --shadow-hover: 0 4px 16px #00000014;
-  --shadow-primary: 0 6px 20px #0000001f;
+  --shadow-selected: inset 0 0 0 1px #0000000a;
+  --shadow-hover: none;
+  --shadow-primary: 0 1px 2px #00000016;
   --shadow-floating: 0 8px 32px #00000024;
   --shadow-knob: 0 1px 3px #00000022;
   --status-surface: #fff; --status-edge: #d9d9d9; --status-shadow: 0 8px 26px #00000029, 0 2px 6px #00000014;
@@ -47,9 +47,9 @@
   --ink: #f0f0f0; --muted: #9b9b9b; --line: #343434; --inverse: #171717;
   --danger: #e07a70; --danger-muted: #e58e85; --action: #f0f0f0; --action-ink: #171717; --ok: #4cc38a;
   --shadow-window: 0 18px 56px #00000070, 0 0 0 1px #ffffff0f;
-  --shadow-selected: 0 1px 5px #00000050;
-  --shadow-hover: 0 4px 16px #00000070;
-  --shadow-primary: 0 0 0 1px #ffffff38, 0 7px 22px #00000085;
+  --shadow-selected: inset 0 0 0 1px #ffffff0d;
+  --shadow-hover: none;
+  --shadow-primary: 0 1px 2px #00000030;
   --shadow-floating: 0 10px 34px #0000008a; --shadow-knob: 0 1px 4px #00000070;
   --status-surface: #343434; --status-edge: #555; --status-shadow: 0 10px 28px #000000b3, 0 0 0 1px #ffffff0a;
   --hover-shadow: var(--shadow-hover); --primary-hover-shadow: var(--shadow-primary);

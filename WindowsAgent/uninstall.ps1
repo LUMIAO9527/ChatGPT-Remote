@@ -38,7 +38,7 @@ try {
     if($script:root -eq [System.IO.Path]::GetPathRoot($script:root).TrimEnd('\')) { throw 'invalid_root' }
     $executable=Full $document.executable
     if($executable -ne (Join-Path $script:root 'ChatGPTRemote.exe')) { throw 'invalid_executable' }
-    $allowed=@($executable,(Join-Path $script:root '_wip\desktop-runtime'),(Join-Path $script:root '_wip\update'),(Join-Path $script:root '_wip\clipboard-runtime'))
+    $allowed=@($executable,(Join-Path $script:root '_wip\desktop-runtime'),(Join-Path $script:root '_wip\update'),(Join-Path $script:root '_wip\clipboard-runtime'),(Join-Path $script:root '_wip\runtime'),(Join-Path $script:root '_wip\run'))
     if(-not $document.keep) { $allowed+=@((Join-Path $script:root '_data'),(Join-Path $script:root '.chatgptremote-install.json')) }
     if($document.targets.Count -ne $allowed.Count) { throw 'invalid_targets' }
     for($i=0;$i -lt $allowed.Count;$i++) { if((Full $document.targets[$i]) -ne (Full $allowed[$i])) { throw 'invalid_target' } }

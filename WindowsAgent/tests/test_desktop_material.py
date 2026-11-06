@@ -24,6 +24,14 @@ class MaterialTests(unittest.TestCase):
         self.assertIn((38,1),attributes);self.assertNotIn((38,3),attributes)
         self.clip.Resize.assert_called_once_with(312,458,16)
 
+    def test_geometry_uses_the_original_panel_radius_at_current_monitor_dpi(self):
+        def get_rect(hwnd, pointer):
+            pointer._obj.right=546;pointer._obj.bottom=802
+            return 1
+        self.user.GetClientRect=Function(effect=get_rect)
+        with patch.object(wm,'window_dpi',return_value=168):
+            self.assertEqual(wm.WindowMaterial._geometry(self.host,self.hwnd),(546,802,28))
+
     def test_unsupported_host_uses_an_opaque_surface(self):
         self.version.return_value.build=26200
         self.dwm.DwmSetWindowAttribute.effect=lambda hwnd,attribute,*_:-1 if attribute==17 else 0

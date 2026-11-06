@@ -18,6 +18,7 @@ import json
 import os
 import secrets
 import socket
+import shutil
 import subprocess
 import struct
 import sys
@@ -34,6 +35,8 @@ from control_channel import ChannelClosed, WebSocket
 from conversation import conversation_event, draft_snapshot
 from attachments import UploadStore, UploadError, MAX_FILE
 from delivery import DeliveryStore
+from frame_clock import FrameClock
+from remote_policy import RemotePolicy, PolicyError
 
 from app_paths import HERE, DATA
 from app_version import APP_VERSION
@@ -43,7 +46,7 @@ DEFAULT_JPEG_QUALITY = 65
 DEFAULT_FPS = 8
 PROFILES = {
     "lan": (8.0, 1280, 65),
-    "remote": (12.0, 900, 55),
+    "remote": (20.0, 900, 55),
 }
 ACCESS_COOKIE = "hr_access"
 ACCESS_PAGE = """<!doctype html>
@@ -106,9 +109,21 @@ def normalize_hostname(value: str) -> str:
 def tailscale_dns_name() -> str:
     """Return this machine's MagicDNS name when the Tailscale CLI is available."""
     try:
-        result = subprocess.run(["tailscale", "status", "--json"],
+        command = shutil.which('tailscale')
+        if not command:
+            for base in (os.environ.get('ProgramFiles', r'C:\Program Files'),
+                         os.environ.get('ProgramW6432', r'C:\Program Files')):
+                candidate = Path(base)/'Tailscale/tailscale.exe'
+                if candidate.is_file():
+                    command = str(candidate)
+                    break
+        if not command: return ''
+        from app_paths import external_environment
+        result = subprocess.run([command, "status", "--json"],
                                 capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=8)
+                                encoding="utf-8", errors="replace", timeout=8,
+                                env=external_environment(),
+                                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         if result.returncode != 0:
             return ""
         data = json.loads(result.stdout or "{}")
@@ -285,7 +300,7 @@ class MockBackend:
                          for kind,title in [('model',self.option_values['model']),('permission',self.option_values['permission']),
                                             ('effort','思考强度：'+self.option_values['effort']),('tools','添加工具')]]
             return {'available':True,'epoch':self.tracker.epoch,'menu':bool(self.option_menu),
-                    'key':f'options-{self.tracker.epoch}-{self.option_revision}', 'items':items}
+                    'key':f'options-{self.tracker.epoch}-{self.option_revision}', 'items':items,'category':self.option_menu}
 
     def composer_surface(self, key: str, target_id: str) -> dict[str, Any]:
         raise TargetError('此演示选项不提供局部画面')
@@ -462,7 +477,7 @@ class MockBackend:
             img.save(data, format="JPEG", quality=max(30, min(90, int(quality))))
             captured_ms = int(time.time() * 1000)
             self.last_capture_ms = captured_ms
-            return {"jpeg": data.getvalue(), "epoch": self.tracker.epoch,
+            return {"jpeg": data.getvalue(), "epoch": self.tracker.epoch, "mode": self.mode,
                     "captured_ms": captured_ms, "method": "mock",
                     "width": img.width, "height": img.height}
 
@@ -617,7 +632,7 @@ class FrameHub:
         self.quality = int(quality)
         self.cond = threading.Condition()
         self.stop_event = threading.Event()
-        self.wake_capture = threading.Event()
+        self.wake_capture = FrameClock()
         self.thread: threading.Thread | None = None
         # Seed with wall-clock milliseconds so frame ids keep increasing even
         # if the Agent restarts while a phone still remembers its last id.
@@ -631,6 +646,7 @@ class FrameHub:
         if self.thread and self.thread.is_alive():
             return
         self.stop_event.clear()
+        if self.wake_capture.closed:self.wake_capture=FrameClock()
         self.thread = threading.Thread(target=self._run, name="frame-hub", daemon=True)
         self.thread.start()
 
@@ -641,7 +657,10 @@ class FrameHub:
             self.cond.notify_all()
         if self.thread:
             self.thread.join(timeout=2.5)
-            self.thread = None
+            if not self.thread.is_alive():
+                self.thread = None
+                self.wake_capture.close()
+        else:self.wake_capture.close()
 
     def note_poll(self) -> None:
         with self.cond:
@@ -727,7 +746,8 @@ class FrameEncoder:
         import io
         from PIL import Image, ImageChops
 
-        image = Image.open(io.BytesIO(frame["jpeg"])).convert("RGB")
+        image = frame.get('image')
+        if image is None:image = Image.open(io.BytesIO(frame["jpeg"])).convert("RGB")
         full = (self.previous is None or self.previous.size != image.size
                 or self.epoch != frame["epoch"])
         x = y = 0
@@ -752,7 +772,7 @@ class FrameEncoder:
         if kind == "patch":
             self.previous.paste(image.crop(box), (x, y))
         else:
-            self.previous = image
+            self.previous = image.copy()
         self.epoch = frame["epoch"]
         meta = {"kind": kind, "frameId": frame["id"], "epoch": frame["epoch"],
                 "capturedMs": frame["captured_ms"], "method": frame.get("method", ""),
@@ -770,7 +790,7 @@ class FrameEncoder:
 class StreamFlow:
     """Bound unacknowledged images so a slow phone cannot build a frame backlog."""
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, frame_interval: float = 1/12) -> None:
         self.owner = hashlib.sha256(token.encode()).hexdigest()
         self.pending: list[int] = []
         self.last_sent = 0
@@ -780,6 +800,7 @@ class StreamFlow:
         self.bytes_sent = 0
         self.pending_bytes: dict[int, int] = {}
         self.window_limit = 3
+        self.frame_interval = max(.025, min(1, float(frame_interval)))
         self.cond = threading.Condition()
 
     def ready(self) -> bool:
@@ -812,7 +833,7 @@ class StreamFlow:
                 self.last_roundtrip_ms = round((now - self.sent_at[released[-1]]) * 1000, 1)
                 # A fixed three-frame window caps FPS at 3 / RTT. Allow enough
                 # credit for a high-RTT path, with an independent byte bound.
-                self.window_limit = max(3, min(12, int(self.last_roundtrip_ms / 83.3) + 2))
+                self.window_limit = max(3, min(12, int(self.last_roundtrip_ms / (self.frame_interval*1000)) + 2))
                 self.last_ack = now
             self.pending = [value for value in self.pending if value > frame_id]
             for value in released:
@@ -921,6 +942,7 @@ class AgentState:
         self.guard = guard or SwitchGuard([])
         self.hub = hub or FrameHub(backend)
         self.access = AccessGate(access_key)
+        self.policy = RemotePolicy(bool(access_key or trusted_hosts))
         upload_root=data_dir.parent.parent/'_wip/mobile-uploads' if data_dir.parent.resolve()==HERE else data_dir/'uploads'
         self.uploads=UploadStore(upload_root)
         self.uploads.start_cleanup()
@@ -982,6 +1004,7 @@ class AgentState:
                 'instance': self.deliveries.instance,
                 "guard": self.guard.snapshot(),
                 "paired_count": self.tokens.count(),
+                "capabilities": self.policy.capabilities(),
                 **data}
 
     def transport_info(self) -> dict[str, Any]:
@@ -1003,6 +1026,7 @@ class AgentState:
         return bool(self.maintenance_token)
 
     def _accept_action(self, data: dict[str, Any], token: str = '') -> dict[str, Any]:
+        self.check_public_action(data)
         if data.get('messageId') is not None:
             if data.get('kind') != 'message' or data.get('submit') is not True or type(data.get('epoch')) is not int:
                 raise RemoteError('发送任务参数无效')
@@ -1015,7 +1039,38 @@ class AgentState:
             if self.maintenance_active():raise RemoteError('电脑端正在维护，请稍后重新连接。')
             return self._perform_active_action(data,token)
 
+    def check_public_action(self, data: dict) -> None:
+        try:
+            self.policy.allow_action(data, getattr(self.backend, "mode", "window"))
+        except PolicyError as exc:
+            raise RemoteError(str(exc), 403) from None
+
+    def require_public_window(self) -> None:
+        try:
+            self.policy.require_window(getattr(self.backend, "mode", "window"))
+        except PolicyError as exc:
+            raise RemoteError(str(exc), 403) from None
+
+    def require_public_frame(self, frame: dict[str, Any]) -> None:
+        """Validate capture provenance and the live target immediately before send.
+
+        The capture carries its own mode/method/epoch; checking only the live
+        mode would permit a cached desktop image after returning to a window.
+        Release the backend lock before encoding or writing to a slow socket.
+        """
+        if not self.policy.public:
+            return
+        with self.backend.lock:
+            self.require_public_window()
+            method = frame.get("method")
+            safe_method = method == "printwindow" or (method == "mock" and self.mock)
+            if frame.get("mode") != "window" or not safe_method:
+                raise RemoteError("当前无法安全读取窗口画面，请回到对话或在电脑端检查窗口。", 403)
+            if type(frame.get("epoch")) is not int or frame["epoch"] != self.backend.tracker.epoch:
+                raise TargetError("目标窗口已经变化，正在同步新画面")
+
     def _perform_active_action(self, data: dict[str, Any], token: str = '') -> dict[str, Any]:
+        self.check_public_action(data)
         if data.get("kind") not in ("tap", "right", "scroll", "text", "key", "message", "navigate", "draft", "composer", "queue"):
             raise RemoteError("未授权的操作类型")
         if type(data.get("epoch")) is not int:
@@ -1049,6 +1104,7 @@ class AgentState:
                 "processingMs": round((time.monotonic() - started) * 1000, 1)}
 
     def attach_uploads(self, token: str, data: dict) -> dict:
+        self.require_public_window()
         if type(data.get('epoch')) is not int or not isinstance(data.get('conversationKey'),str):raise UploadError('缺少当前对话信息')
         with self.uploads.lock:
             items=self.uploads.resolve(token,data.get('ids'))
@@ -1099,6 +1155,7 @@ class AgentState:
         flow.acknowledge(token, frame_id)
 
     def conversation(self) -> dict[str, Any]:
+        self.require_public_window()
         snapshot = self.backend.read_conversation()
         self.deliveries.observe(snapshot)
         revision = hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:24]
@@ -1207,7 +1264,7 @@ def make_handler(state: AgentState):
         def authorized(self) -> bool:
             if state.tokens.valid(self.token()):
                 return True
-            self.reject("需要先配对或重新配对", 401)
+            self.reject("需要先配对或重新配对", 401, "pairing_required")
             return False
 
         def require_access(self) -> bool:
@@ -1226,7 +1283,7 @@ def make_handler(state: AgentState):
                 self.send_bytes(ACCESS_PAGE.encode("utf-8"), 401,
                                 content_type="text/html; charset=utf-8")
                 return False
-            self.reject("需要访问密钥：请使用电脑上 Agent 打印的完整外网链接打开", 401)
+            self.reject("需要入口授权：请从电脑托盘扫描连接二维码或复制完整链接", 401, "access_required")
             return False
 
         def check_ip(self) -> bool:
@@ -1324,7 +1381,10 @@ def make_handler(state: AgentState):
                 elif path == "/api/composer/surface":
                     if self.authorized():
                         query = parse_qs(urlsplit(self.path).query)
-                        self.send_json({"ok": True, **state.backend.composer_surface(query.get('key',[''])[0], query.get('target',[''])[0])})
+                        surface = state.backend.composer_surface(query.get('key',[''])[0], query.get('target',[''])[0])
+                        state.require_public_frame(surface)
+                        if self.authorized():
+                            self.send_json({"ok": True, **surface})
                 elif path == "/api/conversation/stream":
                     if self.authorized():
                         self._conversation_stream()
@@ -1419,6 +1479,7 @@ def make_handler(state: AgentState):
             last_sent = 0.0
             try:
                 while not state.hub.stop_event.is_set() and state.tokens.valid(self.token()):
+                    state.require_public_window()
                     event = conversation_event(previous, current)
                     if event is not None:
                         previous = current
@@ -1432,8 +1493,8 @@ def make_handler(state: AgentState):
                     if state.hub.stop_event.wait(0.65):
                         break
                     current = state.conversation()
-            except TargetError:
-                packet = (json.dumps({"kind": "status", "error": "对话窗口已变化，正在重新读取"}, ensure_ascii=False) + "\n").encode("utf-8")
+            except (RemoteError, TargetError) as exc:
+                packet = (json.dumps({"kind": "status", "error": str(exc)}, ensure_ascii=False) + "\n").encode("utf-8")
                 try:
                     self.wfile.write(f"{len(packet):X}\r\n".encode("ascii") + packet + b"\r\n0\r\n\r\n")
                 except OSError:
@@ -1442,11 +1503,17 @@ def make_handler(state: AgentState):
                 pass
 
         def _stream(self) -> None:
+            state.require_public_window()
             state.hub.note_poll()
             result = state.hub.wait(0, timeout=1.8)
             if result is not None and "error" in result:
                 self.reject(result["error"], 409)
                 return
+            if not self.authorized():
+                return
+            state.require_public_window()
+            if result is not None:
+                state.require_public_frame(result)
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Cache-Control", "no-store, private, no-transform")
@@ -1458,7 +1525,7 @@ def make_handler(state: AgentState):
             self.close_connection = True
             self.connection.settimeout(5)
             stream_id = secrets.token_urlsafe(12)
-            flow = StreamFlow(self.token())
+            flow = StreamFlow(self.token(), state.hub.interval)
             with state.lock:
                 state.streams[stream_id] = flow
             encoder = FrameEncoder(stream_id)
@@ -1466,6 +1533,7 @@ def make_handler(state: AgentState):
             last_sent = 0.0
             try:
                 while not state.hub.stop_event.is_set() and state.tokens.valid(self.token()):
+                    state.require_public_window()
                     if not flow.ready():
                         if flow.stalled():
                             break
@@ -1479,6 +1547,7 @@ def make_handler(state: AgentState):
                     elif "error" in result:
                         packet = FrameEncoder.pack({"kind": "status", "error": result["error"]})
                     else:
+                        state.require_public_frame(result)
                         last_id = result["id"]
                         packet = encoder.encode(result)
                         if packet is not None:
@@ -1486,6 +1555,11 @@ def make_handler(state: AgentState):
                         if packet is None and time.monotonic() - last_sent >= 1.0:
                             packet = FrameEncoder.pack({"kind": "idle"})
                     if packet is not None:
+                        if not state.tokens.valid(self.token()):
+                            break
+                        state.require_public_window()
+                        if result is not None and "error" not in result:
+                            state.require_public_frame(result)
                         self.wfile.write(f"{len(packet):X}\r\n".encode("ascii") + packet + b"\r\n")
                         self.wfile.flush()
                         last_sent = time.monotonic()
@@ -1495,6 +1569,15 @@ def make_handler(state: AgentState):
                     result = state.hub.wait(last_id, timeout=1.0)
                 self.wfile.write(b"0\r\n\r\n")
                 self.wfile.flush()
+            except (RemoteError, TargetError) as exc:
+                # Headers are already committed: terminate this stream using its
+                # own framing, never append a second HTTP response or stale image.
+                packet = FrameEncoder.pack({"kind": "status", "error": str(exc)})
+                try:
+                    self.wfile.write(f"{len(packet):X}\r\n".encode("ascii") + packet + b"\r\n0\r\n\r\n")
+                    self.wfile.flush()
+                except OSError:
+                    pass
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, OSError):
                 # Closing the page cancels its stream. Nothing is queued for reconnection.
                 pass
@@ -1503,6 +1586,7 @@ def make_handler(state: AgentState):
                     state.streams.pop(stream_id, None)
 
         def _frame(self) -> None:
+            state.require_public_window()
             query = parse_qs(urlsplit(self.path).query)
             raw_since = query.get("since", [None])[0]
             if raw_since is None or raw_since == "":
@@ -1522,6 +1606,9 @@ def make_handler(state: AgentState):
             if "error" in result:
                 self.reject(result["error"], 409)
                 return
+            if not self.authorized():
+                return
+            state.require_public_frame(result)
             self.send_bytes(result["jpeg"], content_type="image/jpeg", extra_headers={
                 "X-Frame-Id": str(result["id"]),
                 "X-Target-Epoch": str(result["epoch"]),
@@ -1576,6 +1663,8 @@ def make_handler(state: AgentState):
                     self.send_json(state.info())
                 elif path == "/api/desktop":
                     self.read_json()
+                    if state.policy.public:
+                        raise RemoteError("公网连接不提供 Windows 全桌面控制。", 403)
                     state.backend.desktop()
                     self.send_json(state.info())
                 elif path == "/api/window":
@@ -1646,7 +1735,7 @@ def main() -> None:
     parser.add_argument("--window-keyword", action="append",
                         help="筛选窗口标题关键字，可重复（覆盖默认应用白名单）")
     parser.add_argument("--profile", choices=("lan", "remote"), default="lan",
-                        help="lan=局域网默认；remote=外网画面（最高12fps/900px/质量55）")
+                        help="lan=局域网默认；remote=外网画面（最高20fps/900px/质量55）")
     parser.add_argument("--fps", type=float, default=None,
                         help="覆盖抓取帧率上限")
     parser.add_argument("--max-width", type=int, default=None,
@@ -1687,6 +1776,8 @@ def main() -> None:
             access_key = load_or_create_access_key(DATA)
         else:
             access_key = args.access_key
+    if not args.mock and (access_key or trusted_hosts) and args.window_keyword:
+        parser.error("公网连接不接受自定义窗口关键字，请使用默认 ChatGPT 窗口范围")
     if args.mock:
         backend: Any = MockBackend()
     else:
@@ -1730,7 +1821,7 @@ def main() -> None:
         print(f"外网域名: {host}")
         print(f"外网入口需已配置: tailscale funnel --bg --https=8443 http://127.0.0.1:{args.port}")
         if access_key:
-            print(f"外网访问链接: https://{host}:8443/?k={access_key}")
+            print("外网入口已配置；请从托盘复制连接链接或扫描二维码（日志不输出访问密钥）")
             print("首次用该链接打开后，浏览器会记住访问权限；之后可直接打开同一域名")
         print("公网入口有风险：不用时请关闭 Agent，或执行 tailscale funnel --https=8443 off")
     elif access_key:

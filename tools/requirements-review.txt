@@ -1,0 +1,3 @@
+# Offline preview uses the same image and QR libraries as the desktop build.
+Pillow==12.2.0
+qrcode==8.2

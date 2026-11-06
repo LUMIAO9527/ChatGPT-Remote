@@ -3,4 +3,4 @@
     <path d="M6.5 22V9.4H10.5C15.4 9.4 15.4 16.2 10.5 16.2H6.5M10.5 16.2L15 22" />
     <path d="M18.6 22V14.1M18.6 15C18.6 11.7 22.5 11.7 22.5 15V22M22.5 15C22.5 11.7 26.4 11.7 26.4 15V22" />
   </g>
-</g><circle cx="140" cy="144" r="2" fill="#BEC5D0" /><style>#rm-tile{fill:#fff;stroke:#d7d7d7;stroke-width:.75}#rm-letters{stroke:#171717}@media(prefers-color-scheme:dark){#rm-computer-case{fill:#BCC3CE}#rm-computer-screen{fill:#303743}#rm-tile{fill:#171717;stroke:none}#rm-letters{stroke:#fff}}</style></svg>
+</g><circle cx="140" cy="144" r="2" fill="#BEC5D0" /><style>@media(prefers-color-scheme:dark){#rm-computer-case{fill:#BCC3CE}#rm-computer-screen{fill:#303743}#rm-tile{fill:#fff;stroke:#d7d7d7;stroke-width:.75}#rm-letters{stroke:#171717}}</style></svg>

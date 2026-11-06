@@ -126,6 +126,38 @@ class ConversationTests(unittest.TestCase):
             {'id':'documents','title':'文档','enabled':True},{'id':'help-tool','title':'帮助','enabled':True}]})
         self.assertEqual([item['title'] for item in tools['items']],['文档','帮助'])
 
+    def test_prompt_options_are_bound_to_one_readback_and_never_dismissed_as_a_menu(self):
+        reader = ConversationReader()
+        raw = {
+            'ok': True, 'identity': 'current-chat', 'context': 'prompt:dialog-id:revision',
+            'menu': False, 'category': 'prompt',
+            'prompt': {'title': 'Approval', 'text': 'Read the fixture directory', 'approval': True},
+            'items': [{'id': 'allow', 'title': 'Allow once', 'enabled': True},
+                      {'id': 'deny', 'title': 'Deny', 'enabled': True}],
+        }
+        invoked = []
+
+        def call(**request):
+            if request['operation'] == 'composer':
+                return raw
+            invoked.append(request)
+            return {'ok': True, 'next': raw}
+
+        reader._call = call
+        observed = reader.composer_options(7)
+        self.assertEqual(observed['prompt']['text'], 'Read the fixture directory')
+        with self.assertRaises(TargetError):
+            reader.composer_action(8, observed['key'], 'allow')
+        with self.assertRaises(TargetError):
+            reader.composer_action(7, observed['key'], None, dismiss=True)
+        result = reader.composer_action(7, observed['key'], 'allow', refresh=True)['options']
+        self.assertEqual(invoked[0]['context'], raw['context'])
+        self.assertTrue(all(not option['enabled'] for option in result['items']))
+        self.assertTrue(all(not option['enabled'] for option in reader.composer_options(7)['items']))
+        with self.assertRaises(TargetError):
+            reader.composer_action(7, observed['key'], 'deny')
+        self.assertEqual(len(invoked), 1)
+
     def test_queue_and_process_metadata_never_become_reply_body(self):
         result=parse_snapshot({'nodes':[
             {'type':'Text','name':'你说：','marker':True},

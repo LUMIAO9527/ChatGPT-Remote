@@ -241,6 +241,7 @@ class ConversationReader:
         self.accessible_hwnd = 0
         self.catalogs: dict[str, tuple[float, int, str, list[dict]]] = {}
         self.option_catalogs: dict[str, tuple[float, int, dict]] = {}
+        self.prompt_attempts: dict[str, float] = {}
         self.queue_catalogs: dict[str, tuple[float, int, dict]] = {}
         self.queue_used: dict[tuple[str,str], float] = {}
         self.prepared_generating = False
@@ -324,11 +325,26 @@ class ConversationReader:
                           **option_labels(item['title'][:500],str(raw.get('category') or ''))})
         snapshot = {"items": items, "menu": bool(raw.get("menu")), "context": str(raw.get("context") or ""),
                     "identity": str(raw.get("identity") or ""),"category":str(raw.get('category') or '')}
+        prompt = raw.get('prompt')
+        if isinstance(prompt, dict) and snapshot['context'].startswith('prompt:'):
+            snapshot['menu'] = False
+            snapshot['prompt'] = {
+                'title': str(prompt.get('title') or '电脑待选项')[:240],
+                'text': str(prompt.get('text') or '')[:8000],
+                'approval': bool(prompt.get('approval')),
+                'truncated': bool(prompt.get('truncated')),
+            }
         key = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()[:24]
-        self.option_catalogs[key] = (time.monotonic(), hwnd, snapshot)
+        now = time.monotonic()
+        if 'prompt' in snapshot:
+            self.prompt_attempts = {ident: at for ident, at in self.prompt_attempts.items() if now - at < 120}
+            if key in self.prompt_attempts:
+                items = [{**item, 'enabled': False} for item in items]
+        self.option_catalogs[key] = (now, hwnd, snapshot)
         while len(self.option_catalogs) > 8:
             self.option_catalogs.pop(next(iter(self.option_catalogs)))
-        return {"key": key, "items": items, "menu": snapshot["menu"], "available": bool(items),"category":snapshot['category']}
+        return {"key": key, "items": items, "menu": snapshot["menu"], "available": bool(items),"category":snapshot['category'],
+                **({'prompt': snapshot['prompt']} if 'prompt' in snapshot else {})}
 
     def composer_action(self, hwnd: int, key: str, target: str | None, dismiss: bool = False, refresh: bool = False) -> bool | dict:
         """Invoke one observed control, or validate an open menu before Escape."""
@@ -337,11 +353,16 @@ class ConversationReader:
             if not reference or reference[1] != hwnd or time.monotonic() - reference[0] > 120:
                 raise TargetError("输入框选项已变化，请刷新后重新选择")
             snapshot = reference[2]
+            if 'prompt' in snapshot:
+                if dismiss or time.monotonic() - self.prompt_attempts.get(key, float('-inf')) < 120:
+                    raise TargetError('电脑请求仍在回读，请刷新查看。', 'prompt_pending')
             matches = [item for item in snapshot["items"] if item["id"] == target and item["enabled"]]
             if (dismiss and not snapshot["menu"]) or (not dismiss and len(matches) != 1):
                 raise TargetError("选项已变化或不可用，请刷新后重新选择")
             # Consume before invocation. An uncertain action is never repeated.
             self.option_catalogs.pop(key, None)
+            if 'prompt' in snapshot:
+                self.prompt_attempts[key] = time.monotonic()
             try:
                 reply = self._call(operation="composer_dismiss" if dismiss else "composer_invoke", hwnd=hwnd,
                                    identity=snapshot["identity"], context=snapshot["context"],
@@ -599,6 +620,8 @@ class ConversationReader:
             if result is None:result = parse_snapshot(raw)
             if isinstance(observed.get('queue'),dict):
                 result['queue']=self._remember_queue(hwnd,observed['queue'])
+            if isinstance(observed.get('prompt'), dict):
+                result['prompt'] = self._remember_options(hwnd, observed['prompt'])
             root_options = result.get('composer', {}).get('options')
             if isinstance(root_options, dict):
                 result['composer'] = {**result['composer'], 'options': self._remember_options(hwnd, root_options)}
@@ -707,4 +730,5 @@ class ConversationReader:
             self.cached = None
             self.catalogs.clear()
             self.option_catalogs.clear()
+            self.prompt_attempts.clear()
             self._stop()

@@ -321,7 +321,7 @@ class UpdateManager:
             # environment for the candidate and never inherits PyInstaller's
             # private one-file variables into the restarted application.
             process = popen([str(helper), '-Plan', str(journal)], cwd=str(batch),
-                            env=environment, creationflags=0x08000000 if os.name == 'nt' else 0,
+                            env=environment, creationflags=0x09000000 if os.name == 'nt' else 0,
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # Keep the running app available unless the independent updater has
             # acquired ownership and validated both executables.
