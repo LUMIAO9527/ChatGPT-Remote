@@ -665,6 +665,7 @@ class FrameHub:
         self.encode_ms: deque = deque(maxlen=120)
         self.period_ms: deque = deque(maxlen=120)
         self.last_capture_started: float | None = None
+        self.last_frame_at: float | None = None
 
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
@@ -710,6 +711,7 @@ class FrameHub:
                 while len(self.pointer_frames) > 64:
                     self.pointer_frames.pop(next(iter(self.pointer_frames)))
             self.error = None
+            self.last_frame_at = frame["published_at"]
             self.cond.notify_all()
             return frame
 
@@ -1055,10 +1057,12 @@ class AgentState:
             capture = list(self.hub.capture_ms)
             encode = list(self.hub.encode_ms)
             period = list(self.hub.period_ms)
+            last_frame_at = self.hub.last_frame_at
         return {"active_streams": len(flows), "active_controls": self.controls,
                 "streams": [flow.snapshot() for flow in flows],
                 "frame": {"capture_ms": summarize_ms(capture), "encode_ms": summarize_ms(encode),
-                          "period_ms": summarize_ms(period)}}
+                          "period_ms": summarize_ms(period),
+                          "last_frame_ms": None if last_frame_at is None else round((time.monotonic() - last_frame_at) * 1000, 1)}}
 
     def freeze_for(self, seconds: float, reason: str) -> None:
         self.backend.freeze(seconds, reason)
