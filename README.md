@@ -6,7 +6,7 @@
 
 公开下载版本以 [GitHub Releases](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest) 为准。
 
-**1.0.0** 提供手机审批、紧凑弹层和断线恢复。双击 `ChatGPT-Remote-Preview.html` 可查看交互预览。[手机界面与连接说明](docs/MOBILE-REDESIGN.md)
+**1.0.1** 优化版本检查和更新说明，托盘面板失焦后更快收起。双击 `ChatGPT-Remote-Preview.html` 可查看交互预览。[手机界面与连接说明](docs/MOBILE-REDESIGN.md)
 
 - 更新在“设置 → 版本更新”内完成下载、校验和重启安装。
 - 手机发送键在有草稿时用于发送或排队，在空输入且有原生停止动作时显示停止。队列继续、引导、删除和编辑留在输入框上方。
@@ -27,7 +27,7 @@
 ## 程序与源码
 
 - `ChatGPTRemote.exe` 是 Windows x64 独立程序。
-- `ChatGPT-Remote-v1.0.0-source.zip` 提供同版本源码、构建入口和开发说明。
+- `ChatGPT-Remote-v1.0.1-source.zip` 提供同版本源码、构建入口和开发说明。
 - `ChatGPT-Remote-Preview.html` 提供离线预览，可切换主题、尺寸和审批场景。
 - `SHA256SUMS.txt` 提供发布文件的 SHA-256。
 

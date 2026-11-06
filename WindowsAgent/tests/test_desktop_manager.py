@@ -32,6 +32,13 @@ class DesktopStatusTests(unittest.TestCase):
                      'devices': [{'id': 'phone', 'name': 'Phone'}],
                      'phoneUrl': 'https://computer.example.test:8443/'}
 
+    def test_update_status_reads_the_updater_without_contacting_the_agent(self):
+        self.manager.client.request.side_effect = DesktopControlError('后台暂时没有响应')
+        self.manager.updates.snapshot.return_value = {'status': 'available', 'version': '1.0.1'}
+        self.assertEqual(self.manager.call('updates.status'), {
+            'ok': True, 'update': {'status': 'available', 'version': '1.0.1'}})
+        self.manager.client.request.assert_not_called()
+
     def test_bridge_marks_timeout_cache_and_clears_staleness_after_recovery(self):
         recovered = {**self.live, 'paused': True,
                      'windows': [{'id': 2, 'title': 'New conversation', 'selected': True}]}

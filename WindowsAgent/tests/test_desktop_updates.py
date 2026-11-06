@@ -146,6 +146,23 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.wait(),before);self.assertEqual(self.manager.asset,asset)
         self.assertFalse(self.manager._last_check_ok)
 
+    def test_failed_manual_check_clears_old_download_and_allows_a_fresh_check(self):
+        self.manager.check()
+        self.assertEqual(self.wait()['status'], 'available')
+        original_opener = self.manager.opener
+        self.manager.opener = Mock(side_effect=OSError('synthetic network failure'))
+        self.manager.check()
+        failed = self.wait()
+        self.assertEqual(failed['status'], 'error')
+        self.assertFalse(failed['available'])
+        self.assertEqual(failed['notes'], '')
+        self.assertFalse(self.manager.download()['ok'])
+        self.manager.opener = original_opener
+        self.document = fixture_release(self.content, 'v1.5')
+        self.manager.check()
+        self.assertEqual(self.wait()['version'], '1.5')
+        self.assertEqual(self.manager.snapshot()['status'], 'available')
+
     def test_manual_check_joins_background_request_and_reports_its_failure(self):
         import threading
         entered=threading.Event();release=threading.Event()

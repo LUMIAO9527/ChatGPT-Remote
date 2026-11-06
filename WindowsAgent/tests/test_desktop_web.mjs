@@ -118,6 +118,44 @@ test('version is confined to the update page',()=>{
  assert.match(h.node('#main').innerHTML,/当前版本 0\.16\.0/);assert.match(h.node('#main').innerHTML,/GitHub 项目/);
 });
 
+test('current release uses a single description with the executable version',()=>{
+ const h=harness({status:{...structuredClone(base),update:{status:'current',current:'1.0.0',version:'1.0.0',notes:'Old release notes'}}});
+ h.run("go('update')");
+ const content=h.node('#main').innerHTML;
+ assert.match(content,/当前版本 1\.0\.0/);
+ assert.match(content,/当前已是最新版本/);
+ assert.match(content,/已检查 GitHub 正式版/);
+ assert.doesNotMatch(content,/data-action="update-notes"|Old release notes/);
+});
+
+test('the updater finishes independently and a delayed agent snapshot cannot overwrite it',async()=>{
+ const current={status:'current',current:'1.0.0',version:'1.0.0',installable:true};
+ const available={...current,status:'available',version:'1.0.1',available:true,notes:'<script>text only</script>'};
+ let finishStatus, release=current;
+ const oldAgent=new Promise(resolve=>{finishStatus=resolve;});
+ const h=harness({status:{...structuredClone(base),update:current},ready:true,panelVisible:true},action=>{
+  if(action==='status')return oldAgent;
+  if(action==='updates.status')return {ok:true,update:release};
+  if(action==='updates.check'){
+   release={...current,status:'checking'};
+   return {ok:true,update:release};
+  }
+ });
+ const staleRead=h.run('refresh()');
+ h.run("go('update')");await flush();
+ await h.click('check-update');
+ assert.match(h.node('#main').innerHTML,/正在检查更新…/);
+ release=available;
+ await h.run('refresh()');
+ finishStatus({ok:true,...structuredClone(base),update:current});await staleRead;
+ const content=h.node('#main').innerHTML;
+ assert.match(content,/data-action="download-update"/);
+ assert.match(content,/版本 1\.0\.1 · 更新说明/);
+ assert.match(content,/&lt;script&gt;text only&lt;\/script&gt;/);
+ assert.doesNotMatch(content,/class="update-description"/);
+ assert.equal(h.calls.filter(x=>x.action==='status').length,1);
+});
+
 
 test('failed refresh retains cached content and hides its pairing code until status recovers',async()=>{
  const h=harness({status:structuredClone(base),pair,ready:true,panelVisible:true},action=>action==='status'?{ok:false,error:'连接失败'}:undefined);

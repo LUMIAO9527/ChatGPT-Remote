@@ -237,6 +237,8 @@ class DesktopManager:
                 temporary.write_text(json.dumps(preferences), encoding='utf-8')
                 os.replace(temporary, self.settings_path)
             return {'preferences': self.preferences()}
+        if action == 'updates.status':
+            return {'update':self.updates.snapshot()}
         if action == 'updates.check':
             return {'update':self.updates.check(force=True)}
         if action == 'updates.download':

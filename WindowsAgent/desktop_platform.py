@@ -6,10 +6,10 @@ Remote keeps its backend independent and retains a quiet, hidden panel.
 from __future__ import annotations
 import ctypes
 from ctypes import wintypes as wt
-import threading
 
 PANEL_SIZE = (312, 458)
 PANEL_SIZES = dict.fromkeys(('home', 'settings', 'support', 'support-qr', 'update', 'install', 'uninstall', 'first-use'), PANEL_SIZE)
+BLUR_CHECK_MS = 60
 
 
 def popup_position(icon, work, monitor, size, gap=8, margin=8):
@@ -39,7 +39,7 @@ class NativePanel:
         self.window,self.manager,self.signals,self.anchor,self.log=window,manager,signals,anchor,log
         self.tray_identity=tray_identity
         self.page='home';self.visible=False;self.busy=False;self.modal=False
-        self.generation=0;self.focus_generation=0;self.bound=False;self.ready=False
+        self.generation=0;self.bound=False;self.ready=False;self.blur_timer=None
         self.show_requested=False;self.closed=False
         self.material=None;self.appearance=None;self.material_choice=None
         self.user=ctypes.WinDLL('user32',use_last_error=True)
@@ -50,6 +50,7 @@ class NativePanel:
         self.user.SetWindowPos.argtypes=[wt.HWND,wt.HWND,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,wt.UINT]
         self.user.GetForegroundWindow.restype=wt.HWND
         self.user.GetAncestor.argtypes=[wt.HWND,wt.UINT];self.user.GetAncestor.restype=wt.HWND
+        self.user.GetAsyncKeyState.argtypes=[ctypes.c_int];self.user.GetAsyncKeyState.restype=ctypes.c_short
         self.user.GetDpiForWindow.argtypes=[wt.HWND];self.user.GetDpiForWindow.restype=wt.UINT
         self.user.SetForegroundWindow.argtypes=[wt.HWND]
         self.user.GetWindowLongW.argtypes=[wt.HWND,ctypes.c_int]
@@ -159,8 +160,12 @@ class NativePanel:
     def bind(self):
         def apply(form):
             if not self.bound:
+                from System.Windows.Forms import Timer
                 form.ShowInTaskbar=False
                 self.topmost(form,self.visible)
+                self.blur_timer=Timer()
+                self.blur_timer.Interval=BLUR_CHECK_MS
+                self.blur_timer.Tick+=lambda *_:self.check_blur(form)
                 form.Deactivate+=self.on_blur
                 form.Activated+=self.on_activate
                 self.bound=True
@@ -169,24 +174,32 @@ class NativePanel:
         self.dispatch(apply)
 
     def on_activate(self,*_):
-        self.focus_generation+=1
+        if self.blur_timer:self.blur_timer.Stop()
 
     def on_blur(self,*_):
-        token=self.generation
-        focus_token=self.focus_generation
-        def confirm():
-            if token!=self.generation or focus_token!=self.focus_generation or not self.visible or self.busy or self.modal:return
-            if not self.manager.preferences()['autoHide']:return
-            form=self.form()
-            if not form:return
-            hwnd=int(form.Handle.ToInt64());foreground=self.user.GetForegroundWindow()
-            if foreground and self.user.GetAncestor(foreground,2)==hwnd:return
+        if self.visible and self.blur_timer:self.blur_timer.Start()
+
+    def check_blur(self, form):
+        if not self.visible or not self.signals.wants_visible():
+            self.blur_timer.Stop()
+            return
+        if self.busy or self.modal:
+            return
+        hwnd=int(form.Handle.ToInt64())
+        foreground=self.user.GetForegroundWindow()
+        if foreground==hwnd:
+            self.blur_timer.Stop()
+            return
+        if foreground and self.user.GetAncestor(foreground,3)==hwnd:
+            return
+        # Let the tray's button-up event finish toggling a panel that was open.
+        if self.anchor and any(self.user.GetAsyncKeyState(button)&0x8000 for button in (1,2)):
             point=wt.POINT()
-            if self.anchor and self.user.GetCursorPos(ctypes.byref(point)):
+            if self.user.GetCursorPos(ctypes.byref(point)):
                 l,t,r,b=self.anchor
                 if l<=point.x<r and t<=point.y<b:return
-            self.hide()
-        timer=threading.Timer(.18,confirm);timer.daemon=True;timer.start()
+        self.blur_timer.Stop()
+        if self.manager.preferences()['autoHide']:self.hide()
 
     def show(self):
         import time
@@ -199,6 +212,7 @@ class NativePanel:
         token=self.generation
         def apply(form):
             if token!=self.generation:return
+            if self.blur_timer:self.blur_timer.Stop()
             self.place(form);self.apply_material(form);self.topmost(form,True);form.Show();form.Activate()
             self.user.SetForegroundWindow(int(form.Handle.ToInt64()))
             self.post(form,'window.remoteShown && window.remoteShown()')
@@ -212,6 +226,7 @@ class NativePanel:
         token=self.generation
         def apply(form):
             if token!=self.generation:return
+            if self.blur_timer:self.blur_timer.Stop()
             form.Hide();self.topmost(form,False)
             self.post(form,'window.remoteHidden && window.remoteHidden()')
             self.record(form,'panel_hidden')
@@ -236,6 +251,9 @@ class NativePanel:
         self.signals.set_desired(False)
         self.visible=False;self.signals.set_visible(False)
         def apply(form):
+            if self.blur_timer:
+                self.blur_timer.Dispose()
+                self.blur_timer=None
             self.topmost(form,False)
             self.closed=True;form.Close()
         self.dispatch(apply)

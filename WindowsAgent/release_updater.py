@@ -144,16 +144,19 @@ class UpdateManager:
             try:
                 job()
             except Exception as error:
-                if status == 'checking':
-                    self._last_check_ok = False
-                if quiet and not self._check_interactive:
-                    with self.lock:
-                        self.state = previous
+                failure = '暂时无法连接 GitHub，请重试' if status == 'checking' else '下载更新中断，请重试'
+                message = str(error) if isinstance(error, UpdateError) else failure
+                with self.lock:
+                    if status == 'checking':
                         self._last_check_ok = False
-                    self.notify()
-                    return
-                message = str(error) if isinstance(error, UpdateError) else '连接 GitHub 失败或下载中断，请重试'
-                self._set(status='error', message=message, progress=0)
+                    if quiet and not self._check_interactive:
+                        self.state = previous
+                    else:
+                        if status == 'checking':
+                            self.asset = None
+                            self.state.update(available=False, version='', notes='', size=0, checked_at=None)
+                        self.state.update(status='error', message=message, progress=0)
+                self.notify()
         threading.Thread(target=work, daemon=True, name='rm-update-' + status).start()
         return {'ok': True, 'accepted': True}
 

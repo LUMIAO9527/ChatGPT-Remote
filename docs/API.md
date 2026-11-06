@@ -1,4 +1,4 @@
-# ChatGPT Remote 1.0.0 Web/Agent API 契约
+# ChatGPT Remote 1.0.1 Web/Agent API 契约
 
 本文件是 Windows Agent（agent.py）与手机页面（web/index.html）之间的接口契约。
 后端按本契约实现；前端只依赖本契约。除本文件列出的字段外，前端不得依赖其他内部结构。
@@ -38,7 +38,7 @@
 ### GET /api/health
 无需配对令牌。返回：
 ```json
-{"ok": true, "name": "ChatGPT Remote", "version": "1.0.0", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
+{"ok": true, "name": "ChatGPT Remote", "version": "1.0.1", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
 ```
 启用访问密钥时仍需有效 Cookie 或 `X-Access-Key`。
 `transport` 为当前进程的非持久化传输诊断；每条活动连接仅含活动控制连接数、未确认帧数/字节数、自适应确认上限、已发送字节数和服务器发送画面至收到绘制确认的往返耗时，不包含图片、窗口标题、设备名或令牌。
@@ -54,7 +54,7 @@ body：`{"pin": "123456", "name": "手机"}`
 ```json
 {
   "ok": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "computerName": "Example-PC",
   "instance": "<本次服务启动编号>",
   "mock": true,
@@ -328,6 +328,6 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 界面进程接收托盘窗口句柄与通知图标编号，每次展开重新调用 `Shell_NotifyIconGetRect`。定位使用目标显示器 DPI；临时无法读取图标时使用当前点击位置。主窗口区域直接裁剪，玻璃由 `native_backdrop.cpp` 的 C++/WinRT 宿主按同一几何范围合成。
 
-`updates.check` 读取公开 GitHub 正式发布的元数据，更新检查不参与界面启动；后台成功结果复用 6 小时，连接失败 15 分钟后重试。下载操作打开正式发布页。`links.open` 只接受项目、问题反馈和发布页三个固定入口；`support.copy` 复制公开 QQ 号。
+`updates.check` 异步读取 GitHub 最新正式版的元数据。`updates.status` 单独读取检查和下载状态，版本更新页可在手机服务停止时使用。后台检查成功后六小时再查，连接失败后十五分钟重试。独立程序通过 `updates.download` 下载并校验安装包，再通过 `updates.install` 启动可回退的更新。源码运行提供正式发布页入口。`links.open` 只接受项目、问题反馈和发布页三个固定入口。`support.copy` 复制公开 QQ 号。
 
 普通消息文字不依赖系统剪贴板；较长文字优先粘贴，剪贴板不可用且尚未调用原生输入时自动选择 Unicode 输入。该选择只发生在输入开始前，发送按钮始终按原有回读确认与单次调用规则处理。

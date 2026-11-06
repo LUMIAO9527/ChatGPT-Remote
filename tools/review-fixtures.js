@@ -175,9 +175,18 @@
     if(actionName==='service.start'||actionName==='service.restart')model.running=true;
     if(actionName==='service.stop')model.running=false;
     if(actionName==='target.pause')model.targetPaused=!!data.paused;
-    if(actionName==='updates.check')model.update={status:'available',version:'0.19.0 · 演示',installable:true,message:'发现新版本（模拟）',notes:'此处展示应用内下载、校验和重启更新的交互，不会下载程序。'};
+    if(actionName==='updates.status')return {ok:true,update:clone(model.update)};
+    if(actionName==='updates.check'){
+      clearTimeout(updateTimer);
+      model.update={status:'checking',current:config.version,installable:true};
+      const [major,minor,patch=0]=config.version.split('.').map(Number);
+      updateTimer=setTimeout(()=>{
+        model.update={...model.update,status:'available',available:true,version:[major,minor,patch+1].join('.'),
+          notes:'版本更新页将版本号与更新说明合并。\n示例下载和安装仅供演示。'};
+      },450);
+    }
     if(actionName==='updates.download'){clearTimeout(updateTimer);model.update={...model.update,status:'downloading',progress:36,message:'正在下载（模拟）'};updateTimer=setTimeout(()=>{model.update={...model.update,status:'ready',progress:100,message:'下载完成，已校验（模拟）'};},2000);}
-    if(actionName==='updates.cancel'){clearTimeout(updateTimer);model.update={status:'idle',installable:true,message:'已取消模拟下载'};}
+    if(actionName==='updates.cancel'){clearTimeout(updateTimer);model.update={...model.update,status:'error',message:'已取消模拟下载'};}
     if(actionName==='updates.install'){clearTimeout(updateTimer);model.update={status:'idle',installable:true,message:'模拟更新已结束；没有安装或重启任何程序'};report('仅演示更新，不会安装或重启');}
     if(actionName==='installation.choose')return {ok:true,path:'D:\\ChatGPTRemote'};
     if(actionName==='installation.install'||actionName==='uninstall')report('仅演示 '+actionName+'，没有修改电脑');

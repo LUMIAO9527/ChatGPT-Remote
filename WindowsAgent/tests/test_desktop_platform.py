@@ -81,18 +81,19 @@ class PanelTests(unittest.TestCase):
     def setUp(self):
         self.panel=NativePanel.__new__(NativePanel)
         self.panel.ready=True;self.panel.visible=False;self.panel.closed=False
-        self.panel.busy=False;self.panel.modal=False;self.panel.generation=0;self.panel.focus_generation=0
+        self.panel.busy=False;self.panel.modal=False;self.panel.generation=0
+        self.panel.blur_timer=Mock()
         self.panel.log=None
         self.panel.signals=Mock();self.panel.manager=Mock();self.panel.manager.preferences.return_value={'autoHide':True}
         self.panel.user=Mock();self.panel.user.GetForegroundWindow.return_value=999
         self.panel.user.GetAncestor.return_value=999
+        self.panel.user.GetAsyncKeyState.return_value=0
         self.panel.form=Mock();self.form=Mock();self.form.Handle.ToInt64.return_value=123
         self.panel.form.return_value=self.form;self.panel.place=Mock();self.panel.post=Mock();self.panel.apply_material=Mock()
         self.panel.anchor=(0,0,24,24)
         def cursor(pointer):pointer._obj.x=100;pointer._obj.y=100;return True
         self.panel.user.GetCursorPos.side_effect=cursor
         self.queue=[];self.panel.dispatch=lambda action:self.queue.append(action) or True
-        self.timer=patch('desktop_platform.threading.Timer').start();self.addCleanup(patch.stopall)
 
     def test_late_show_and_hide_callbacks_follow_the_latest_click(self):
         self.panel.show();old_show=self.queue[-1]
@@ -104,7 +105,7 @@ class PanelTests(unittest.TestCase):
 
     def test_hidden_panel_stays_warm_without_an_idle_destruction_timer(self):
         self.panel.hide();self.queue[-1](self.form)
-        self.timer.assert_not_called();self.form.Close.assert_not_called()
+        self.panel.blur_timer.Start.assert_not_called();self.form.Close.assert_not_called()
         self.assertFalse(self.panel.closed)
 
     def test_late_native_activation_does_not_cancel_a_requested_hide(self):
@@ -135,21 +136,42 @@ class PanelTests(unittest.TestCase):
         self.form.Show.assert_not_called();self.form.Close.assert_called_once()
         self.assertTrue(self.panel.closed)
 
-    def test_focus_return_or_tray_click_cancels_delayed_blur(self):
-        self.panel.show();self.panel.on_blur();confirm=self.timer.call_args.args[1]
-        self.panel.on_activate();confirm();self.assertTrue(self.panel.visible)
-        self.panel.on_blur();confirm=self.timer.call_args.args[1]
+    def test_focus_return_cancels_blur(self):
+        self.panel.show();self.panel.on_blur()
+        self.panel.blur_timer.Start.assert_called_once()
+        self.panel.on_activate()
+        self.panel.blur_timer.Stop.assert_called_once()
+        self.panel.user.GetForegroundWindow.return_value=123
+        self.panel.check_blur(self.form)
+        self.assertTrue(self.panel.visible)
+
+    def test_tray_mouse_press_defers_blur_but_hover_does_not(self):
+        self.panel.show();self.panel.on_blur()
         def cursor(pointer):pointer._obj.x=12;pointer._obj.y=12;return True
         self.panel.user.GetCursorPos.side_effect=cursor
-        confirm();self.assertTrue(self.panel.visible)
+        self.panel.user.GetAsyncKeyState.return_value=-32768
+        self.panel.check_blur(self.form)
+        self.assertTrue(self.panel.visible)
+        self.panel.user.GetAsyncKeyState.return_value=0
+        self.panel.check_blur(self.form)
+        self.assertFalse(self.panel.visible)
+
+    def test_panel_owned_popup_preserves_focus_until_switching_away(self):
+        self.panel.show();self.panel.on_blur()
+        self.panel.user.GetAncestor.return_value=123
+        self.panel.check_blur(self.form)
+        self.assertTrue(self.panel.visible)
+        self.panel.user.GetAncestor.return_value=999
+        self.panel.check_blur(self.form)
+        self.assertFalse(self.panel.visible)
 
     def test_auto_hide_respects_modal_and_in_progress_operations(self):
         for guard in ('busy','modal'):
             self.panel.show();setattr(self.panel,guard,True)
-            self.panel.on_blur();self.timer.call_args.args[1]()
+            self.panel.on_blur();self.panel.check_blur(self.form)
             self.assertTrue(self.panel.visible);setattr(self.panel,guard,False)
-        self.panel.on_blur();self.timer.call_args.args[1]()
-        self.assertFalse(self.panel.visible)
+            self.panel.check_blur(self.form)
+            self.assertFalse(self.panel.visible)
 
 
 class PanelHostTests(unittest.TestCase):

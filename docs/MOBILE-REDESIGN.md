@@ -1,4 +1,4 @@
-# ChatGPT Remote 1.0.0 手机端
+# ChatGPT Remote 1.0.1 手机端
 
 日期为 2026-11-06。产品页面来自 `WindowsAgent/web/index.html`，离线演示入口为 `ChatGPT-Remote-Preview.html`。
 
