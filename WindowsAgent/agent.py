@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from functools import lru_cache
+from collections import deque
 from urllib.parse import parse_qs, urlsplit, unquote
 
 from windows_control import InputError, TargetError, WindowTracker
@@ -622,6 +623,15 @@ class MockBackend:
                 raise InputError("不支持的操作")
 
 
+def summarize_ms(values: Any) -> dict[str, Any]:
+    ordered = sorted(values)
+    if not ordered:
+        return {"samples": 0}
+    return {"samples": len(ordered), "avg": round(sum(ordered) / len(ordered), 1),
+            "max": round(ordered[-1], 1),
+            "p95": round(ordered[max(0, int(len(ordered) * 0.95) - 1)], 1)}
+
+
 class FrameHub:
     """Background capture with a sleep-free long-poll queue.
 
@@ -649,6 +659,12 @@ class FrameHub:
         self.error: str | None = None
         self.last_poll = 0.0
         self.action_sequence = 0
+        # Frame timing samples answer "where does the 20 fps ceiling come
+        # from": capture, encode, or the wait between them.
+        self.capture_ms: deque = deque(maxlen=120)
+        self.encode_ms: deque = deque(maxlen=120)
+        self.period_ms: deque = deque(maxlen=120)
+        self.last_capture_started: float | None = None
 
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
@@ -673,6 +689,16 @@ class FrameHub:
     def note_poll(self) -> None:
         with self.cond:
             self.last_poll = time.monotonic()
+
+    def note_capture(self, capture_ms: float, period_ms: float | None) -> None:
+        with self.cond:
+            self.capture_ms.append(capture_ms)
+            if period_ms is not None:
+                self.period_ms.append(period_ms)
+
+    def note_encode(self, encode_ms: float) -> None:
+        with self.cond:
+            self.encode_ms.append(encode_ms)
 
     def _publish(self, meta: dict[str, Any]) -> dict[str, Any]:
         with self.cond:
@@ -729,12 +755,15 @@ class FrameHub:
                 self.stop_event.wait(0.12)
                 continue
             started = time.monotonic()
+            period = None if self.last_capture_started is None else (started - self.last_capture_started) * 1000
+            self.last_capture_started = started
             with self.cond:
                 action_sequence = self.action_sequence
             try:
                 meta = self.backend.capture_meta(self.max_width, self.quality)
                 meta["action_sequence"] = action_sequence
                 self._publish(meta)
+                self.note_capture((time.monotonic() - started) * 1000, period)
             except TargetError as exc:
                 self._publish_error(str(exc))
             except Exception as exc:  # noqa: BLE001 - keep streaming other errors
@@ -1022,8 +1051,14 @@ class AgentState:
     def transport_info(self) -> dict[str, Any]:
         with self.lock:
             flows = list(self.streams.values())
+        with self.hub.cond:
+            capture = list(self.hub.capture_ms)
+            encode = list(self.hub.encode_ms)
+            period = list(self.hub.period_ms)
         return {"active_streams": len(flows), "active_controls": self.controls,
-                "streams": [flow.snapshot() for flow in flows]}
+                "streams": [flow.snapshot() for flow in flows],
+                "frame": {"capture_ms": summarize_ms(capture), "encode_ms": summarize_ms(encode),
+                          "period_ms": summarize_ms(period)}}
 
     def freeze_for(self, seconds: float, reason: str) -> None:
         self.backend.freeze(seconds, reason)
@@ -1573,7 +1608,9 @@ def make_handler(state: AgentState):
                     else:
                         state.require_public_frame(result)
                         last_id = result["id"]
+                        encode_started = time.monotonic()
                         packet = encoder.encode(result)
+                        state.hub.note_encode((time.monotonic() - encode_started) * 1000)
                         if packet is not None:
                             flow.sent(last_id, len(packet))
                         if packet is None and time.monotonic() - last_sent >= 1.0:
