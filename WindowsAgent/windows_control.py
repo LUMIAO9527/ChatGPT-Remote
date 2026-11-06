@@ -278,6 +278,9 @@ class WindowsBackend:
         self.frozen_reason = ""
         self.last_capture_ms = 0
         self.last_capture_method = ""
+        self._wgc = None
+        self._wgc_title = ""
+        self._wgc_failed = False
         self.conversation_reader = None
         self._set_prototypes()
         self._set_dpi_aware()
@@ -567,7 +570,68 @@ class WindowsBackend:
                     self.g32.DeleteObject(out_bitmap)
                 self.g32.DeleteDC(out_dc)
 
+    def _window_title(self, hwnd: int) -> str:
+        try:
+            length = self.u32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return ""
+            buffer = ctypes.create_unicode_buffer(min(length + 1, 512))
+            self.u32.GetWindowTextW(hwnd, buffer, len(buffer))
+            return buffer.value.strip()
+        except Exception:
+            return ""
+
+    def _wgc_frame(self, hwnd: int, max_width: int):
+        """Newest Windows Graphics Capture frame, or None to use PrintWindow.
+
+        WGC only produces frames when the window content changes, so the hub
+        keeps polling and this returns the cached frame in between. Any
+        failure (missing dependency, window mismatch, minimized window) drops
+        back to the GDI path for that capture.
+        """
+        if self._wgc_failed or os.environ.get("RM_CAPTURE") == "screen":
+            return None
+        title = self._window_title(hwnd)
+        if not title:
+            return None
+        if self._wgc is None or self._wgc_title != title:
+            if self._wgc is not None:
+                self._wgc.stop()
+                self._wgc = None
+            try:
+                from wgc_capture import WgcCapture
+                self._wgc = WgcCapture(title, max_width)
+                self._wgc.start()
+                self._wgc_title = title
+            except Exception:
+                self._wgc = None
+                self._wgc_failed = True
+                return None
+        image = self._wgc.latest()
+        if image is None:
+            return None
+        size = self._wgc.frame_size()
+        full, visible = self._window_rects(hwnd)
+        width, height = full[2] - full[0], full[3] - full[1]
+        if size and width > 0 and abs(size[0] - width) > max(48, width * 0.05):
+            return None
+        vw, vh = visible[2] - visible[0], visible[3] - visible[1]
+        if width > 0 and height > 0 and vw >= 80 and vh >= 80:
+            scale = image.width / width
+            left = max(0, round((visible[0] - full[0]) * scale))
+            top = max(0, round((visible[1] - full[1]) * scale))
+            right = min(image.width, round((visible[2] - full[0]) * scale))
+            bottom = min(image.height, round((visible[3] - full[1]) * scale))
+            if right - left >= 80 and bottom - top >= 80:
+                image = image.crop((left, top, right, bottom))
+        self.last_capture_method = "wgc"
+        image.info["rm_capture_method"] = "wgc"
+        return image
+
     def _grab_window(self, hwnd: int, max_width: int = 1280):
+        captured = self._wgc_frame(hwnd, max_width)
+        if captured is not None:
+            return captured
         full, visible = self._window_rects(hwnd)
         fx, fy, fw, fh = full
         vx, vy, vw, vh = visible
