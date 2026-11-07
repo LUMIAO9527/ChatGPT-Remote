@@ -281,6 +281,7 @@ class WindowsBackend:
         self._wgc = None
         self._wgc_title = ""
         self._wgc_failed = False
+        self._wgc_retry_at = 0.0
         self.conversation_reader = None
         self._set_prototypes()
         self._set_dpi_aware()
@@ -591,21 +592,25 @@ class WindowsBackend:
         """
         if self._wgc_failed or os.environ.get("RM_CAPTURE") == "screen":
             return None
+        # A failed start is retried later instead of disabling WGC for the
+        # whole process; windows appear and disappear constantly.
+        if time.monotonic() < self._wgc_retry_at:
+            return None
         title = self._window_title(hwnd)
         if not title:
             return None
-        if self._wgc is None or self._wgc_title != title:
+        if self._wgc is None or getattr(self._wgc, "hwnd", 0) != hwnd:
             if self._wgc is not None:
                 self._wgc.stop()
                 self._wgc = None
             try:
                 from wgc_capture import WgcCapture
-                self._wgc = WgcCapture(title, max_width)
+                self._wgc = WgcCapture(title, max_width, hwnd)
                 self._wgc.start()
                 self._wgc_title = title
             except Exception:
                 self._wgc = None
-                self._wgc_failed = True
+                self._wgc_retry_at = time.monotonic() + 30
                 return None
         image = self._wgc.latest()
         if image is None:

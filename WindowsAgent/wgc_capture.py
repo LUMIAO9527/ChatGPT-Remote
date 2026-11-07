@@ -18,8 +18,9 @@ class WgcUnavailable(RuntimeError):
 class WgcCapture:
     """Owns one WGC session for one window title."""
 
-    def __init__(self, window_name: str, target_width: int = 900) -> None:
+    def __init__(self, window_name: str = "", target_width: int = 900, hwnd: int = 0) -> None:
         self.window_name = window_name
+        self.hwnd = int(hwnd or 0)
         self.target_width = max(320, min(2560, int(target_width or 900)))
         self._lock = threading.Lock()
         self._image = None
@@ -37,7 +38,7 @@ class WgcCapture:
             from windows_capture import WindowsCapture  # noqa: F401
         except Exception as error:  # pragma: no cover - optional dependency
             raise WgcUnavailable(f"windows_capture 不可用：{error}") from error
-        capture = WindowsCapture(window_name=self.window_name)
+        capture = WindowsCapture(window_hwnd=self.hwnd, cursor_capture=False, draw_border=False) if self.hwnd else WindowsCapture(window_name=self.window_name, cursor_capture=False, draw_border=False)
         self._capture = capture
 
         def on_frame_arrived(frame: Any, control: Any) -> None:

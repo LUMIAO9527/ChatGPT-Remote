@@ -2332,6 +2332,12 @@ svg{flex-shrink:0}
     els.screenShell.classList.toggle('is-blocked', !gate.ok);
     els.screen.setAttribute('aria-label', '电脑画面'+(state.frameSeen?'':'，尚未连接'));
     els.fullscreenBtn.setAttribute('aria-pressed', state.immersive ? 'true' : 'false');
+    // Keep the virtual arrow on screen: the PC cursor never moves with this
+    // transport, so the phone-owned arrow is the only pointer the user sees.
+    if (state.view === 'screen' && !hint) {
+      try { placeCursor(state.cursorPoint || {x:0.5,y:0.5}); }
+      catch (error) { els.screenCursor.hidden = true; }
+    }
   }
   function renderWindows(){
     var windows = state.windows;
@@ -3571,6 +3577,18 @@ svg{flex-shrink:0}
     var shell=els.screenShell.getBoundingClientRect();
     els.screenCursor.style.transform='translate3d('+(clientX-shell.left)+'px,'+(clientY-shell.top)+'px,0)';
   }
+  function cursorPosition(){
+    var point=state.cursorPoint||{x:0.5,y:0.5};
+    var bounds=screenImageBounds();
+    if(!bounds)return null;
+    return {point:point,clientX:bounds.left+point.x*bounds.width,clientY:bounds.top+point.y*bounds.height};
+  }
+  function placeCursor(point){
+    state.cursorPoint=point?{x:point.x,y:point.y}:null;
+    var at=point?cursorPosition():null;
+    if(!at){els.screenCursor.hidden=true;return;}
+    showScreenCursor(at.clientX,at.clientY,at.point);
+  }
   function sendScreenClick(operation,point,epoch,frameId){
     if(!point||!screenAcceptsPointer()||state.view!=='screen'||state.panel!=='screen'||
        state.pending.sendText||epoch!==state.epoch||!computeGate().ok)return;
@@ -3581,9 +3599,9 @@ svg{flex-shrink:0}
   function bindScreenGestures(){
     var image=els.screen,gesture=null;
     function cancelGesture(){
-      gesture=null;els.screenCursor.hidden=true;
+      gesture=null;
     }
-    resetScreenGestures=cancelGesture;
+    resetScreenGestures=function(){ gesture=null; els.screenCursor.hidden=true; state.cursorPoint=null; };
     image.addEventListener('pointerdown',function(event){
       if(event.button!==0 || !screenAcceptsPointer() || !computeGate().ok)return;
       if(gesture && gesture.epoch!==state.epoch)cancelGesture();
@@ -3592,7 +3610,9 @@ svg{flex-shrink:0}
         if(!point)return;
         gesture={primary:event.pointerId,points:new Map(),count:0,point:point,at:Date.now(),moved:false,
           epoch:state.epoch,frameId:state.displayedFrameId,scroll:0};
-        showScreenCursor(event.clientX,event.clientY,point);
+        // A tap clicks wherever the cursor already sits; dragging is what moves it.
+        if(!state.cursorPoint)state.cursorPoint={x:point.x,y:point.y};
+        placeCursor(state.cursorPoint);
       }
       gesture.count++;
       gesture.points.set(event.pointerId,{x:event.clientX,y:event.clientY,lastY:event.clientY});
@@ -3610,7 +3630,7 @@ svg{flex-shrink:0}
       }
       if(Math.abs(event.clientX-touch.x)>CLICK_SLOP || Math.abs(event.clientY-touch.y)>CLICK_SLOP)gesture.moved=true;
       if(event.pointerId!==gesture.primary)return;
-      showScreenCursor(event.clientX,event.clientY,remotePoint(event.clientX,event.clientY,screenImageBounds()));
+      if(gesture.moved)placeCursor(remotePoint(event.clientX,event.clientY,screenImageBounds()));
       if(gesture.moved && gesture.count===1 && !hasWindowPointer()){
         gesture.scroll+=event.clientY-touch.lastY;
         if(Math.abs(gesture.scroll)>=14){
@@ -3628,7 +3648,7 @@ svg{flex-shrink:0}
       if(active.points.size)return;
       gesture=null;
       if(active.moved || Date.now()-active.at>=LONG_PRESS_MS)return;
-      sendScreenClick(active.count===2?'right':'left',active.point,active.epoch,active.frameId);
+      sendScreenClick(active.count===2?'right':'left',state.cursorPoint||active.point,state.epoch,state.displayedFrameId);
     }
     image.addEventListener('pointerup',function(event){finish(event,false);});
     image.addEventListener('pointercancel',function(event){finish(event,true);});
@@ -3637,7 +3657,7 @@ svg{flex-shrink:0}
       if(!screenAcceptsPointer())return;
       event.preventDefault();
       if(event.button===2 && event.pointerType!=='touch'){
-        sendScreenClick('right',remotePoint(event.clientX,event.clientY,screenImageBounds()),state.epoch,state.displayedFrameId);
+        sendScreenClick('right',state.cursorPoint||remotePoint(event.clientX,event.clientY,screenImageBounds()),state.epoch,state.displayedFrameId);
       }
     });
     image.addEventListener('wheel',function(event){
