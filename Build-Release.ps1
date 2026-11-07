@@ -67,3 +67,6 @@ if(!$check.WaitForExit(60000)){throw 'Packaged program verification timed out.'}
 [IO.File]::WriteAllText((Join-Path $batch 'self-test-runtime.log'),$stdout.Result+$stderr.Result,[Text.UTF8Encoding]::new($false))
 if($check.ExitCode -or !(Test-Path -LiteralPath $report)){throw 'Packaged program verification failed.'}
 Write-Output $program
+# Packaging is verified above; do not let a stale native exit code turn a
+# successful build into a failure for the caller.
+exit 0
