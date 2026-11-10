@@ -151,5 +151,18 @@ class HistoryTests(unittest.TestCase):
         blocks=markdown_blocks('[unsafe](javascript:alert(1))\n\n```\ntext')
         self.assertNotIn('runs',blocks[0]);self.assertEqual(blocks[-1],{'kind':'code','text':'text'})
 
+    def test_user_interruption_splits_an_ongoing_process_in_native_order(self):
+        self.add('u1','userMessage',content=[{'type':'text','text':'开始优化'}])
+        self.add('p1','agentMessage',phase='commentary',text='第一段进度')
+        self.add('tool1','commandExecution',status='completed')
+        self.add('u2','userMessage',content=[{'type':'text','text':'还要优化速度'}])
+        self.add('p2','agentMessage',phase='commentary',text='收到补充，继续处理')
+        result=self.reader.snapshot(self.observe)['messages']
+        self.assertEqual([m['role'] for m in result],['user','assistant','user','assistant'])
+        self.assertIn('第一段进度',result[1]['text'])
+        self.assertNotIn('收到补充',result[1]['text'])
+        self.assertIn('收到补充',result[3]['text'])
+        self.assertNotEqual(result[1]['id'],result[3]['id'])
+
 
 if __name__=='__main__':unittest.main()

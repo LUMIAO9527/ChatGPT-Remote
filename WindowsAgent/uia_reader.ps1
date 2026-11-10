@@ -8,6 +8,7 @@ Add-Type -AssemblyName UIAutomationTypes
 $AE = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+$script:structureWalker = [System.Windows.Automation.TreeWalker]::RawViewWalker
 $script:controlTree=$null
 $script:pendingLabels=@{
     'Needs input'='input'; 'Waiting for input'='input'; '需要用户输入'='input'; '等待输入'='input'
@@ -16,6 +17,7 @@ $script:pendingLabels=@{
 $script:pendingSuffix='^(.+?)\s*('+(($script:pendingLabels.Keys | ForEach-Object {[regex]::Escape($_)}) -join '|') +')$'
 
 function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $optionsOnly=$false) {
+    $script:primaryDocumentCache=@{}
     $root = $AE::FromHandle([IntPtr][long]$handle)
     if ($null -eq $root) { throw 'window unavailable' }
     $cache = New-Object System.Windows.Automation.CacheRequest
@@ -68,7 +70,7 @@ function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $opt
 
 function Normalize-Message($value) {
     if ($null -eq $value) { return $null }
-    return ($value -replace "`r`n?", "`n" -replace '[\u200B\uFEFF\u2060]', '').TrimEnd([char[]]@(10,13,0))
+    return ($value -replace "`r`n?", "`n" -replace '[\u200B\uFEFF\u2060]', '' -replace [char]0x00A0, ' ').TrimEnd([char[]]@(10,13,0))
 }
 
 function Get-ComposerDraft($value, $placeholderOnly=$false) {
@@ -601,6 +603,16 @@ function Get-OptionMenu($node) {
         $c = $node.Cached
         if($c.ControlType -eq $CT::List){
             $selection=$null
+            if($c.ClassName -match '\bModelList-'){
+                # The model rows and the account's power/effort controls share
+                # one picker. Keep the header in that same native scope.
+                $parent=$node
+                for($up=0;$up -lt 8;$up++){
+                    $parent=$walker.GetParent($parent,$script:parentCache)
+                    if(!$parent -or $parent.Cached.ControlType -eq $CT::Document){break}
+                    if($parent.Cached.ControlType -eq $CT::Menu -and $parent.Cached.ClassName -match '\bMenu-'){return $parent}
+                }
+            }
             if($node.TryGetCurrentPattern([Windows.Automation.SelectionPattern]::Pattern,[ref]$selection)){return $node}
         }
         if ($c.ControlType -eq $CT::Menu -or ($c.ControlType -eq $CT::List -and $c.ClassName -match '(?i)select|combo|listbox|dropdown|command|popover') -or
@@ -624,9 +636,33 @@ function Confirm-WindowIdentity($handle, $current, $identity) {
     return $current
 }
 
-function Get-ComposerAttachments($snapshot) {
+function Wait-ComposerReady($handle, $snapshot, $identity, $text, $requireSender=$true, $settle=$false) {
+    $expectedText=Normalize-Message $text
+    $wait=[Diagnostics.Stopwatch]::StartNew();$readyState=$null
+    do {
+        $snapshot=Confirm-WindowIdentity $handle $snapshot $identity
+        if ($null -eq $snapshot.composer -or $null -eq $snapshot.draft) { throw 'composer unavailable' }
+        $actualText=Normalize-Message $snapshot.draft
+        if ($actualText -ceq $expectedText -and (!$requireSender -or $snapshot.senders.Count -eq 1)) {
+            $state=([string]$snapshot.generating)+'|'+($snapshot.senders | ForEach-Object {$_.Current.Name})
+            if (!$settle -or $readyState -ceq $state) { return $snapshot }
+            $readyState=$state
+        } else { $readyState=$null }
+        # The accessibility provider and editor can report intermediate content
+        # while a paste/IME transaction settles. Keep reading, without entering
+        # or submitting anything again. A real mismatch still fails closed.
+        if ($wait.ElapsedMilliseconds -ge 3000) { break }
+        Start-Sleep -Milliseconds 70
+        $snapshot=Read-Window $handle $false $false $true
+    } while ($true)
+    if ((Normalize-Message $snapshot.draft) -cne $expectedText) { throw 'draft changed' }
+    throw 'send button unavailable'
+}
+
+function Get-ComposerAttachments($snapshot, $withControls=$false) {
     if(!$snapshot.composer){return @{count=0;names=@();ready=$false}}
     $r=$snapshot.composer.Cached.BoundingRectangle;$removed=0;$images=0;$busy=$false;$names=New-Object 'System.Collections.Generic.HashSet[string]'
+    $items=New-Object 'System.Collections.Generic.List[object]'
     $documentId=if($snapshot.tree.document){$snapshot.tree.document.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'}else{''}
     $scope=$null;$parent=$snapshot.composer;$bodyFound=$false
     for($depth=0;$depth -lt 7;$depth++){
@@ -644,17 +680,75 @@ function Get-ComposerAttachments($snapshot) {
         if(!$scope -and ($b.Bottom -lt $r.Top-300 -or $b.Top -gt $r.Bottom+30 -or $b.Left -lt $r.Left-30 -or $b.Right -gt $r.Right+70)){continue}
         if($scope -and ($c.ControlType -eq $CT::ProgressBar -or ($c.ControlType -eq $CT::StatusBar -and $c.Name -match '(?i)上传中|正在上传|uploading|processing'))){$busy=$true}
         if($c.ControlType -eq $CT::Button -and $c.Name -match '(?i)^(移除|删除|Remove|Delete)(\s|附件|文件|图片|attachment|file|image|$)' -and
-            ($scope -or (Test-PrimaryDocument $node $documentId))){$removed++}
+            ($scope -or (Test-PrimaryDocument $node $documentId))){
+            $removed++
+            $fileName=($c.Name -replace '(?i)^(移除|删除|Remove|Delete)\s*','' -replace '(?i)^(附件|文件|图片|attachment|file|image)(\s+|[:：]\s*|$)','').Trim()
+            if($fileName -notmatch '\.[a-zA-Z0-9]{1,12}$'){$fileName=''}
+            $parent=$node
+            for($depth=0;!$fileName -and $depth -lt 5;$depth++){
+                $parent=[Windows.Automation.TreeWalker]::RawViewWalker.GetParent($parent)
+                if(!$parent -or $parent.Current.ControlType -eq $CT::Document){break}
+                $buttons=@($parent.FindAll([Windows.Automation.TreeScope]::Descendants,
+                    [Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Button)) | Where-Object {
+                    $_.Current.Name -match '(?i)^(移除|删除|Remove|Delete)(\s|附件|文件|图片|attachment|file|image|$)'})
+                if($buttons.Count -ne 1){break}
+                $labels=@($parent.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
+                    $label=$_.Current.Name
+                    if($label -and $label.Length -le 180 -and $label -notmatch '(?i)^(移除|删除|Remove|Delete)' -and $label -match '^[^\\/\r\n]+\.[a-zA-Z0-9]{1,12}$'){$label}
+                } | Select-Object -Unique)
+                if($labels.Count -eq 1){$fileName=$labels[0]}
+            }
+            $items.Add(@{id=($node.GetRuntimeId() -join '.');name=$fileName;element=$node})
+        }
         elseif($c.ControlType -eq $CT::Image -and $c.ClassName -match '(?i)object-cover|attachment|preview' -and $b.Width -ge 40 -and $b.Height -ge 40){$images++}
         elseif($c.ControlType -in @($CT::Text,$CT::Button) -and $c.Name.Length -le 180 -and $c.Name -notmatch '(?i)^(移除|删除|Remove|Delete)(\s|附件|文件|图片)' -and $c.Name -match '(?i)^[^\\/\r\n]+\.(png|jpe?g|gif|webp|pdf|txt|md|docx?|xlsx?|csv|pptx?|zip|json|py|js|html|svg|heic)$'){
             [void]$names.Add($c.Name)
         }
     }
     $count=if($scope){[Math]::Max($removed,[Math]::Max($images,$names.Count))}else{$removed}
-    return @{count=$count;names=@($names);images=$images;ready=($count -gt 0 -and !$busy)}
+    $result=@{count=$count;names=@($names);images=$images;ready=($count -gt 0 -and !$busy);
+        items=@($items | ForEach-Object {@{id=$_.id;name=$_.name}})}
+    if($withControls){$result.controls=$items.ToArray()}
+    return $result
+}
+
+function Remove-ComposerAttachment($handle, $snapshot, $request) {
+    $snapshot=Confirm-WindowIdentity $handle $snapshot $request.identity
+    $attachments=Get-ComposerAttachments $snapshot $true
+    $target=@($attachments.controls | Where-Object {$_.id -ceq $request.targetId})
+    if(!$request.verifyOnly){
+        if($target.Count -ne 1){throw 'attachment changed'}
+        $pattern=$null
+        if(!$target[0].element.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){throw 'attachment unavailable'}
+        $pattern.Invoke()
+    }
+    $wait=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        $script:controlTree=$null
+        $check=Read-Window $handle $false $false $true
+        $check=Confirm-WindowIdentity $handle $check $request.identity
+        $current=Get-ComposerAttachments $check
+        $expected=@($request.beforeIds | Where-Object {$_ -cne $request.targetId})
+        $actual=@($current.items | ForEach-Object {$_.id})
+        $missing=@($expected | Where-Object {$_ -cnotin $actual})
+        $added=@($actual | Where-Object {$_ -cnotin $expected})
+        if($missing.Count -eq 0 -and $added.Count -eq 0 -and $actual.Count -eq $expected.Count -and
+            $current.count -eq $request.beforeCount-1){return @{ok=$true;removed=$true}}
+        if($wait.ElapsedMilliseconds -ge 2200){throw 'attachment removal pending'}
+        Start-Sleep -Milliseconds 70
+    }while($true)
 }
 
 $script:rootDocumentCache=@{}
+function Get-ComposerControlKind($name, $near) {
+    if (!$near -or !$name -or $name.Length -gt 160 -or $name -match '[\r\n]') { return '' }
+    if ($name -match '(?i)^(gpt(?:[- .]|$)|o[134](?:[-. ]|$)|(?:选择|切换)?模型(?:[：: ]|$)|(?:select|switch|choose) model\b|model\b)') { return 'model' }
+    if ($name -match '(?i)^(权限|审批|沙盒|permission|approval|access)') { return 'permission' }
+    if ($name -match '(?i)^(思考|推理|强度|能力|reason|thinking|power\b|low$|medium$|high$|extra high$|低$|中$|高$|超高$|标准$|扩展$)') { return 'effort' }
+    if ($name -match '(?i)^(添加|更多|工具|插件|附件|上传|搜索|应用|连接器|add\b|attach\b|tools\b|plugins\b|apps\b|search\b|connectors\b)') { return 'tools' }
+    return ''
+}
+
 function Get-ComposerRoot($snapshot, $allowScopeCache=$false) {
     if(!$snapshot.composer){return $null}
     $r=$snapshot.composer.Cached.BoundingRectangle
@@ -666,11 +760,7 @@ function Get-ComposerRoot($snapshot, $allowScopeCache=$false) {
         if($c.ControlType -notin @($CT::Button,$CT::ComboBox) -or $c.IsOffscreen -or !$c.Name -or $b.IsEmpty){continue}
         if($c.ClassName -match 'app-action-sidebar-thread-selected|(?:^|\s)group/folder-row(?=\s|$)'){continue}
         $near=$b.Top -ge $r.Top-90 -and $b.Bottom -le $r.Bottom+110 -and $b.Right -ge $r.Left-80 -and $b.Left -le $r.Right+80
-        $kind=''
-        if($c.Name -match '(?i)(^gpt[- .]|^o[134]([-. ]|$)|模型|select model|switch model|^model\b)'){$kind='model'}
-        elseif($near -and $c.Name -match '(?i)(权限|审批|沙盒|permission|approval|access)'){$kind='permission'}
-        elseif($near -and $c.Name -match '(?i)(思考|推理|强度|reason|thinking|^(low|medium|high|extra high|低|中|高|超高|标准|扩展)$)'){$kind='effort'}
-        elseif($near -and $c.Name -match '(?i)(^(添加|更多|工具|插件|附件|上传|搜索|应用|连接器)|^(add|attach|tools|plugins|apps|search|connectors)\b)'){$kind='tools'}
+        $kind=Get-ComposerControlKind $c.Name $near
         if(!$kind){continue}
         $id=$node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.'
         $scopeKey=$documentId+'|'+$id
@@ -688,12 +778,23 @@ function Get-ComposerRoot($snapshot, $allowScopeCache=$false) {
 
 function Test-PrimaryDocument($node, $documentId) {
     if (!$documentId) { return $true }
+    # Nodes in a long conversation share most ancestors. Cache only within
+    # this fresh tree, so each ancestor is crossed at most once per read.
+    $path=New-Object 'System.Collections.Generic.List[string]';$result=$false;$resolved=$false
     for ($depth=0; $depth -lt 32; $depth++) {
-        if ($null -eq $node) { return $false }
-        if ($node.Cached.ControlType -eq $CT::Document) { return ($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.') -ceq $documentId }
+        if ($null -eq $node) { $resolved=$true;break }
+        $id=$documentId+'|'+($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.')
+        if($script:primaryDocumentCache.ContainsKey($id)){$result=$script:primaryDocumentCache[$id];$resolved=$true;break}
+        $path.Add($id)
+        if ($node.Cached.ControlType -eq $CT::Document) {
+            $result=($node.GetCachedPropertyValue($AE::RuntimeIdProperty) -join '.') -ceq $documentId
+            $resolved=$true
+            break
+        }
         $node=$walker.GetParent($node,$script:parentCache)
     }
-    return $false
+    if($resolved){foreach($id in $path){$script:primaryDocumentCache[$id]=$result}}
+    return $result
 }
 
 $script:promptGrant='(?i)^(Allow(?: once| always| for this session)?|Always allow|Approve(?: once| for this session)?|Yes,? (?:allow|proceed)|允许(?:一次|本次|此操作|此会话|本会话)?|始终允许|批准(?:一次|本次|本会话|此会话)?|同意(?:本次|执行)?)$'
@@ -887,22 +988,93 @@ function Read-PendingNavigation($tree) {
 }
 
 $script:menuCategory='';$script:menuCategoryContext='';$script:menuCategoryIdentity=''
-function Get-ComposerEffort($menu, $control) {
-    if ($control.Current.ClassName -notmatch '\bSliderKeyboardControl-' -or !$control.Current.IsKeyboardFocusable) { return }
-    $condition=[Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text)
-    $texts=$menu.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
-    foreach ($text in $texts) {
-        $parent=$walker.GetParent($text)
-        if (!$parent -or $parent.Current.ClassName -notmatch '\bKeyboardAnnouncement-') { continue }
-        $announcement=$text.Current.Name
-        if ($announcement -match '^(.+?)[，,]\s*第\s*(\d+)\s*项[，,]\s*共\s*(\d+)\s*项[。.]?$' -or
-            $announcement -match '^(.+?)[,]\s*(?:item\s+)?(\d+)\s+of\s+(\d+)[.]?$') {
-            $position=[int]$Matches[2];$count=[int]$Matches[3]
-            if ($count -ge 2 -and $count -le 12 -and $position -ge 1 -and $position -le $count) {
-                return @{position=$position;count=$count;name=$Matches[1].Trim()}
-            }
+function Get-ComposerPosition($announcement) {
+    if(!$announcement){return}
+    $announcement=$announcement.Trim()
+    if ($announcement -match '^(.+?)[，,]\s*第\s*(\d+)\s*项[，,]\s*共\s*(\d+)\s*项(?:[。.][\s\S]*|$)' -or
+        $announcement -match '^(.+?)[,]\s*(?:item\s+)?(\d+)\s+of\s+(\d+)(?:[.][\s\S]*|$)') {
+        $position=[int]$Matches[2];$count=[int]$Matches[3]
+        if ($count -ge 1 -and $count -le 12 -and $position -ge 1 -and $position -le $count) {
+            $name=$Matches[1].Trim()
+            $locale=if($announcement -match '第\s*\d+\s*项'){'zh-CN'}else{'en'}
+            return @{position=$position;count=$count;name=$name;kind='power-step';locale=$locale}
         }
     }
+}
+function Get-VisiblePowerCaption($texts) {
+    $candidates=New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach($text in $texts){
+        $current=$text.Current
+        $name=([string]$current.Name).Trim()
+        if(!$name -or $name.Length -gt 40 -or $current.IsOffscreen -or $current.ClassName -match '\bsr-only\b' -or
+            $current.BoundingRectangle.IsEmpty -or $name -match '[\r\n]'){continue}
+        $element=$text
+        for($depth=0;$element -and $depth -lt 4;$depth++){
+            if($element.Current.ClassName -match '\bViewToggleEffortLabel-'){
+                [void]$candidates.Add($name)
+                break
+            }
+            if($element.Current.ControlType -in @($CT::Menu,$CT::Document)){break}
+            $element=$script:structureWalker.GetParent($element)
+        }
+    }
+    if($candidates.Count -eq 1){return @($candidates)[0]}
+    return ''
+}
+function Get-PowerDisplayLabel($announcement) {
+    # The Work power slider uses the work reasoning strings in its
+    # announcement and the local reasoning strings in its visible caption.
+    # Translate labels only. The observed control supplies every position.
+    if($announcement -notmatch '(?:^|\s)(?<label>标准|深度|Standard|Extended|轻度|中|高|极高|极低|无|持续|Light|Medium|High|Extra High|Minimal|None|Persistent|Max|Ultra)$'){return ''}
+    switch($Matches.label){
+        '标准' {return '中'}
+        '深度' {return '高'}
+        'Standard' {return 'Medium'}
+        'Extended' {return 'High'}
+        default {return $Matches.label}
+    }
+}
+
+function Get-PowerModelTitle($announcement) {
+    if($announcement -match '^(?<model>.+?)\s+(?:标准|深度|Standard|Extended|轻度|中|高|极高|极低|无|持续|Light|Medium|High|Extra High|Minimal|None|Persistent|Max|Ultra)$') {
+        return $Matches.model
+    }
+    return ''
+}
+function Get-ComposerEffort($menu, $control, $readCaption=$false) {
+    if ($control.Current.ClassName -notmatch '\bSliderKeyboardControl-') { return }
+    $direct=Get-ComposerPosition $control.Current.HelpText
+    if($direct -and !$readCaption){return $direct}
+    $scope=$control;$powerView=$null
+    for($up=0;$up -lt 5;$up++){
+        $scope=$script:structureWalker.GetParent($scope)
+        if(!$scope -or $scope.Current.ControlType -in @($CT::Menu,$CT::Document)){break}
+        if($scope.Current.ClassName -match '\bSimpleView-'){$powerView=$scope;break}
+    }
+    # Native accessibility can omit the generic div around this control. Its
+    # menu still exposes the status text, but never use arbitrary item counts.
+    $scope=if($powerView){$powerView}elseif($menu.Current.ControlType -eq $CT::Menu){$menu}else{$null}
+    if(!$scope){
+        if($direct -and $readCaption){$direct.label=Get-PowerDisplayLabel $direct.name}
+        return $direct
+    }
+    $announcements=New-Object 'System.Collections.Generic.List[string]'
+    $condition=[Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Text)
+    $texts=$scope.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
+    foreach ($text in $texts) {
+        if($text.Current.Name){$announcements.Add($text.Current.Name.Trim())}
+    }
+    $positions=@{}
+    foreach($announcement in $announcements){
+        $position=Get-ComposerPosition $announcement
+        if($position){$positions[$position.name+'|'+$position.position+'|'+$position.count]=$position}
+    }
+    $selected=if($direct){$direct}elseif($positions.Count -eq 1){@($positions.Values)[0]}
+    if($selected -and $readCaption){
+        $selected.label=Get-VisiblePowerCaption $texts
+        if(!$selected.label){$selected.label=Get-PowerDisplayLabel $selected.name}
+    }
+    return $selected
 }
 
 function Initialize-WindowKeys {
@@ -921,29 +1093,85 @@ function Send-FocusedWindowKey($handle,$control,$key) {
     Initialize-WindowKeys
     if([RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle){throw 'window lost focus'}
     $control.SetFocus()
-    $focused=$AE::FocusedElement
-    if(!$focused -or ($focused.GetRuntimeId() -join '.') -cne ($control.GetRuntimeId() -join '.') -or
-        [RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle){throw 'control lost focus'}
-    [RmEffortInput]::keybd_event($key,0,1,[UIntPtr]::Zero)
-    [RmEffortInput]::keybd_event($key,0,3,[UIntPtr]::Zero)
+    $expected=$control.GetRuntimeId() -join '.'
+    $ready=$false
+    for($attempt=0;$attempt -lt 10;$attempt++){
+        if([RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle){throw 'window lost focus'}
+        $focused=$AE::FocusedElement
+        if($focused -and ($focused.GetRuntimeId() -join '.') -ceq $expected){$ready=$true;break}
+        Start-Sleep -Milliseconds 20
+    }
+    if(!$ready){throw 'control lost focus'}
+    $flags=if($key -in @(0x25,0x27)){1}else{0}
+    [RmEffortInput]::keybd_event($key,0,$flags,[UIntPtr]::Zero)
+    [RmEffortInput]::keybd_event($key,0,($flags -bor 2),[UIntPtr]::Zero)
 }
 
-function Set-ComposerEffort($handle, $choice) {
-    Initialize-WindowKeys
-    $control=$choice.element
-    $id=$control.GetRuntimeId() -join '.'
-    $delta=$choice.position-$choice.effort.position
-    if ($delta -eq 0) { return }
-    $key=if ($delta -lt 0) { 0x25 } else { 0x27 }
-    if ([RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle) { throw 'effort window lost focus' }
-    $control.SetFocus()
-    for ($step=0; $step -lt [Math]::Abs($delta); $step++) {
-        $focused=$AE::FocusedElement
-        if (!$focused -or ($focused.GetRuntimeId() -join '.') -cne $id -or
-            [RmEffortInput]::GetForegroundWindow().ToInt64() -ne [long]$handle) { throw 'effort control lost focus' }
-        [RmEffortInput]::keybd_event($key,0,1,[UIntPtr]::Zero)
-        [RmEffortInput]::keybd_event($key,0,3,[UIntPtr]::Zero)
-        Start-Sleep -Milliseconds 45
+function Invoke-ConfirmedEffort($handle,$choice,$observed,$power,$identity='') {
+    # This function is reachable only through an explicit, consumed user
+    # action. Reading a catalog never calls it or sends keyboard input.
+    $target=[int]$power.targetLevel
+    $count=[int]$choice.effort.count
+    $position=[int]$choice.effort.position
+    if($choice.kind -ne 'power-step' -or $count -ne [int]$observed.levelCount -or
+       $position -ne [int]$observed.currentLevel -or $choice.label -cne $observed.label -or
+       $target -lt 1 -or $target -gt $count -or @($power.labels).Count -ne $count -or
+       $power.labels[$target-1] -cne $power.targetLabel -or
+       $power.labels[$position-1] -cne $choice.label -or
+       !$choice.effort.name.StartsWith(([string]$power.modelTitle)+' ',[StringComparison]::Ordinal) -or
+       ($identity -and !$choice.adjustable)) {
+        throw 'option changed'
+    }
+    if($position -eq $target){return}
+    $direction=if($target -gt $position){1}else{-1}
+    $key=if($direction -gt 0){0x27}else{0x25}
+    while($position -ne $target){
+        if($identity){
+            $options=Read-ComposerOptions $handle 'model'
+            if($options.identity -cne $identity -or $options.prompt -or !$options.menu){throw 'effort pending'}
+            $controls=@($options.entries | Where-Object {$_.kind -eq 'power-step' -and $_.adjustable -and
+                $_.effort.position -eq $position -and $_.effort.count -eq $count -and $_.label -ceq $power.labels[$position-1] -and
+                $_.effort.name.StartsWith(([string]$power.modelTitle)+' ',[StringComparison]::Ordinal)})
+            if($controls.Count -ne 1){throw 'effort pending'}
+            $choice=$controls[0];$before=$choice.effort
+        } else {$before=Get-ComposerEffort $choice.menuElement $choice.element $true}
+        if(!$before -or $before.position -ne $position -or $before.count -ne $count -or
+           $before.label -cne $power.labels[$position-1] -or
+           !$before.name.StartsWith(([string]$power.modelTitle)+' ',[StringComparison]::Ordinal)) {throw 'option changed'}
+        Send-FocusedWindowKey $handle $choice.element $key
+        $expected=$position+$direction
+        $confirmed=$false
+        for($read=0;$read -lt 10;$read++){
+            Start-Sleep -Milliseconds 50
+            $after=$null
+            try{$after=Get-ComposerEffort $choice.menuElement $choice.element $true}
+            catch [System.Windows.Automation.ElementNotAvailableException] {}
+            if($identity -and (!$after -or $after.position -eq $position)){
+                $options=Read-ComposerOptions $handle 'model'
+                if($options.identity -cne $identity -or $options.prompt -or !$options.menu){throw 'effort pending'}
+                $controls=@($options.entries | Where-Object {$_.kind -eq 'power-step' -and $_.adjustable})
+                if($controls.Count -ne 1){throw 'effort pending'}
+                $choice=$controls[0];$after=$choice.effort
+            }
+            if(!$after -or $after.count -ne $count -or
+               !$after.name.StartsWith(([string]$power.modelTitle)+' ',[StringComparison]::Ordinal)) {throw 'effort pending'}
+            if($after.position -eq $expected -and $after.label -ceq $power.labels[$expected-1]){$confirmed=$true;break}
+            if($after.position -ne $position -and $after.position -ne $expected){throw 'effort pending'}
+        }
+        # No repeated key, automatic rollback, or approval if readback fails.
+        if(!$confirmed){throw 'effort pending'}
+        $position=$expected
+    }
+    if($identity){
+        $options=Read-ComposerOptions $handle 'model'
+        if($options.identity -cne $identity -or $options.prompt -or !$options.menu){throw 'effort pending'}
+        $controls=@($options.entries | Where-Object {$_.kind -eq 'power-step' -and $_.adjustable -and
+            $_.effort.position -eq $target -and $_.effort.count -eq $count -and $_.label -ceq $power.targetLabel -and
+            $_.effort.name.StartsWith(([string]$power.modelTitle)+' ',[StringComparison]::Ordinal)})
+        if($controls.Count -ne 1){throw 'effort pending'}
+        # Enter completes the native picker. The focused control is the slider,
+        # never the message editor or an approval button.
+        Send-FocusedWindowKey $handle $controls[0].element 0x0D
     }
 }
 
@@ -1001,10 +1229,7 @@ function Read-ComposerOptions($handle, $category='') {
             $r.Bottom -le $composerRect.Bottom+110 -and $r.Right -ge $composerRect.Left-80 -and $r.Left -le $composerRect.Right+80
         $rootKind=''
         if ($type -in @('Button','ComboBox')) {
-            if ($c.Name -match '(?i)(^gpt[- .]|^o[134]([-. ]|$)|模型|select model|switch model|^model\b)') { $rootKind='model' }
-            elseif ($near -and $c.Name -match '(?i)(权限|审批|沙盒|permission|approval|access)') { $rootKind='permission' }
-            elseif ($near -and $c.Name -match '(?i)(思考|推理|强度|reason|thinking|^(low|medium|high|extra high|低|中|高|超高|标准|扩展)$)') { $rootKind='effort' }
-            elseif ($near -and $c.Name -match '(?i)(^(添加|更多|工具|插件|附件|上传|搜索|应用|连接器)|^(add|attach|tools|plugins|apps|search|connectors)\b)') { $rootKind='tools' }
+            $rootKind=Get-ComposerControlKind $c.Name $near
         }
         $insideMenu=$false
         foreach($m in $menuRects) {if(!$r.IsEmpty -and $r.Left -ge $m.Left -and $r.Top -ge $m.Top -and $r.Right -le $m.Right -and $r.Bottom -le $m.Bottom) {$insideMenu=$true;break}}
@@ -1032,14 +1257,14 @@ function Read-ComposerOptions($handle, $category='') {
         if ($null -ne $menu) {
             $context=if($portalContext){$portalContext}else{$menu.GetRuntimeId() -join '.'}
             $id=$node.GetRuntimeId() -join '.'
-            $effort=Get-ComposerEffort $menu $node
+            $effort=Get-ComposerEffort $menu $node $true
             if ($effort) {
-                for ($position=1; $position -le $effort.count; $position++) {
-                    $selected=$position -eq $effort.position
-                    $menus.Add(@{id="$id|effort:$position";title=[string]$position;kind='effort-step';
-                        enabled=$c.IsEnabled;selected=$selected;label=$(if($selected){$effort.name}else{''});
-                        context=$context;menuElement=$menu;element=$node;position=$position;effort=$effort})
-                }
+                # Chromium exposes only the committed position, not the other
+                # labels. A keyboard probe would change the user's selection.
+                $menus.Add(@{id="$id|effort:$($effort.position)";title=$effort.name;kind=$effort.kind;
+                    enabled=$false;selected=$true;label=[string]$effort.label;
+                    locale=$effort.locale;adjustable=$c.IsEnabled;modelTitle=(Get-PowerModelTitle $effort.name);
+                    context=$context;menuElement=$menu;element=$node;position=$effort.position;effort=$effort})
                 continue
             }
             $kind=if ($c.Name -match '(?i)^(强度|推理强度|推理等级|思考强度|Reasoning effort|Effort)$') {
@@ -1048,7 +1273,7 @@ function Read-ComposerOptions($handle, $category='') {
                         $expansion.Current.ExpandCollapseState -ne [System.Windows.Automation.ExpandCollapseState]::LeafNode){'effort'}else{'surface'}
                 }
                 elseif ($c.ClassName -match '\bViewToggle-' -and $c.Name -match '^(选择模型|Select model|Choose model)$') {'model-list'}
-                elseif ($type -eq 'CheckBox' -and $c.ClassName -match '\bFastModeToggle-') {'quick'}
+                elseif ($type -in @('CheckBox','MenuItem','Button') -and $c.ClassName -match '\bFastModeToggle-') {'quick'}
                 elseif ($c.ClassName -match '\bResetToDefault-' -and $c.Name -match '^(重置为默认|Reset to default)$') {'reset'}
                 elseif($c.Name -match '(?i)^(文件和文件夹|添加文件|上传文件|从电脑上传|添加照片和文件|Files and folders|Add files|Upload files|Upload from computer|Add photos .{1,4} files)$') {'upload'} else {'option'}
         }
@@ -1073,7 +1298,9 @@ function Read-ComposerOptions($handle, $category='') {
     if(!$context){$category=''}
     if($category -eq 'permission'){$visible=@($visible | Where-Object {$_.title -notmatch '^(?i)(Help|帮助|Documentation|文档|Feedback|反馈)([\s…\.。!！?？:].*)?$'})}
     $script:menuCategory=$category;$script:menuCategoryContext=$context;$script:menuCategoryIdentity=$snapshot.identity
-    return @{identity=$snapshot.identity;context=$context;menu=($menus.Count -gt 0);entries=@($visible);category=$category}
+    $rootModels=@($entries | Where-Object {$_.kind -eq 'model'})
+    return @{identity=$snapshot.identity;context=$context;menu=($menus.Count -gt 0);entries=@($visible);category=$category;
+        rootModel=if($rootModels.Count -eq 1){$rootModels[0].title}else{''}}
 }
 
 function Get-ProjectAncestor($node) {
@@ -1090,15 +1317,19 @@ function Export-ComposerOptions($options) {
     $items=@($options.entries | ForEach-Object {
         $item=@{id=$_.id;title=$_.title;kind=$_.kind;enabled=$_.enabled;selected=$_.selected}
         if($_.description){$item.description=$_.description}
-        if ($_.kind -eq 'effort-step') {
+        if ($_.kind -in @('effort-step','power-step')) {
             $item.label=$_.label
             $item.level=$_.position
             $item.currentLevel=$_.effort.position
             $item.levelCount=$_.effort.count
+            $item.locale=$_.effort.locale
+            $item.adjustable=$_.adjustable
+            $item.modelTitle=$_.modelTitle
         }
         $item
     })
     $result=@{ok=$true;identity=$options.identity;context=$options.context;menu=$options.menu;items=$items;category=$options.category}
+    if($options.rootModel){$result.rootModel=$options.rootModel}
     if($options.prompt){$result.prompt=$options.prompt}
     return $result
 }
@@ -1172,7 +1403,8 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     $reply=@{ok=$true;request_id=$request.request_id;escape=$true}
                 } else {
                     $matches=@($options.entries | Where-Object {$_.id -ceq $request.item.id -and $_.title -ceq $request.item.title -and
-                        $_.kind -ceq $request.item.kind -and $_.selected -eq $request.item.selected -and $_.enabled})
+                        $_.kind -ceq $request.item.kind -and $_.selected -eq $request.item.selected -and
+                        ($_.enabled -or ($request.power -and $_.kind -eq 'power-step'))})
                     if ($matches.Count -ne 1) { throw 'option changed' }
                     $choice=$matches[0]
                     $element=$choice.element
@@ -1183,11 +1415,21 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                         $reply=@{ok=$true;request_id=$request.request_id;rect=@{x=$r.X;y=$r.Y;width=$r.Width;height=$r.Height};crop=@{x=$m.X;y=$m.Y;width=$m.Width;height=$m.Height}}
                     } else {
                     if ($matches[0].kind -eq 'surface') { throw 'surface requires pointer' }
-                    $pattern=$null
-                    if ($choice.kind -eq 'effort-step') {
-                        if ($choice.effort.position -ne $request.item.currentLevel -or
-                            $choice.effort.count -ne $request.item.levelCount) { throw 'effort options changed' }
-                        Set-ComposerEffort $request.hwnd $choice
+                    $pattern=$null;$effortPrompt=$null
+                    if ($choice.kind -in @('effort-step','power-step')) {
+                        if(!$request.power){throw 'option unavailable'}
+                        try {
+                            Invoke-ConfirmedEffort $request.hwnd $choice $request.item $request.power $options.identity
+                        } catch {
+                            $observed=$null
+                            for($read=0;$read -lt 5;$read++){
+                                $observed=Read-ComposerOptions $request.hwnd 'model'
+                                if($observed.prompt -and $observed.identity -ceq $request.identity){break}
+                                Start-Sleep -Milliseconds 60
+                            }
+                            if(!$observed.prompt -or $observed.identity -cne $request.identity){throw}
+                            $effortPrompt=$observed
+                        }
                     } elseif ($element.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)) {
                         if ($pattern.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded) { $pattern.Collapse() } else { $pattern.Expand() }
                     } elseif ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke() }
@@ -1199,9 +1441,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     $reply=@{ok=$true;request_id=$request.request_id}
                     if ($request.refresh) {
                         $category=if($request.item.kind -in @('model','permission','tools','effort')){$request.item.kind}else{$options.category}
-                        $next=Read-ComposerOptions $request.hwnd $category
-                        if ($choice.kind -eq 'effort-step' -and ($next.identity -cne $options.identity -or
-                            !($next.entries | Where-Object {$_.id -ceq $choice.id -and $_.selected}))) { throw 'effort result unconfirmed' }
+                        $next=if($effortPrompt){$effortPrompt}else{Read-ComposerOptions $request.hwnd $category}
                         if(!$next.menu -and !$next.prompt -and !$options.menu -and $request.item.kind -in @('model','permission','tools','effort')) {
                             # A read may straddle the desktop popup animation.
                             # Re-read once; the invocation itself is never repeated.
@@ -1243,9 +1483,9 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 }
             }
         } else {
-        $compact=$request.operation -in @('observe','identity','prepare','input_ready','submit','draft','clear_draft','attachments','attachment_focus')
+        $compact=$request.operation -in @('observe','identity','prepare','fill','input_ready','submit','draft','clear_draft','attachments','attachment_focus','remove_attachment')
         # Paste may create a new Send control; discover it before read-back.
-        if($request.operation -eq 'input_ready' -or $request.fresh){$script:controlTree=$null}
+        if($request.operation -in @('fill','input_ready') -or $request.fresh){$script:controlTree=$null}
         $snapshot = Read-Window $request.hwnd ($request.operation -eq 'identity') ($request.operation -eq 'read') $compact
         if ($request.operation -eq 'observe') {
             $rootOptions=Get-ComposerRoot $snapshot $true
@@ -1258,6 +1498,9 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             $reply.pendingRequests=@((Read-PendingNavigation $snapshot.tree).Values | Sort-Object -Property id)
         } elseif ($request.operation -eq 'identity') {
             $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity}
+        } elseif ($request.operation -eq 'remove_attachment') {
+            $reply=Remove-ComposerAttachment $request.hwnd $snapshot $request
+            $reply.request_id=$request.request_id
         } elseif ($request.operation -in @('attachment_focus','attachments')) {
             if($snapshot.identity -cne $request.identity){throw 'conversation changed'}
             if(!$snapshot.composer){throw 'composer unavailable'}
@@ -1297,6 +1540,23 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             }
             if (!$confirmed) { throw 'clear not confirmed' }
             $reply = @{ok=$true; request_id=$request.request_id}
+        } elseif ($request.operation -eq 'fill') {
+            $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
+            if($null -eq $snapshot.composer -or $null -eq $snapshot.draft){throw 'composer unavailable'}
+            $expected=Normalize-Message $request.text
+            $actual=Normalize-Message $snapshot.draft
+            if($actual -and $actual -cne $expected){throw 'draft exists'}
+            if($actual -cne $expected){
+                $value=$null
+                if(!$snapshot.composer.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$value) -or $value.Current.IsReadOnly){throw 'direct input unavailable'}
+                # SetValue is bound to this editor, independent of foreground or
+                # keyboard focus. Never inject text into the desktop input queue.
+                $value.SetValue([string]$request.text)
+            }
+            $script:controlTree=$null
+            $snapshot=Read-Window $request.hwnd $false $false $true
+            $snapshot=Wait-ComposerReady $request.hwnd $snapshot $request.identity $request.text ([bool]$request.submit) $true
+            $reply=@{ok=$true;request_id=$request.request_id;generating=$snapshot.generating}
         } elseif ($request.operation -eq 'prepare') {
             $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
             if ($null -eq $snapshot.composer -or $null -eq $snapshot.draft) { throw 'composer unavailable' }
@@ -1318,30 +1578,8 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             } while($true)
             $reply = @{ok=$true; request_id=$request.request_id;generating=$check.generating;present=($check.draft.Length -gt 0)}
         } elseif ($request.operation -in @('submit','input_ready')) {
-            $ready = $false
-            $readyState=$null
-            $inputWait=[Diagnostics.Stopwatch]::StartNew()
-            $expectedText=Normalize-Message $request.text
-            do {
-                $snapshot=Confirm-WindowIdentity $request.hwnd $snapshot $request.identity
-                if ($null -eq $snapshot.composer -or $null -eq $snapshot.draft) { throw 'composer unavailable' }
-                $actualText=Normalize-Message $snapshot.draft
-                if ($actualText -ceq $expectedText -and
-                    ($snapshot.senders.Count -eq 1 -or ($request.operation -eq 'input_ready' -and !$request.submit))) {
-                    $state=([string]$snapshot.generating)+'|'+($snapshot.senders | ForEach-Object {$_.Current.Name})
-                    # Chromium exposes new editor text before its queue/button
-                    # metadata catches up. Read two settled states before a
-                    # keyboard submission so a new reply uses native queuing.
-                    if($request.operation -ne 'input_ready' -or $readyState -ceq $state){$ready=$true;break}
-                    $readyState=$state
-                } else {$readyState=$null}
-                if($actualText -cne $expectedText -and !$expectedText.StartsWith($actualText,[StringComparison]::Ordinal)) { throw 'draft changed' }
-                if($inputWait.ElapsedMilliseconds -ge 3000){break}
-                Start-Sleep -Milliseconds 70
-                $snapshot = Read-Window $request.hwnd $false $false $true
-            } while($true)
-            if ((Normalize-Message $snapshot.draft) -cne (Normalize-Message $request.text)) { throw 'draft changed' }
-            if (!$ready) { throw 'send button unavailable' }
+            $requireSender=$request.operation -eq 'submit' -or [bool]$request.submit
+            $snapshot=Wait-ComposerReady $request.hwnd $snapshot $request.identity $request.text $requireSender ($request.operation -eq 'input_ready')
             if($request.operation -eq 'input_ready') {
                 $reply=@{ok=$true;request_id=$request.request_id;generating=$snapshot.generating}
             } else {
@@ -1375,7 +1613,8 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $reason = $_.Exception.Message
         if ($reason -notin @('conversation changed','composer unavailable','draft exists','reply in progress','composer focus rejected',
             'draft changed','send button unavailable','send not confirmed','navigation changed','navigation unavailable',
-            'queue changed','queue unavailable','queue pending','queue draft exists','queue edit not started','options changed','option changed','option unavailable',
+            'attachment changed','attachment unavailable','attachment removal pending','direct input unavailable',
+            'queue changed','queue unavailable','queue pending','queue draft exists','queue edit not started','options changed','option changed','option unavailable','effort pending','window lost focus','control lost focus',
             'clear unavailable','clear not confirmed')) {
             $reason = 'reader unavailable'
         }

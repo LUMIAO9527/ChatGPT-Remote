@@ -10,12 +10,52 @@ from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from attachments import UploadStore,UploadError,MAX_FILE,ClipboardBridge,ClipboardUnavailable
 from agent import AgentState,MockBackend
+from windows_control import TargetError
 
 
 class AttachmentTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.store=UploadStore(self.root/'uploads')
     def tearDown(self):self.tmp.cleanup()
+
+    def test_uploads_survive_restart_and_discard_is_idempotent_for_the_owner(self):
+        first=self.store.receive('phone','first.txt',3,io.BytesIO(b'one'))
+        second=self.store.receive('phone','second.txt',3,io.BytesIO(b'two'))
+        restored=UploadStore(self.store.root)
+        self.assertEqual(restored.resolve('phone',[first['id']])[0]['path'].read_bytes(),b'one')
+        restored.discard('phone',[first['id']]);restored.discard('phone',[first['id']])
+        self.assertTrue(restored.resolve('phone',[second['id']])[0]['path'].exists())
+        restored=UploadStore(self.store.root)
+        restored.discard('phone',[first['id']])
+        with self.assertRaises(UploadError):restored.discard('another',[first['id']])
+
+    def test_native_remove_deletes_one_attachment_and_reconciles_a_lost_reply(self):
+        backend=MockBackend();backend.select(1);state=AgentState(backend,self.root/'state')
+        try:
+            snap=backend.read_conversation();items=[state.uploads.receive('phone',name,3,io.BytesIO(b'abc')) for name in ('a.txt','b.png')]
+            command={'ids':[row['id'] for row in items],'conversationKey':snap['key'],'epoch':snap['epoch']}
+            state.attach_uploads('phone',command)
+            remove={**command,'ids':[items[0]['id']]}
+            state.remove_upload('phone',remove);state.remove_upload('phone',remove)
+            self.assertEqual([row['name'] for row in backend.mock_attachments],['b.png'])
+            self.assertEqual(state.uploads.resolve('phone',[items[1]['id']])[0]['state'],'attached')
+            with self.assertRaises(UploadError):state.remove_upload('another',remove)
+            backend.tracker.epoch+=1
+            with self.assertRaises(TargetError):state.remove_upload('phone',{**remove,'ids':[items[1]['id']]})
+            self.assertEqual(len(backend.mock_attachments),1)
+        finally:state.close()
+
+    def test_a_file_removed_on_the_computer_cannot_silently_send_text_without_it(self):
+        backend=MockBackend();backend.select(1);state=AgentState(backend,self.root/'state')
+        try:
+            snap=backend.read_conversation();item=state.uploads.receive('phone','a.txt',3,io.BytesIO(b'abc'))
+            command={'ids':[item['id']],'conversationKey':snap['key'],'epoch':snap['epoch']}
+            state.attach_uploads('phone',command);backend.mock_attachments=[]
+            previous=len(backend.messages)
+            with self.assertRaises(TargetError):state.perform_action({'kind':'message','text':'with file','submit':True,
+                'attachmentIds':[item['id']],'conversationKey':snap['key'],'epoch':snap['epoch']},'phone')
+            self.assertEqual(len(backend.messages),previous)
+        finally:state.close()
 
     @unittest.skipUnless(os.name == 'nt', 'Windows clipboard helper')
     def test_clipboard_helper_reuses_one_process_and_restores_after_each_paste(self):

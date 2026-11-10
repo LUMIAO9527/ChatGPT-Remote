@@ -119,6 +119,8 @@ class DesktopManager:
         self.update_ack = None
         self.restore_service = False
         self.last_status = None
+        self._auto_start = None
+        self._auto_start_lock = threading.Lock()
         self.panel = None
         from agent import VERSION
         from desktop_updates import ReleaseUpdates
@@ -132,9 +134,25 @@ class DesktopManager:
         if not isinstance(value, dict):
             value = {}
         return {'theme': value.get('theme') if value.get('theme') in ('system', 'light', 'dark') else 'system',
+                'computerName': value.get('computerName') if isinstance(value.get('computerName'),str) and 1<=len(value['computerName'].strip())<=60 else socket.gethostname(),
                 'autoHide': False if self.installation.status()['firstRun'] else value.get('autoHide') if type(value.get('autoHide')) is bool else True,
                 'material': value.get('material') if value.get('material') in ('glass','solid') else 'glass',
                 'motion': value.get('motion') if type(value.get('motion')) is bool else True}
+
+    def auto_start(self, refresh: bool = False):
+        """Scheduled-task state; read on demand and cached for the panel."""
+        lock = getattr(self, '_auto_start_lock', None)
+        if lock is None:
+            lock = threading.Lock()
+            self._auto_start_lock = lock
+            self._auto_start = None
+        with lock:
+            if refresh:
+                try:
+                    self._auto_start = bool(task_command('Status').get('AutoStart'))
+                except Exception:
+                    pass
+            return self._auto_start
 
     def status(self) -> dict:
         try:
@@ -197,7 +215,7 @@ class DesktopManager:
                     if json.loads(request.read_text(encoding='utf-8')).get('schema') == 1: requested = 'uninstall'
                     request.unlink()
                 except (OSError,ValueError,AttributeError): pass
-            return {'installation':self.installation.status(),'requestedPage':requested,**self.status(), 'computerName':socket.gethostname(), 'preferences': self.preferences(), 'update': self.updates.snapshot()}
+            return {'installation':self.installation.status(),'requestedPage':requested,**self.status(), 'computerName':self.preferences().get('computerName',socket.gethostname()), 'preferences': self.preferences(), 'autoStart': getattr(self, '_auto_start', None), 'update': self.updates.snapshot()}
         if action == 'installation.choose':
             import webview
             selected=self.window.create_file_dialog(webview.FileDialog.FOLDER,directory=self.installation.status()['suggested'])
@@ -218,9 +236,14 @@ class DesktopManager:
             try:return import_legacy(selected[0])
             except (OSError,ValueError) as error:raise DesktopControlError(str(error)) from None
         if action == 'settings.get':
-            return {'preferences': self.preferences(), 'autoStart': bool(task_command('Status').get('AutoStart'))}
-        if action in ('settings.theme', 'settings.autohide', 'settings.material', 'settings.motion'):
-            key = {'settings.theme':'theme','settings.autohide':'autoHide','settings.material':'material','settings.motion':'motion'}[action]
+            return {'preferences': self.preferences(), 'autoStart': bool(self.auto_start(refresh=True))}
+        if action in ('settings.theme', 'settings.autohide', 'settings.material', 'settings.motion','settings.computerName'):
+            key = {'settings.theme':'theme','settings.autohide':'autoHide','settings.material':'material','settings.motion':'motion','settings.computerName':'computerName'}[action]
+            if key=='computerName':
+                name=payload.get('computerName')
+                if not isinstance(name,str) or not 1<=len(name.strip())<=60 or any(ord(char)<32 for char in name):
+                    raise DesktopControlError('请输入 1 至 60 字的电脑名称。')
+                payload[key]=name.strip()
             if key == 'theme' and payload.get(key) not in ('light', 'dark', 'system'):
                 raise DesktopControlError('请选择外观')
             if key == 'autoHide' and type(payload.get(key)) is not bool:
@@ -297,7 +320,10 @@ class DesktopManager:
                 if not info['Installed']:
                     raise DesktopControlError('请先启动服务')
                 result = task_command('AutoStart', enabled=payload['enabled'])
-                return {'autoStart': bool(result['AutoStart'])}
+                value = bool(result['AutoStart'])
+                with self._auto_start_lock:
+                    self._auto_start = value
+                return {'autoStart': value}
         if action in ('service.start', 'service.stop', 'service.restart'):
             return self.service(action.split('.')[1])
         if action in ('device.rename', 'device.remove', 'target.select', 'target.pause'):
@@ -309,6 +335,12 @@ class DesktopManager:
             buffer = io.BytesIO()
             image.save(buffer, format='PNG')
             return {**result, 'qr': 'data:image/png;base64,' + base64.b64encode(buffer.getvalue()).decode()}
+        if action == 'pair.copy':
+            result=self.client.request('pair')
+            if payload.get('pin')!=result['pin']:
+                raise DesktopControlError('配对码已更新，请复制新码。')
+            copy_text(result['pin'])
+            return {}
         if action in ('link.copy', 'link.open'):
             link = self.client.request('access_link')['url']
             parsed = urlparse(link)

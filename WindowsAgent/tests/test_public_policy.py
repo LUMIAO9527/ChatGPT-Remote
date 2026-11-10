@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -148,6 +149,28 @@ class PublicPolicyTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(content_type, 'image/jpeg')
         self.assertTrue(body.startswith(b'\xff\xd8'))
+
+    def test_qr_pair_ticket_expires_without_interrupting_the_regular_entry(self):
+        ticket=self.state.pin_ticket
+        self.assertEqual(self.get('/?pair='+ticket)[0],200)
+        self.state.pin_expires=time.monotonic()-1
+        status,kind,body=self.get('/?pair='+ticket)
+        self.assertEqual(status,403)
+        self.assertIn('text/html',kind)
+        self.assertIn('二维码已过期',body.decode())
+        self.assertEqual(self.get('/')[0],200)
+
+    def test_wgc_window_frames_pass_http_and_keep_pointer_provenance(self):
+        frame=self.state.hub.capture_now()
+        frame.update(method='wgc',pointer_target=(123,(10,20,800,600)))
+        self.state.mock=False
+        with patch.object(self.state.hub,'wait',return_value=frame):
+            status,content_type,body=self.get('/api/frame?since=0')
+        self.assertEqual(status,200)
+        self.assertEqual(content_type,'image/jpeg')
+        self.assertTrue(body.startswith(b'\xff\xd8'))
+        published=self.state.hub._publish(frame)
+        self.assertEqual(self.state.hub.pointer_frames[published['id']][2],frame['pointer_target'])
 
     def test_capture_finishing_after_mode_change_cannot_return_an_image(self):
         original = self.backend.capture_meta

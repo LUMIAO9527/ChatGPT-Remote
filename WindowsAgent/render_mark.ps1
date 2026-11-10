@@ -11,24 +11,43 @@ if ($svg.DocumentElement.GetAttribute('viewBox') -ne '0 0 32 32' -or
     $svg.SelectNodes('//*[@transform or local-name()="text" or local-name()="image"]').Count) {
     throw 'Expected a self-contained 32-unit mark without transforms, fonts or images.'
 }
-$tile = $svg.SelectSingleNode('//*[local-name()="rect"]')
-$letters = $svg.SelectSingleNode('//*[local-name()="g"]')
 $brush = [Windows.Media.BrushConverter]::new()
-$pen = [Windows.Media.Pen]::new($brush.ConvertFromString($letters.GetAttribute('stroke')), [double]$letters.GetAttribute('stroke-width'))
-$pen.StartLineCap = 'Round'
-$pen.EndLineCap = 'Round'
-$pen.LineJoin = 'Round'
+function Brush([string]$value) {
+    if (!$value -or $value -eq 'none') { return $null }
+    return $brush.ConvertFromString($value)
+}
 $visual = [Windows.Media.DrawingVisual]::new()
 $drawing = $visual.RenderOpen()
 $drawing.PushTransform([Windows.Media.ScaleTransform]::new($Size / 32.0, $Size / 32.0))
-$tilePen = $null
-if ($tile.HasAttribute('stroke') -and $tile.GetAttribute('stroke') -ne 'none') {
-    $tilePen = [Windows.Media.Pen]::new($brush.ConvertFromString($tile.GetAttribute('stroke')), [double]$tile.GetAttribute('stroke-width'))
-}
-$drawing.DrawRoundedRectangle($brush.ConvertFromString($tile.GetAttribute('fill')), $tilePen,
-    [Windows.Rect]::new(0, 0, 32, 32), [double]$tile.GetAttribute('rx'), [double]$tile.GetAttribute('rx'))
-foreach ($path in $letters.SelectNodes('*[local-name()="path"]')) {
-    $drawing.DrawGeometry($null, $pen, [Windows.Media.Geometry]::Parse($path.GetAttribute('d')))
+foreach ($node in $svg.DocumentElement.ChildNodes) {
+    if ($node.NodeType -ne 'Element') { continue }
+    $fill = Brush $node.GetAttribute('fill')
+    $strokeValue = $node.GetAttribute('stroke')
+    $pen = $null
+    if ($strokeValue -and $strokeValue -ne 'none') {
+        $pen = [Windows.Media.Pen]::new((Brush $strokeValue), [double]$node.GetAttribute('stroke-width'))
+        $pen.StartLineCap = 'Round'
+        $pen.EndLineCap = 'Round'
+        $pen.LineJoin = 'Round'
+    }
+    switch ($node.LocalName) {
+        'path' { $geometry = [Windows.Media.Geometry]::Parse($node.GetAttribute('d')) }
+        'circle' {
+            $geometry = [Windows.Media.EllipseGeometry]::new(
+                [Windows.Point]::new([double]$node.GetAttribute('cx'), [double]$node.GetAttribute('cy')),
+                [double]$node.GetAttribute('r'), [double]$node.GetAttribute('r'))
+        }
+        'rect' {
+            $rect = [Windows.Rect]::new(
+                [double]$node.GetAttribute('x'), [double]$node.GetAttribute('y'),
+                [double]$node.GetAttribute('width'), [double]$node.GetAttribute('height'))
+            $radius = $node.GetAttribute('rx')
+            if (!$radius) { $radius = '0' }
+            $geometry = [Windows.Media.RectangleGeometry]::new($rect, [double]$radius, [double]$radius)
+        }
+        default { continue }
+    }
+    if ($fill -or $pen) { $drawing.DrawGeometry($fill, $pen, $geometry) }
 }
 $drawing.Close()
 $bitmap = [Windows.Media.Imaging.RenderTargetBitmap]::new($Size, $Size, 96, 96, 'Pbgra32')

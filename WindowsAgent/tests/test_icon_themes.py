@@ -1,5 +1,6 @@
 """Contrast and native handle lifecycle for theme-aware application marks."""
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import unittest
 from unittest.mock import Mock, patch
@@ -13,20 +14,18 @@ class ThemeAssetTests(unittest.TestCase):
     def test_both_palettes_keep_the_same_letter_geometry_and_readable_frames(self):
         from PIL import Image
         paths = []
-        for theme, background in (('light', 255), ('dark', 23)):
+        for theme, dark_ink in (('light', True), ('dark', False)):
             svg = ET.fromstring((HERE / ('assets/rm-mark-' + theme + '.svg')).read_bytes())
             paths.append([node.attrib['d'] for node in svg.iter() if node.tag.endswith('path')])
             with Image.open(HERE / ('desktop-' + theme + '.ico')) as icon:
                 self.assertEqual(icon.ico.sizes(), {(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)})
                 for size in icon.ico.sizes():
                     frame = icon.ico.getimage(size).convert('RGBA')
-                    pixel = frame.getpixel((size[0] // 2, round(size[1] * .88)))
-                    self.assertLess(max(abs(value - background) for value in pixel[:3]), 15)
-                    self.assertGreater(pixel[3], 240)
+                    self.assertEqual(frame.getpixel((0, 0))[3], 0)
                     pixels = list(frame.getdata())
-                    ink = sum(alpha > 240 and (max((red, green, blue)) < 80 if theme == 'light' else min((red, green, blue)) > 200)
+                    ink = sum(alpha > 240 and (max((red, green, blue)) < 80 if dark_ink else min((red, green, blue)) > 200)
                               for red, green, blue, alpha in pixels)
-                    self.assertGreater(ink, size[0] * size[1] * .07)
+                    self.assertGreater(ink, size[0] * size[1] * .05)
         self.assertEqual(paths[0], paths[1])
 
     def test_public_svg_resolves_an_explicit_palette_and_has_an_automatic_variant(self):
@@ -38,6 +37,18 @@ class ThemeAssetTests(unittest.TestCase):
 
 
 class NativeThemeTests(unittest.TestCase):
+    def test_tray_process_connects_each_system_theme_to_the_matching_asset(self):
+        import desktop_app
+        signals = Mock(existing=False)
+        signals.wait.return_value = 1
+        with patch('desktop_app.Signals', return_value=signals), \
+             patch('desktop_app.PanelHost'), patch('desktop_app.logger'), \
+             patch('desktop_tray.TrayIcon') as tray:
+            desktop_app.tray_main(SimpleNamespace(background=True, show=False, update_ack=None))
+        mapping = tray.call_args.args[0]
+        self.assertEqual(Path(mapping['dark']).name, 'desktop-dark.ico')
+        self.assertEqual(Path(mapping['light']).name, 'desktop-light.ico')
+
     def icon(self):
         from desktop_tray import TrayIcon
         icon = TrayIcon.__new__(TrayIcon)

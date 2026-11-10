@@ -4,3 +4,4 @@ Pillow==12.2.0
 qrcode==8.2
 pythonnet==3.1.0
 clr-loader==0.3.1
+markdown-it-py==4.2.0

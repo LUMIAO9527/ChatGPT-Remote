@@ -29,6 +29,27 @@ from windows_control import WindowTracker, window_matches
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_catalog_action_preserves_the_complete_native_directory(self):
+        from unittest.mock import patch
+        self.pair();epoch=self.select()['epoch']
+        catalog={'root':{'scope':'a'},'power':{'items':[{'label':'真实档位'}]},'models':{'items':[]}}
+        with patch.object(self.backend,'action',return_value={'options':{'key':'directory'},'catalog':catalog}):
+            status,_,body=self.req('POST','/api/action',{'kind':'composer','operation':'catalog','conversationKey':'a','epoch':epoch},authorized=True)
+        self.assertEqual(status,200);self.assertEqual(json.loads(body)['catalog'],catalog)
+
+    def test_message_images_require_pairing_and_support_private_conditional_cache(self):
+        from PIL import Image
+        from message_resources import MessageResources
+        self.assertEqual(self.req('GET','/api/resource?id=unknown')[0],401)
+        self.pair();self.select();path=Path(self.tmp.name)/'image.png';Image.new('RGB',(400,300),'white').save(path)
+        store=MessageResources();store.scope='a';ref=store.reference(str(path),'a',image=True)
+        self.backend.message_resource=store.read
+        url='/api/resource?id='+ref['id']+'&variant=thumb'
+        status,headers,body=self.req('GET',url,authorized=True)
+        self.assertEqual(status,200);self.assertTrue(body.startswith(b'\xff\xd8'));self.assertIn('private',headers['Cache-Control'])
+        self.assertEqual(self.req('GET',url,authorized=True,headers={'If-None-Match':headers['ETag']})[0],304)
+        self.assertEqual(self.req('GET','/api/resource?id=unknown',authorized=True)[0],404)
+
     def test_queue_controls_require_pairing_and_reject_stale_or_frozen_actions(self):
         self.assertEqual(self.req('GET','/api/queue')[0],401)
         self.pair();epoch=self.select()['epoch']
@@ -260,6 +281,30 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(status,409)
         self.assertEqual(json.loads(body)['code'],'draft_exists')
         self.assertEqual(self.req('POST','/api/action',{'kind':'draft','operation':'clear','epoch':epoch},authorized=True)[0],400)
+
+    def test_identical_desktop_text_sends_once_even_after_a_stale_draft_preview(self):
+        self.pair();epoch=self.select()['epoch']
+        self.backend.draft='Earlier desktop draft'
+        _,_,body=self.req('GET','/api/draft',authorized=True);snapshot=json.loads(body)
+        text='检查发送：\n1. UI 美化\n2. 交互逻辑\n3. 功能实现'
+        self.backend.draft=text.replace('UI ', 'UI\u00a0').replace('\n','\r\n')+'\r\n'
+        command={'kind':'message','text':text,'submit':True,'epoch':epoch,
+            'conversationKey':snapshot['conversationKey'],'draftRevision':snapshot['revision'],
+            'messageId':'send_identical_draft_123456789'}
+        previous=len(self.backend.messages)
+        status,_,body=self.req('POST','/api/action',command,authorized=True)
+        self.assertEqual(status,200,body)
+        for _ in range(50):
+            _,_,body=self.req('GET','/api/delivery?id='+command['messageId'],authorized=True)
+            if json.loads(body)['delivery']['state']=='sent':break
+            time.sleep(.01)
+        self.assertEqual(json.loads(body)['delivery']['state'],'sent')
+        self.assertEqual(self.backend.draft,'')
+        self.assertEqual(len(self.backend.messages),previous+2)
+        self.assertEqual(self.backend.messages[-2]['text'],text)
+        status,_,body=self.req('POST','/api/action',command,authorized=True)
+        self.assertEqual(status,200,body)
+        self.assertEqual(len(self.backend.messages),previous+2)
 
     def test_project_navigation_auth_expansion_and_old_message_rejection(self):
         status,_,_=self.req('GET','/api/navigation')
@@ -1033,21 +1078,18 @@ class AccessAndProxyTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertIn(content_type, headers['Content-Type'])
             if path.startswith('/icon.svg'):
-                self.assertIn(b'fill="#171717"', body)
+                self.assertIn(b'stroke="#171717"', body)
                 self.assertIn(b'prefers-color-scheme:dark', body)
-                self.assertIn(b'#rm-tile{fill:#fff', body)
-                self.assertIn(b'#rm-letters{stroke:#171717}', body)
-                self.assertIn(b'M6.5 22V9.4H10.5', body)
+                self.assertIn(b'.mk{stroke:#171717}', body)
+                self.assertIn(b'M24.4 10.3', body)
             elif path.startswith('/icon.png'):
                 with Image.open(io.BytesIO(body)) as icon:
                     self.assertEqual(icon.size, (256, 256))
                     self.assertLess(max(icon.convert('RGB').getpixel((128, 24))), 50)
-        for theme, tile, letters in (('light', b'fill="#ffffff"', b'stroke="#171717"'),
-                                     ('dark', b'fill="#171717"', b'stroke="#ffffff"')):
+        for theme, ink in (('light', b'stroke="#171717"'), ('dark', b'stroke="#ffffff"')):
             status, _, body = self.req('GET', '/icon.svg?theme=' + theme)
             self.assertEqual(status, 200)
-            self.assertIn(tile, body)
-            self.assertIn(letters, body)
+            self.assertIn(ink, body)
             self.assertNotIn(b'prefers-color-scheme', body)
         self.assertEqual(self.req('GET', '/api/health')[0], 401)
 

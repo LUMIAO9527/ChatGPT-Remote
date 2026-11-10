@@ -35,7 +35,7 @@
       {id:'m2',role:'assistant',text:'可以，两天都住在西湖附近，少花时间在路上。\n\n周六 · 西湖慢走\n上午抵达后放好行李，下午沿湖散步。傍晚找一家小店吃饭。\n\n周日 · 留点余地\n去龙井喝茶，午后返程。下雨就换成博物馆。',complete:true,timestamp:'10:25'}
     ], queue:[], revision:1, receipts:new Map(), uploads:new Map(), uploadSequence:0,
     devices:[{id:'demo-mate',name:'我的 Mate80',created:1793923200}],
-    preferences:{theme:config.theme,material:'solid',motion:'reduced',autoHide:true}, autoStart:true,
+    preferences:{theme:config.theme,material:'solid',motion:true,autoHide:true}, autoStart:true,
     update:{status:'idle',installable:true,message:'检查是否有新版本'}, running:config.scenario !== 'offline',targetPaused:false
   };
   if (/^(queue|paused)$/.test(config.scenario)) {

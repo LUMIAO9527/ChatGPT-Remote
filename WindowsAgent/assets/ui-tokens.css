@@ -1,58 +1,61 @@
 /* Adapted from ChatGPTnx v1.6.0; see THIRD_PARTY_NOTICES.md. */
 /*
-  Product design scale
-  - radius: 16px cards; interactive rows and controls use their height * 3/8
-  - height: settings and expanded rows 42, detail rows 40, home roster rows 44
-  - joined disclosure rows inherit one shell; 4px minimum focus clearance
-  - type: micro 8, caption 9, small 10, body 11, control 12, title 13, heading 16
-  - shadow: selected < hover < primary < floating
-  Component-specific values below are limited to layout or optical exceptions.
+  Product design scale (Ink):
+  - radius: window 16px; cards 14px; controls 8px
+  - type: micro 9, caption 10, small 11, body 12, title 13, emphasis 15, heading 16, display 28
+  - cards use a 1px edge instead of shadows; one accent (status green)
 */
 :root {
-  --radius-ui: 16px; --radius-window: var(--radius-ui); --radius-card: var(--radius-ui);
-  --radius-control: 12px; --radius-compact: 8px; --radius-pill: 999px; --control-radius-ratio:.375;
+  --radius-ui: 14px; --radius-window: 16px; --radius-card: 14px;
+  --radius-control: 8px; --radius-compact: 8px; --radius-pill: 7px; --control-radius-ratio:.375;
   --window-r: var(--radius-window); --r: var(--radius-card);
-  --panel-edge: 14px; --sheet-header-height: 42px; --sheet-header-gap: 8px; --content-top: 3px; --account-card-height: 112px;
+  --panel-edge: 13px; --sheet-header-height: 46px; --sheet-header-gap: 8px; --content-top: 0px; --account-card-height: 112px;
   --roster-heading-height: 32px; --home-row-height:var(--height-primary);
   --space-1: 2px; --space-2: 4px; --space-3: 6px; --space-4: 8px; --space-5: 10px;
   --space-6: 12px; --space-8: 16px; --space-10: 20px; --space-12: 24px;
-  --font-micro: 8px; --font-caption: 9px; --font-small: 10px; --font-body: 11px;
+  --font-micro: 9px; --font-caption: 10px; --font-small: 11px; --font-body: 12px;
   --font-control: 12px; --font-title: 13px; --font-subtitle: 14px; --font-emphasis: 15px;
   --font-heading: 16px; --font-page-title: 18px; --font-brand-mark: 19px;
-  --font-display-small: 20px; --font-display-unit: 21px; --font-display: 26px; --font-hero: 46px;
-  --line-tight: 1.2; --line-normal: 1.5; --line-relaxed: 1.8;
+  --font-display-small: 20px; --font-display-unit: 21px; --font-display: 28px; --font-hero: 46px;
+  --line-tight: 1.25; --line-normal: 1.5; --line-relaxed: 1.8;
   --avatar-size: 40px; --avatar-list-size: 36px; --avatar-small-size: 34px;
   --height-row:42px; --row-gap:8px; --height-compact:24px; --height-small: 28px; --height-icon: 32px; --height-control: 36px;
   --status-height:var(--height-action); --status-bottom:12px; --status-home-bottom:52px;
   --height-action: 40px; --height-primary: 44px; --height-list: 48px;
-  --bg: #fff; --surface: #f5f5f5; --surface-2: #ebebeb;
-  --ink: #171717; --muted: #686868; --line: #e8e8e8; --inverse: #fff;
-  --danger: #a84037; --danger-muted: #a9554d; --action: #181818; --action-ink: #fff; --ok: #1f8c53;
-  --shadow-window: 0 18px 56px #00000018, 0 0 0 1px #0000000a;
+  --bg: #ffffff; --surface: #f4f4f2; --surface-2: #e9e9e5;
+  --ink: #0f1011; --muted: #63666a; --line: #e0e0dc; --inverse: #ffffff; --card-edge: #00000012;
+  --danger: #b3261e; --danger-muted: #b3261e; --action: #0f1011; --action-ink: #ffffff; --ok: #0f9d6a;
+  --shadow-window: 0 18px 56px #00000018, 0 0 0 1px #00000008;
   --shadow-selected: inset 0 0 0 1px #0000000a;
   --shadow-hover: none;
   --shadow-primary: 0 1px 2px #00000016;
-  --shadow-floating: 0 8px 32px #00000024;
+  --shadow-floating: 0 10px 30px #00000026, 0 1px 3px #00000014;
   --shadow-knob: 0 1px 3px #00000022;
-  --status-surface: #fff; --status-edge: #d9d9d9; --status-shadow: 0 8px 26px #00000029, 0 2px 6px #00000014;
+  --status-surface: #ffffff; --status-edge: #d9d9d4; --status-shadow: 0 8px 26px #00000024, 0 2px 6px #00000012;
+  --floating-solid:#ffffff; --floating-surface:var(--floating-solid); --floating-edge:#d9d9d4;
+  --floating-filter:none; --floating-shadow:0 10px 30px #00000026,0 1px 3px #00000014;
+  --field-surface:#fafaf8; --field-edge:#c8c8c2; --dialog-scrim:rgb(0 0 0 / .12);
   --hover-shadow: var(--shadow-hover); --primary-hover-shadow: var(--shadow-primary);
-  --primary-hover-overlay: .08; --ease: cubic-bezier(.2,0,.2,1);
-  font-family: Inter, 'Segoe UI', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif;
+  --primary-hover-overlay: .06; --ease: cubic-bezier(.2,0,.2,1);
+  font-family: 'Segoe UI Variable Display', Inter, 'Segoe UI', 'Microsoft YaHei UI', 'Noto Sans CJK SC', sans-serif;
   font-size: var(--font-title); color: var(--ink); font-synthesis: none;
   color-scheme: light;
 }
 /* app.js resolves system appearance and listens for changes. */
 :root[data-theme="dark"] {
-  --bg: #1d1d1d; --surface: #262626; --surface-2: #303030;
-  --ink: #f0f0f0; --muted: #9b9b9b; --line: #343434; --inverse: #171717;
-  --danger: #e07a70; --danger-muted: #e58e85; --action: #f0f0f0; --action-ink: #171717; --ok: #4cc38a;
-  --shadow-window: 0 18px 56px #00000070, 0 0 0 1px #ffffff0f;
+  --bg: #0b0c0d; --surface: #151719; --surface-2: #1f2225;
+  --ink: #f5f6f7; --muted: #9aa0a6; --line: #272a2e; --inverse: #0b0c0d; --card-edge: #ffffff12;
+  --danger: #ff7a70; --danger-muted: #ff8f86; --action: #f5f6f7; --action-ink: #0b0c0d; --ok: #46d39a;
+  --shadow-window: 0 18px 56px #00000070, 0 0 0 1px #ffffff0d;
   --shadow-selected: inset 0 0 0 1px #ffffff0d;
   --shadow-hover: none;
   --shadow-primary: 0 1px 2px #00000030;
-  --shadow-floating: 0 10px 34px #0000008a; --shadow-knob: 0 1px 4px #00000070;
-  --status-surface: #343434; --status-edge: #555; --status-shadow: 0 10px 28px #000000b3, 0 0 0 1px #ffffff0a;
+  --shadow-floating: 0 10px 30px #0000008a, 0 1px 3px #0000004d; --shadow-knob: 0 1px 4px #00000070;
+  --status-surface: #1b1e21; --status-edge: #3a3f44; --status-shadow: 0 10px 28px #000000b3, 0 0 0 1px #ffffff0a;
+  --floating-solid:#1b1e21; --floating-surface:var(--floating-solid); --floating-edge:#3a3f44;
+  --floating-shadow:0 10px 30px #0000008a,0 1px 3px #0000004d;
+  --field-surface:#141618; --field-edge:#4a5057;
   --hover-shadow: var(--shadow-hover); --primary-hover-shadow: var(--shadow-primary);
-  --primary-hover-overlay: .12;
+  --primary-hover-overlay: .10;
   color-scheme: dark;
 }

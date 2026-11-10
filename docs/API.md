@@ -1,4 +1,4 @@
-# ChatGPT Remote 1.0.4 Web/Agent API 契约
+# ChatGPT Remote 1.1.0 Web/Agent API 契约
 
 本文件是 Windows Agent（agent.py）与手机页面（web/index.html）之间的接口契约。
 后端按本契约实现；前端只依赖本契约。除本文件列出的字段外，前端不得依赖其他内部结构。
@@ -38,7 +38,7 @@
 ### GET /api/health
 无需配对令牌。返回：
 ```json
-{"ok": true, "name": "ChatGPT Remote", "version": "1.0.4", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
+{"ok": true, "name": "ChatGPT Remote", "version": "1.0.6", "computerName": "Example-PC", "mock": false, "transport": {"active_streams": 0, "active_controls": 0, "streams": []}}
 ```
 启用访问密钥时仍需有效 Cookie 或 `X-Access-Key`。
 `transport` 为当前进程的非持久化传输诊断；每条活动连接仅含活动控制连接数、未确认帧数/字节数、自适应确认上限、已发送字节数和服务器发送画面至收到绘制确认的往返耗时，不包含图片、窗口标题、设备名或令牌。
@@ -54,7 +54,7 @@ body：`{"pin": "123456", "name": "手机"}`
 ```json
 {
   "ok": true,
-  "version": "1.0.4",
+  "version": "1.0.6",
   "computerName": "Example-PC",
   "instance": "<本次服务启动编号>",
   "mock": true,
@@ -111,6 +111,16 @@ body：`{"pin": "123456", "name": "手机"}`
 
 输入框选项支持 `{"kind":"composer","operation":"invoke","optionsKey":"...","targetId":"...","epoch":N}`；`dismiss` 关闭已观察的菜单，可省略 `targetId`；`tap` 附加 `x/y`（0–1，有限数值），仅作用于 `surface` 条目的已核对控件范围。服务端校验 120 秒内观察的目录、窗口、对话身份、弹出层、条目身份及启用状态；实际调用前消费该目录引用，结果未知时不重试。冻结、过期、窗口变化或控件移出目标窗口均拒绝。WebSocket 与 HTTP 使用同一操作入口。
 
+支持 `capabilities.composerCatalog=true` 的后端还接受 `{"kind":"composer","operation":"catalog","conversationKey":"...","epoch":N}`。它在电脑本地串行观察根入口、能力条和模型列表，返回 `options` 及 `catalog:{root,power,models}`，手机只发一次 HTTP 请求。各快照仍带原有 key、scope、epoch 并在实际应用时再次核验。账号档位设置与模型能力通过只读服务接口获取，目录读取不发送选档按键。未知能力的旧后端保留逐步读取路径。
+
+当前后端另在 `catalog.selection` 返回 `{key,current,profiles}`：`key` 是最长 600 秒、一次性的选择引用；`current` 含模型标识、强度、模式、语言及显示名称，`profiles` 按模型标识列出 `{key,label}` 档位。账号身份只在服务内存核对，不返回手机。手机用新模型的 profile 预览强度，可一次提交：
+
+```json
+{"kind":"composer","operation":"apply-model","optionsKey":"<selection.key>","model":"<模型标识>","effort":"high","quick":false,"epoch":N}
+```
+
+`model`、`effort`、`quick` 至少提供一个。应用前消费选择引用，强制重读账号设置，核对账号、对话和原始模型强度；目标档位不支持时，在变更前拒绝。按模型、强度、快速模式顺序处理原生控件，返回新 `catalog` 和 `modelApply:{state:"applied",model,effort}`。原生权限确认返回 `modelApply:{state:"prompt"}` 及待处理 `options`，不自动批准。`model_partially_applied` 明确报告模型已改变、后续步骤未确认。结果未知时不自动重发；仅电脑明确表示未执行且控件已重绘时，重新定位相同语义选项一次。手机通过 HTTP 等待至多 35 秒，并以已确认结果更新名称。
+
 成功操作可附带 `options`（与 `/api/composer` 相同）或 `navigation`（与 `/api/navigation` 相同），用于直接更新当前菜单或项目列表，免除随后一次读取。已确认按钮提交可附带 `submission:{"state":"sent"|"queued"|"submitted"}`；只有 `queued` 才显示已排队。`submitted` 表示已调用原生按钮，仍需回读新增消息或排队项确认。没有确认不得视为成功或自动重试。
 
 ### 消息发送回执
@@ -123,7 +133,7 @@ body：`{"pin": "123456", "name": "手机"}`
 
 同一设备以相同编号和参数重复请求只返回原回执；编号被复用于不同参数返回 `delivery_conflict`。一次原生提交最多调用一次。UIA 回执丢失后仅回读恢复，既有的相同用户文字不算确认：需新增原生消息身份、相同内容数量增加或新增队列条目，且窗口版本及对话范围一致。首次消息产生新的对话标识属于正常变化。确认后的服务回执移除正文与原始快照，最多保留 256 项完成元信息，最长一小时；待确认任务继续回读。
 
-原生发送先定位可见的主输入框，排除历史消息与队列编辑区；使用选中对话或首条消息正文的原生身份，输入导致的标题变化和消息标题重绘不改变发送目标。重绘期间缺失的控件会重新发现并核对，连续确认不同的对话身份后才拒绝发送。正文一次粘贴后读回核对，保留并恢复原剪贴板，不再逐字注入长消息；输入框与发送按钮的检查仅扫描相关控件，不重读整篇正文。新服务明确拒绝旧 `deliveryInstance` 时，手机保留文字并恢复发送按钮，不等待不存在的回执。
+原生发送先定位可见的主输入框，排除历史消息与队列编辑区；使用选中对话或首条消息正文的原生身份，输入导致的标题变化和消息标题重绘不改变发送目标。重绘期间缺失的控件会重新发现并核对，连续确认不同的对话身份后才拒绝发送。正文经原生输入框 ValuePattern 直接写入并回读核对；电脑正在其他窗口输入时拒绝写入，不使用系统键盘队列传输消息文字；输入框与发送按钮的检查仅扫描相关控件，不重读整篇正文。新服务明确拒绝旧 `deliveryInstance` 时，手机保留文字并恢复发送按钮，不等待不存在的回执。
 
 `GET /api/delivery?id=<messageId>`：认证，返回本设备回执。状态为 `sending`、`confirming`、`sent`、`queued`、`failed`；`failed` 附具体 `error/code`。其他设备和不存在的记录返回 404，不返回正文。
 
@@ -139,7 +149,7 @@ body：`{"pin": "123456", "name": "手机"}`
 {"ok":true,"key":"<目录标识>","epoch":123,"available":true,"menu":false,"items":[{"id":"<原生条目>","title":"当前模型","kind":"model","enabled":true,"selected":false}]}
 ```
 
-`kind` 为 `model`、`permission`、`effort`、`tools`、`option`、`upload`、`surface`、`model-list`、`quick`、`reset` 或 `effort-step`。菜单可附带 `category`，条目可带 `label` 和 `description`。`scope` 是当前原生对话标识的摘要，用于核对同一模型面板内陆续读到的选项。`effort-step` 带 `level`、`currentLevel` 和 `levelCount`。选档只调用已核对且拥有键盘焦点的原生强度控件，操作后核对选中档位。上传条目由手机打开自身文件选择器。条目来自选定窗口的主文档，帮助链接和另有文档身份的嵌入网页不纳入目录。菜单目录只在内存中保留，最多八份。
+`kind` 为 `model`、`permission`、`effort`、`tools`、`option`、`configuration`、`upload`、`surface`、`model-list`、`quick`、`reset`、`effort-step` 或 `power-step`。菜单可附带 `category`，条目可带 `label` 和 `description`。`scope` 是当前原生对话标识的摘要，用于核对同一模型面板内陆续读到的选项。两种 step 均带 `level`、`currentLevel` 和 `levelCount`。具体模型的账号配置与原生名称、位置、数量一致时，`power-step` 返回全部已启用档位、`effortKey` 和 `enabled:true`；仅在显式 invoke 时重新核对配置并提交。否则返回当前项 `enabled:false` 与简短 `powerNotice`，由网页保留只读轨道和电脑画面入口。`configuration` 不纳入模型列表。目录读取不试切档位。上传条目由手机打开自身文件选择器。菜单目录只在内存中保留，最多八份；账号标识与凭据不传给手机。
 
 当前窗口出现可识别的审批或选择弹窗时，`GET /api/composer` 返回 `category: "prompt"` 和 `prompt: {title, text, approval, truncated}`，对话快照也可附带同一份目录。选择使用 `composer/invoke` 及这份目录的 `optionsKey` 和 `targetId`。服务端核对当前窗口、会话、弹窗摘要与按钮，提交后重新读取。手机收起弹层只改变本地界面。
 
@@ -167,7 +177,7 @@ body：`{"pin": "123456", "name": "手机"}`
 
 `revision` 绑定对话身份及完整读取文字。预览最多 32000 字符，截断时 `canClear=false`，客户端不能按部分预览清空。常规对话流只返回 `hasDraft`，不包含草稿正文。读取不保存草稿、不改变输入框。处理请求必须使用该快照的 `epoch`、`conversationKey` 与 `revision`，不能把旧草稿套到新对话；处理结果未知时不得自动重发。
 
-取回或合并只填入手机编辑器。用户明确发送时，客户端携带草稿版本，服务端核对后才替换电脑内容。超过手机 6000 字上限时提供画面入口。清除冲突提示时移除预览。
+取回或合并只填入手机编辑器。用户明确发送时，客户端携带草稿版本，服务端核对后才替换电脑内容。如果当前电脑内容已与待发送文字一致，则无需清空，可在同一对话中直接提交，即使预览版本已过时；内容不同时仍严格核对版本。回读统一处理 CRLF、不换行空格及已有的零宽占位符，保留真实文字与段落差异。超过手机 6000 字上限时提供画面入口。清除冲突提示时移除预览。
 
 ### GET /api/navigation
 
@@ -244,11 +254,11 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 编辑器的原生 placeholder 子树、纯空白和格式占位符不作为草稿；判断与发送按钮启用状态分开，用户真实输入同名文字仍保留。实际消息的界面时间可作为可选 `timestamp` 字段返回，前端放在正文外的消息栏；正文中用户自己写下的时间保持原样，复制内容不含界面时间。
 
-每条消息可另含 `blocks:[{"kind":"paragraph","text":"正文"}]`，`kind` 允许 `paragraph`、`list`、`heading`、`code`、`search`。同一原生段落容器的片段合并，分别保留不同容器的段落与代码块；列表保留完整项目，包括只存在于项目名称中的文字。块可含 `runs:[{text,strong?,emphasis?,inlineCode?,href?}]`；链接只接受无用户名密码的 HTTP(S) 地址，文字始终通过安全 DOM 渲染。实际格式取决于应用提供的结构。`text` 保留纯文本复制来源。前端用安全 DOM 元素和 `textContent` 排版；没有可用 `blocks` 时按纯文本段落显示。
+每条消息可另含 `blocks:[{"kind":"paragraph","text":"正文"}]`，`kind` 允许 `paragraph`、`list`、`heading`、`code`、`search`、`table`。表格带 `headers:[cell]` 和 `rows:[[cell]]`，cell 含 text、runs。同一原生段落容器的片段合并，分别保留不同容器的段落与代码块；列表保留完整项目，包括只存在于项目名称中的文字。块可含 `runs:[{text,strong?,emphasis?,inlineCode?,href?,resource?,line?,image?}]`；网页链接只接受无用户名密码的 HTTP(S) 地址。本地文件和图片使用 resource 不透明引用。文字始终通过安全 DOM 渲染；原始 HTML 不执行。`text` 保留纯文本复制来源，没有可用 `blocks` 时按纯文本段落显示。
 
 块可附带 `channel:"reasoning"|"activity"`，缺省为正文；消息可附带 `phase:"activity"|"reasoning"`。活动消息按原始轮次合为一个可折叠区域，内部公开思考摘要降低字号和亮度；`search` 块单独展示网页搜索标识。消息 `timestamp` 单独在底部显示。分类优先使用原生消息类型、phase 和公开思考 summary；兼容读取使用主文档原始可访问性容器。连续活动消息合并为同一折叠区。
 
-消息含 `complete`，回复生成中隐藏复制图标，结束后显示；思考和活动消息不单独显示复制。`attachments:[{id,kind:"image"|"file",name?}]` 只传元数据，可保留无文字的附件消息。图片合并为张数标签，不提供图片下载或预览，不另加轮询。
+消息含 `complete`，回复生成中隐藏复制图标，结束后显示；思考和活动消息不单独显示复制。`attachments:[{id,kind:"image"|"file",name?}]` 可保留无文字的附件消息；可读取的本地附件另带 `resource:{id,name,kind}`。图片缩略图进入可视范围才读取，点击后读取预览，不另加轮询。没有可读取资源时保留附件名称。仅在完整识别原始生成格式时，显示文字才移除附件路径包装并保留真实请求。
 
 结构化历史中的消息保留 `turnId`。同轮活动携带 `work:{status:"working"|"worked"|"stopped"|"unknown",durationMs?:number}`；耗时来自原始轮次，不放入正文。手机按原生界面显示“处理中”“用时”或停止状态，活动与耗时共用一个入口；无详情时只显示状态，不创建空的折叠控件。
 
@@ -258,7 +268,7 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 项目目录可含 `complete:true`，表示当前返回目录中的项目已完成本地读取；空项目可直接显示空状态。缓存项目的展开不受发送或后台目录读取阻塞；同一窗口的状态版本改变时保留缓存并校对目录，实际切换对话使用校对后的目标。
 
-`composer.options` 可包含与 `/api/composer` 相同的已观察根入口（不含 `epoch` 时使用外层事件的 `epoch`）。手机可直接显示，在实际选择时仍验证原生目标。入口缓存最多 120 秒；项目目录在当前手机会话中复用，窗口或账号变化时失效。普通弹层打开时保留正文同步。窗口画面使用同一底部弹层并按需启动图片流，关闭后恢复正文流。模型选项可在同一对话内复用 60 秒，实际应用前重新核对原生选项。
+`composer.options` 可包含与 `/api/composer` 相同的已观察根入口（不含 `epoch` 时使用外层事件的 `epoch`）。手机可直接显示，在实际选择时仍验证原生目标。入口目录最多保留 120 秒；项目目录在当前手机会话中复用，窗口或账号变化时失效。普通弹层打开时保留正文同步。窗口画面使用同一底部弹层并按需启动图片流，关闭后恢复正文流。每次打开模型面板都重新读取原生菜单，实际应用和关闭前重新核对，避免沿用旧账号或旧控件的条目。
 
 桌面问卷的 prompt 可含 questionnaire=true。单选、复选和操作按钮分别标为 prompt-radio、prompt-check、prompt-step，selected 和 enabled 来自原生回读。重复的未确认提交保持受限，已经回读的改选和逐题操作可继续。pendingRequests 提供电脑侧栏已暴露的其他 thread/project 的 input/approval 状态，导航条目也保留 pending 字段。
 
@@ -278,7 +288,13 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 编辑经原生菜单的键盘打开行为定位「编辑消息」，等待队列项移除和输入框完整回读后返回 queueDraft（与草稿接口相同字段），原附件由桌面原生编辑状态持有。手机已有输入或附件时先保留当前内容；电脑已有草稿时拒绝进入队列编辑。后续发送带返回的草稿版本，复用原有受保护的草稿替换与原生提交。此接口不写原始对话或队列数据库。编辑菜单未打开时返回 queue_edit_not_started，允许用户重新选择；已经发出编辑而回读未完成时返回 queue_pending，只做读取核验。
 
-同轮的公开 commentary、公开思考摘要、搜索和工具动作按原生记录顺序放入一条 phase="activity" 消息。工具动作只含通用标签，kind="operation" 和图标名称。原始命令、参数和输出留在电脑。最终回答开始时 work.hasAnswer=true，前端自动折叠过程。内部子任务按原始 source 过滤，当前窗口提供的原生对话入口继续保留。同一对话的完整快照按消息编号对齐，保留阅读位置。
+同轮的公开 commentary、公开思考摘要、搜索和工具动作按原生记录顺序、最近一条用户消息分组为 phase="activity" 消息。插话后的新进度另起一组，避免后来的说明移动到用户消息之前。工具动作只含通用标签，kind="operation" 和图标名称。原始命令、参数和输出留在电脑。最终回答开始时 work.hasAnswer=true。前端保留 commentary 正文，正文之间的思考和工具操作默认折叠为实际操作摘要。内部子任务按原始 source 过滤，当前窗口提供的原生对话入口继续保留。同一对话的完整快照按消息编号对齐，保留阅读位置。
+
+### GET /api/resource?id=...&variant=thumb|original
+
+沿用入口授权及设备认证。仅接受服务已从当前对话精确注册的不透明引用，不接受任意文件路径；切换对话后旧引用失效。`thumb` 输出最长边 360px 的 JPEG，`original` 图片预览最长边 4096px；普通文件输出受限大小的 UTF-8 文字或 PDF。文件不存在、超限、属于凭据或不支持的类型均拒绝。任意远端图片地址不经本接口代理。
+
+响应含 `Cache-Control: private, max-age=60`、ETag 和 `Vary: Authorization`；匹配 If-None-Match 返回 304。电脑端图片缓存按文件大小和修改时间失效，手机内存缓存最多 40 项/24MB，并发最多 3 个，优先读取点开的预览。退出连接释放 Blob URL。最小化时对话继续读取既有本地线程；输入与截图前恢复已选窗口并等待有效尺寸，不重置 epoch 或配对。
 
 ## 2. 前端必须实现的行为
 
@@ -336,3 +352,13 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 `updates.check` 异步读取 GitHub 最新正式版的元数据。`updates.status` 单独读取检查和下载状态，版本更新页可在手机服务停止时使用。后台检查成功后六小时再查，连接失败后十五分钟重试。独立程序通过 `updates.download` 下载并校验安装包，再通过 `updates.install` 启动可回退的更新。源码运行提供正式发布页入口。`links.open` 只接受项目、问题反馈和发布页三个固定入口。`support.copy` 复制公开 QQ 号。
 
 普通消息文字不依赖系统剪贴板；较长文字优先粘贴，剪贴板不可用且尚未调用原生输入时自动选择 Unicode 输入。该选择只发生在输入开始前，发送按钮始终按原有回读确认与单次调用规则处理。
+
+## 1.1.1 连接与恢复补充
+
+- 公网窗口帧允许 `wgc` 和 `printwindow`，继续拒绝 `screen`、未知采集来源和旧窗口版本。WGC 画面带窗口位置，供点击前核对。
+- `POST /api/uploads/remove`：设备认证；body 含单个 `ids`、`conversationKey`、`epoch`。先移除绑定的原生附件并回读其余附件不变，再清除上传记录。重试同一已移除编号返回成功，不重复调用原生操作。`discard` 处理尚未附加的文件。
+- 上传清单保存在电脑的上传目录，发送回执元信息保存在 `_data/delivery_receipts.json`；回执只存正文摘要、消息身份与结果，不存正文或配对令牌。旧进程的回执恢复可在 `/api/delivery/resolve` 提交 `recovery`（原文字、会话标识、已有消息与队列身份），服务只读核实，不重新发送。
+- `computerName` 为可编辑显示名，默认本机名称。通过本机管理接口 `settings.computerName` 更新；`pair.copy` 核对当前未过期配对码后复制。
+- 配对码有效期 60 秒。二维码 URL 的 `pair` 是同期限的一次性入口标识，换码同步更新，使用或过期后入口拒绝；普通连接地址仍需当前配对码。页面载入后移除 `pair` 参数，已配对设备正常刷新不受旧二维码影响。
+
+本机 `maintenance.prepare` 阻止真实发送及待确认中的当前执行。重启恢复的 `confirming` 记录若仅含恢复证明、没有可执行命令，则允许维护并保留回执，重启后继续只读核对；该路径不判定发送结果，也不重放输入。维护期间拒绝新的远端动作。

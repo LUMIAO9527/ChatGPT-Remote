@@ -188,7 +188,13 @@ class DesktopControl:
     def dispatch(self, operation: str, payload: dict) -> dict:
         if operation == 'maintenance.prepare':
             with self.state.action_lock, self.state.deliveries.lock:
-                if any(v['state'] in ('sending','confirming','unknown') for v in self.state.deliveries.records.values()):
+                # Recovered receipts only observe history. Their persisted proof
+                # survives an update, while active sends must finish first.
+                pending = (record for record in self.state.deliveries.records.values()
+                           if record['state'] in ('sending', 'confirming', 'unknown'))
+                if any(not (record['state'] == 'confirming' and record.get('restarted')
+                            and record.get('recovery') and 'command' not in record)
+                       for record in pending):
                     raise DesktopControlError('还有消息正在发送或等待确认，请确认发送结果后重试。')
                 if self.state.maintenance_active():raise DesktopControlError('另一个维护操作正在进行。')
                 self.state.maintenance_token=secrets.token_hex(16)
@@ -211,9 +217,10 @@ class DesktopControl:
             with self.state.lock:
                 if payload.get('renew') or not self.state.pin or time.monotonic() >= self.state.pin_expires:
                     self.state.pin = f'{secrets.randbelow(1_000_000):06d}'
-                    self.state.pin_expires = time.monotonic() + 15 * 60
+                    self.state.pin_expires = time.monotonic() + self.state.pin_ttl
+                    self.state.pin_ticket = secrets.token_urlsafe(18)
                 return {'pin': self.state.pin, 'expiresAt': time.time() + self.state.pin_expires - time.monotonic(),
-                        'url': self._access_link()}
+                        'url': self._access_link()+('&' if '?' in self._access_link() else '?')+urlencode({'pair':self.state.pin_ticket})}
         if operation == 'access_link':
             return {'url': self._access_link()}
         if operation in ('device.rename', 'device.remove'):

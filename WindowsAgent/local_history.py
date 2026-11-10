@@ -15,6 +15,8 @@ from pathlib import Path
 import re
 import sqlite3
 from urllib.parse import urlsplit
+from message_content import markdown_blocks, inline_runs, display_user_text
+from message_resources import MessageResources
 
 UUID = re.compile(r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$', re.I)
 ACTIVITY_LABELS = {
@@ -23,67 +25,26 @@ ACTIVITY_LABELS = {
     'mcpToolCall': ('tools', '使用工具', '使用了工具'),
     'imageView': ('image', '查看图片', '查看了图片'),
 }
-INLINE = re.compile(r'(`+)(.+?)\1|\*\*(.+?)\*\*|__(.+?)__|\[([^\]\n]+)\]\((https?://[^\s)]+)\)|(?<!\*)\*([^*\n]+)\*(?!\*)')
-
-
-def inline_runs(text: str) -> list[dict]:
-    runs=[];offset=0
-    for match in INLINE.finditer(text):
-        if match.start()>offset:runs.append({'text':text[offset:match.start()]})
-        if match[1]:run={'text':match[2],'inlineCode':True}
-        elif match[3] or match[4]:run={'text':match[3] or match[4],'strong':True}
-        elif match[5]:
-            run={'text':match[5]};url=urlsplit(match[6])
-            if url.scheme in ('http','https') and url.hostname and not url.username and not url.password:run['href']=match[6]
-        else:run={'text':match[7],'emphasis':True}
-        runs.append(run);offset=match.end()
-    if offset<len(text):runs.append({'text':text[offset:]})
-    return runs
-
-
-def markdown_blocks(text: str, channel: str = '') -> list[dict]:
-    blocks=[];paragraph=[];code=None;code_lines=[]
-    def add(kind,value):
-        block={'kind':kind,'text':value}
-        if kind!='code':
-            runs=inline_runs(value)
-            if any(len(r)>1 for r in runs):block.update(text=''.join(r['text'] for r in runs),runs=runs)
-        if channel:block['channel']=channel
-        blocks.append(block)
-    def flush():
-        if paragraph:add('paragraph','\n'.join(paragraph));paragraph.clear()
-    for line in text.replace('\r\n','\n').split('\n'):
-        fence=re.match(r'^\s*(`{3,}|~{3,})(.*)$',line)
-        if code:
-            if fence and fence[1][0]==code[0] and len(fence[1])>=len(code):add('code','\n'.join(code_lines));code=None;code_lines=[]
-            else:code_lines.append(line)
-        elif fence:flush();code=fence[1]
-        elif not line.strip():flush()
-        elif re.match(r'^#{1,6}\s+',line):flush();add('heading',re.sub(r'^#{1,6}\s+','',line))
-        elif re.match(r'^\s*(?:[-+*]|\d+[.)])\s+',line):flush();add('list',re.sub(r'^\s*(?:[-+*]|\d+[.)])\s+','',line))
-        else:paragraph.append(line)
-    flush()
-    if code:add('code','\n'.join(code_lines))
-    return blocks
-
-
-def user_content(content) -> tuple[str,list[dict]]:
+def user_content(content, resources=None, scope="") -> tuple[str,list[dict]]:
     text=[];attachments=[]
     for part in content if isinstance(content,list) else []:
         if not isinstance(part,dict):continue
         kind=part.get('type')
         if kind in ('text','input_text') and isinstance(part.get('text'),str):text.append(part['text'])
         elif kind in ('image','localImage','input_image'):
-            attachments.append({'id':'attachment-'+str(len(attachments)),'kind':'image'})
+            ref=resources.reference(str(part.get('path') or part.get('url') or ''),scope,image=True) if resources else None
+            attachments.append({'id':'attachment-'+str(len(attachments)),'kind':'image',**({'resource':ref,'name':ref['name']} if ref else {})})
         elif kind in ('file','localFile','input_file'):
             name=ntpath.basename(str(part.get('name') or part.get('path') or part.get('filename') or '文件'))
-            attachments.append({'id':'attachment-'+str(len(attachments)),'kind':'file','name':name[:180]})
-    return '\n'.join(text),attachments[:20]
+            ref=resources.reference(str(part.get('path') or ''),scope,name=name) if resources else None
+            attachments.append({'id':'attachment-'+str(len(attachments)),'kind':'file','name':name[:180],**({'resource':ref} if ref else {})})
+    return display_user_text('\n'.join(text)),attachments[:20]
 
 
 class LocalHistory:
     def __init__(self, home: Path | None = None):
         self.home=Path(home) if home else Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')
+        self.resources=MessageResources()
 
     def database(self, stem: str) -> Path | None:
         paths=[]
@@ -156,22 +117,26 @@ class LocalHistory:
                 SELECT * FROM visible UNION ALL SELECT * FROM tools ORDER BY rollout_ordinal
                 """,(thread['id'],thread['id'],*ACTIVITY_LABELS)))
             if not rows:return None
-            messages=[];activities={}
+            messages=[];activities={};boundary='start'
+            self.resources.scope=thread['id']
+            def render(text,channel=''):return markdown_blocks(text,channel,self.resources,thread['id'])
             def activity_for(turn_id,turn,complete):
-                if turn_id not in activities:
+                segment=(turn_id,boundary)
+                if segment not in activities:
                     status='working' if turn.get('status')=='inProgress' else ('stopped' if turn.get('status')=='interrupted' else 'worked' if complete else 'unknown')
                     work={'status':status}
                     if complete and isinstance(turn.get('duration_ms'),(int,float)):
                         work['durationMs']=max(0,round(turn['duration_ms']))
-                    activity={'id':'activity-'+turn_id,'sourceId':'activity-'+turn_id,'turnId':turn_id,
+                    activity={'id':'activity-'+turn_id+'-'+boundary,'sourceId':'activity-'+turn_id+'-'+boundary,'turnId':turn_id,
                               'role':'assistant','phase':'activity','text':'','blocks':[],'complete':complete,'work':work}
-                    activities[turn_id]=activity;messages.append(activity)
-                return activities[turn_id]
+                    activities[segment]=activity;messages.append(activity)
+                return activities[segment]
             for row in rows:
                 item=json.loads(row['body']);kind=row['item_type'];turn=turns.get(row['turn_id'],{})
                 complete=turn.get('status') in ('completed','failed','interrupted')
                 if kind=='userMessage':
-                    text,attachments=user_content(item.get('content'))
+                    boundary=row['item_id']
+                    text,attachments=user_content(item.get('content'),self.resources,thread['id'])
                     message={'id':row['item_id'],'sourceId':row['item_id'],'turnId':row['turn_id'],'role':'user','text':text[:40000],
                              'blocks':[{'kind':'paragraph','text':text[:40000]}] if text else [],'complete':True}
                     if attachments:message['attachments']=attachments
@@ -180,19 +145,19 @@ class LocalHistory:
                 elif kind=='agentMessage' and item.get('phase')!='commentary':
                     text=str(item.get('text') or '')[:40000]
                     if text:
-                        if row['turn_id'] in activities or turn.get('status')=='inProgress' or isinstance(turn.get('duration_ms'),(int,float)):
+                        if any(key[0]==row['turn_id'] for key in activities) or turn.get('status')=='inProgress' or isinstance(turn.get('duration_ms'),(int,float)):
                             activity=activity_for(row['turn_id'],turn,complete)
                             if not complete:activity['work']['hasAnswer']=True
                         messages.append({'id':row['item_id'],'sourceId':row['item_id'],'turnId':row['turn_id'],'role':'assistant','text':text,
-                                         'blocks':markdown_blocks(text),'complete':complete})
+                                         'blocks':render(text),'complete':complete})
                 else:
                     if kind=='agentMessage':
-                        blocks=markdown_blocks(str(item.get('text') or '')[:8000],'commentary')
+                        blocks=render(str(item.get('text') or '')[:8000],'commentary')
                     elif kind=='reasoning':
                         summary=item.get('summary')
                         text='\n\n'.join(s if isinstance(s,str) else str(s.get('text') or '')
                                         for s in summary if isinstance(s,(str,dict))) if isinstance(summary,list) else ''
-                        blocks=markdown_blocks(text[:8000],'reasoning')
+                        blocks=render(text[:8000],'reasoning')
                     elif kind=='webSearch':
                         query=str(item.get('query') or '')[:1000]
                         blocks=[{'kind':'search','text':'搜索网页'+(' · '+query if query else ''),'channel':'activity'}]
@@ -203,6 +168,11 @@ class LocalHistory:
                         blocks=[{'kind':'operation','icon':icon,'text':text,'channel':'activity'}]
                     if blocks:activity_for(row['turn_id'],turn,complete)['blocks'].extend(blocks)
             process_truncated=False
+            latest_by_turn={segment[0]:activity for segment,activity in activities.items()}
+            for segment,activity in activities.items():
+                if latest_by_turn[segment[0]] is not activity:
+                    activity['work'].pop('durationMs',None)
+                    if activity['work']['status']=='working':activity['work']['status']='worked'
             for activity in activities.values():
                 remaining=12000
                 blocks=[]

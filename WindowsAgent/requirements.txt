@@ -1,1 +1,2 @@
 Pillow>=10,<13
+markdown-it-py>=4,<5

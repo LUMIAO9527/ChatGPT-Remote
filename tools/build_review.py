@@ -33,7 +33,7 @@ def build(source: Path, output: Path):
     desktop=(agent/'desktop.html').read_text(encoding='utf-8')
     for marker,name in [('TOKENS','ui-tokens.css'),('MATERIAL','ui-material.css'),('MOTION','desktop-motion.js'),('PREFERENCES','desktop-preferences.js'),('LIFECYCLE','desktop-lifecycle.js')]:
         desktop=desktop.replace('/*REMOTE_'+marker+'*/',(agent/'assets'/name).read_text(encoding='utf-8'))
-    desktop=desktop.replace('<!--RM_MARK-->',vector())
+    desktop=desktop.replace('<!--RM_MARK-->',(agent/'assets/rm-mark.svg').read_text(encoding='utf-8'))
     desktop=desktop.replace('REMOTE_SUPPORT_QR','data:image/png;base64,'+b64(buffer.getvalue()))
     desktop=desktop.replace('/*REMOTE_HOST*/','window.REMOTE_TRAY_HOST=false;')
     mobile=(agent/'web/index.html').read_text(encoding='utf-8')

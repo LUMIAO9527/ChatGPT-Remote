@@ -109,6 +109,8 @@ def window_main(args):
         from desktop_platform import NativePanel,initial_theme,PANEL_SIZES
         from desktop_ui import render_html
         manager=DesktopManager();theme=initial_theme(manager.preferences())
+        warm=threading.Thread(target=manager.auto_start,kwargs={'refresh':True},daemon=True)
+        warm.start()
         if args.update_ack:
             manager.restore_service=os.environ.get('CHATGPTREMOTE_RESTORE_SERVICE')=='1'
             manager.update_ack=(args.update_ack,args.update_token)
@@ -232,7 +234,7 @@ def tray_main(args):
                          lambda:icon.notify('连接面板启动失败，点击重新打开。','ChatGPT Remote',action=open_window),
                          identity=lambda:icon.identity() if icon else None,
                          update_args=['--update-ack',args.update_ack,'--update-token',args.update_token] if args.update_ack else [])
-    icon=TrayIcon({'light':str(HERE/'desktop-dark.ico'), 'dark':str(HERE/'desktop-light.ico')},
+    icon=TrayIcon({'light':str(HERE/'desktop-light.ico'), 'dark':str(HERE/'desktop-dark.ico')},
                   'ChatGPT Remote · Rm',panel_host.toggle,menu,log=log)
     icon.run_detached();log.info('tray_ready pid=%s',os.getpid())
     panel_host.prepare()

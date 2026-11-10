@@ -4,6 +4,7 @@
 from __future__ import annotations
 import ctypes
 import threading
+from pathlib import Path
 from ctypes import wintypes as wt
 
 WM_APP = 0x8000
@@ -201,7 +202,7 @@ class TrayIcon:
         previous = self._hicon
         self._hicon, self._loaded_icon_path, self._icon_size = handle, path, size
         if getattr(self, '_log', None):
-            self._log.info('tray_icon_appearance theme=%s pixels=%s', theme, size)
+            self._log.info('tray_icon_appearance theme=%s asset=%s pixels=%s', theme, Path(path).name, size)
         if self._hwnd:
             self._register_icon(source)
         if previous:

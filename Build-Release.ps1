@@ -19,6 +19,27 @@ $env:PYTHONPATH=$DependencyPath
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root '_wip\release'}
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $agent=Join-Path $root 'WindowsAgent'
+$versionInfo=Join-Path $batch 'version-info.txt'
+$versionScript=@'
+from pathlib import Path
+import sys
+from PyInstaller.utils.win32.versioninfo import VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct, VarFileInfo, VarStruct
+sys.path.insert(0, sys.argv[1])
+from app_version import APP_VERSION
+parts = tuple(int(value) for value in APP_VERSION.split('.'))
+parts = (parts + (0, 0, 0, 0))[:4]
+fields = [('CompanyName', 'LUMIAO9527'), ('FileDescription', 'ChatGPT Remote'),
+          ('FileVersion', '.'.join(map(str, parts))), ('InternalName', 'ChatGPTRemote'),
+          ('OriginalFilename', 'ChatGPTRemote.exe'), ('ProductName', 'ChatGPT Remote'),
+          ('ProductVersion', '.'.join(map(str, parts)))]
+info = VSVersionInfo(ffi=FixedFileInfo(filevers=parts, prodvers=parts, mask=0x3f,
+    flags=0, OS=0x40004, fileType=1, subtype=0, date=(0, 0)), kids=[
+    StringFileInfo([StringTable('080404b0', [StringStruct(key, value) for key, value in fields])]),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])])
+Path(sys.argv[2]).write_text(str(info), encoding='utf-8')
+'@
+$versionScript | & $PythonPath -B - $agent $versionInfo
+if($LASTEXITCODE){throw 'Windows version metadata generation failed.'}
 $manifest=Join-Path $batch 'netfx-bundle.json'
 & $PythonPath -B (Join-Path $agent 'build_runtime_manifest.py') $manifest
 if($LASTEXITCODE){throw 'Desktop runtime inventory failed.'}

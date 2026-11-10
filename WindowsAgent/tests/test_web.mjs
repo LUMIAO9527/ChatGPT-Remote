@@ -13,11 +13,11 @@ const source = script.replace(end, `
     sendAction, sendText, queueScroll, applyConversationEvent, computeGate, controlRequest, stopControl, recordActionFrame,
     renderNavigation, refreshNavigation, setNavigation, navigateItem, acceptNavigation, openNewChat, applyWindowState, openDraft, clearDraftConflict, resolveDraft, renderDraft, mergeDraftText, renderControls,
     setPanel, panelPopState, openFilePicker, openModelPicker, applyModelChoice, refreshOptions, invokeOption, dismissOptions, openOptionSurface, showPairView,
-    renderQueued, renderMessageBody, startMedia, uploadPhoneFiles, beginPhoneSend, observePhoneSend, awaitPhoneSend, finishPhoneSend, resumePhoneSend,
+    renderQueued, renderMessageBody, startMedia, uploadPhoneFiles, openAttachmentPreview, releasePhonePreview, beginPhoneSend, observePhoneSend, awaitPhoneSend, finishPhoneSend, resumePhoneSend,
     showConnectionHome, openRemoteView, returnToComputer, showPairEntry, restorePhonePreferences,
-    startControl, stopLive, showOffline, resumeConnection, keepUnconfirmedDraft, openDesktopPrompt,
-    openScreenView, bindScreenGestures, stageModelChoice, applyModelDraft, openPendingRequests,
-    openQueue, refreshQueue, renderQueue, invokeQueue, invokeComposerAction };
+    startControl, stopLive, showOffline, resumeConnection, openDesktopPrompt,
+    openScreenView, bindScreenGestures, stageModelChoice, applyModelDraft, confirmModelChoices, modelChoiceConfirmed, openPendingRequests, positionFloatingSurfaces, renderOptions, openMessageResource, resetRemote,
+    openQueue, refreshQueue, renderQueue, invokeQueue, invokeComposerAction, renderPhoneFiles, removePhoneFile, savePhoneDraft, switchPhoneDraft, toast };
 })();`);
 
 function makePage(fetchImpl = async () => { throw new Error('Unexpected request'); }) {
@@ -37,7 +37,7 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     textContent: '', value: '', hidden: false, disabled: false, width: 300, height: 150,
     children: [], dataset: {}, parentNode: null, scrollHeight: 500, scrollTop: 0, clientHeight: 400,
     classList: { add() {}, remove() {}, toggle() {} },
-    style: { setProperty() {}, removeProperty() {} },
+      style: { props:{}, setProperty(key,value){this.props[key]=value;}, removeProperty(key){delete this.props[key];} },
     setAttribute(name, value) { this[name] = value; },
     getAttribute(name) { return this[name] ?? null; },
     removeAttribute(name) { delete this[name]; },
@@ -87,7 +87,7 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     }
   }
   const context = vm.createContext({
-    document, location: { protocol: 'http:' }, window: {history}, Image: PageImage,
+    document, location: { protocol: 'http:' }, window: {history,innerHeight:780}, Image: PageImage,
     performance: { now: () => now }, Date: { now: () => 1_700_000_000_000 + wallOffset },
     requestAnimationFrame: callback => callback(), setInterval, clearInterval,
     URL: class extends URL { static createObjectURL(){return 'blob:test-' + ++urlCount;} static revokeObjectURL(url){revoked.push(url);} },
@@ -505,6 +505,8 @@ test('message timestamps have their own metadata element and never enter copied 
   assert.equal(row.article.children[1].children[0].textContent,'');
   page.elements.get('message').value='手机尚未发送的草稿';
   page.hooks.applyConversationEvent(chatEvent({key:'other-chat'}));
+  assert.equal(page.elements.get('message').value,'');
+  page.hooks.applyConversationEvent(chatEvent());
   assert.equal(page.elements.get('message').value,'手机尚未发送的草稿');
 });
 
@@ -601,6 +603,49 @@ test('an uploaded file binds to the current observed conversation when attachmen
   page.elements.get('message').value='当前对话的附件';page.hooks.renderControls();
   assert.equal(page.elements.get('sendEnterBtn').disabled,false);
   assert.equal(await page.hooks.sendText(true),true);
+});
+
+test('an uploaded image retains its local thumbnail and opens a preview during sending',async()=>{
+  const page=makePage(async path=>{
+    assert.equal(path,'/api/uploads');
+    return response({ok:true,file:{id:'photo-1'}});
+  });
+  await page.hooks.uploadPhoneFiles([{name:'手机截图.png',type:'image/png',size:8}]);
+  const item=page.hooks.state.phoneFiles[0],url=item.previewUrl;
+  assert.ok(url.startsWith('blob:'));
+  assert.equal(item.file,undefined);
+  const chip=page.elements.get('phoneFiles').children[0];
+  assert.equal(chip.getAttribute('data-kind'),'image');
+  assert.equal(chip.children[0].getAttribute('aria-label'),'预览 手机截图.png');
+  page.hooks.state.pending.sendText=true;
+  page.hooks.openAttachmentPreview(item,chip.children[0]);
+  assert.equal(page.hooks.state.panel,'attachment');
+  assert.equal(page.elements.get('attachmentImage').src,url);
+  assert.equal(page.elements.get('attachmentCaption').textContent,'手机截图.png');
+  page.hooks.releasePhonePreview(item);
+  assert.equal(page.revoked.includes(url),false);
+  page.hooks.setPanel('');
+  assert.equal(page.revoked.includes(url),true);
+  assert.equal(page.hooks.state.previewFile,null);
+  page.hooks.panelPopState({state:{harmonyRemotePanel:'attachment'}});
+  assert.equal(page.hooks.state.panel,'');
+  assert.equal(page.elements.get('attachmentPanel').hidden,true);
+});
+
+test('active image previews retain their safe format boundary and reset releases their URLs',async()=>{
+  let count=0;
+  const page=makePage(async()=>response({ok:true,file:{id:'file-'+(++count)}}));
+  await page.hooks.uploadPhoneFiles([{name:'photo.jpg',type:'image/jpeg',size:8},
+    {name:'diagram.svg',type:'image/svg+xml',size:8},{name:'report.pdf',type:'application/pdf',size:8},
+    {name:'screenshot.jpg',type:'application/octet-stream',size:8}]);
+  const files=page.hooks.state.phoneFiles,url=files[0].previewUrl;
+  assert.ok(url);assert.equal(files[1].previewUrl,'');assert.equal(files[2].previewUrl,'');
+  assert.ok(files[3].previewUrl);
+  page.hooks.openAttachmentPreview(files[0]);
+  page.hooks.showPairView('重新配对');
+  assert.ok(page.revoked.includes(url));
+  assert.equal(page.elements.get('attachmentPanel').hidden,true);
+  assert.equal(page.hooks.state.phoneFiles.length,0);
 });
 
 test('a file remains removable and can be manually retried when paste never started',async()=>{
@@ -978,6 +1023,18 @@ test('the same text already in the desktop editor can finish sending directly', 
   assert.equal(page.elements.get('message').value,'');
 });
 
+test('desktop drafts use a capsule entry and expose details only inside their panel',async()=>{
+  const page=makePage(async()=>response(draftEvent({text:'电脑另外的内容'})));
+  page.elements.get('draftPanel').hidden=true;
+  page.elements.get('message').value='手机内容';
+  await page.hooks.openDraft(false);
+  assert.equal(page.elements.get('draftPanel').hidden,true);
+  assert.equal(page.elements.get('computerDraftBtn').hidden,false);
+  await page.hooks.openDraft(false,true);
+  assert.equal(page.hooks.state.panel,'draft');
+  assert.equal(page.elements.get('draftPreview').textContent,'电脑另外的内容');
+});
+
 test('clearing a draft preview ignores an obsolete in-flight read', async () => {
   let reply;
   const page=makePage(()=>new Promise(resolve=>{reply=resolve;}));
@@ -1012,6 +1069,7 @@ const optionsEvent=(overrides={})=>({ok:true,key:'options-a',epoch:7,available:t
 test('the model shortcut opens the native model choices and keeps the phone draft',async()=>{
   const actions=[];
   const page=makePage(async(path,request)=>{
+    if(path==='/api/composer')return response(optionsEvent());
     assert.equal(path,'/api/action');const command=JSON.parse(request.body);actions.push(command);
     return response({ok:true,epoch:7,options:command.targetId==='model'
       ?optionsEvent({key:'models',category:'model',menu:true,items:[{id:'choice',kind:'option',title:'Model B',enabled:true}]})
@@ -1035,10 +1093,11 @@ test('one model sheet flattens the native model branch, strength positions and f
       {id:'model-list',title:'选择模型',kind:'model-list'},
       {id:'quick',title:quick?'禁用快速模式':'启用快速模式',kind:'quick',selected:quick},
       {id:'reset',title:'重置为默认',kind:'reset'},
-      ...Array.from({length:6},(_,i)=>({id:'strength-'+(i+1),title:String(i+1),kind:'effort-step',
-        label:i+1===level?model+' Max':String(i+1),selected:i+1===level,level:i+1,currentLevel:level,levelCount:6}))
+      ...Array.from({length:6},(_,i)=>({id:'strength-'+(i+1),title:model+' '+['轻度','中',model==='GPT Fixture B'?'High':'高','极高','Max','Ultra'][i],kind:'effort-step',
+        label:['轻度','中',model==='GPT Fixture B'?'High':'高','极高','Max','Ultra'][i],effortKey:['low','medium','high','xhigh','max','ultra'][i],
+        selected:i+1===level,level:i+1,currentLevel:level,levelCount:6}))
     ];
-    else if(stage==='models')items=['GPT Fixture A','GPT Fixture B','默认模型'].map((title,i)=>({id:'m-'+i,title,kind:'option',selected:title===model}));
+    else if(stage==='models')items=['GPT Fixture A','GPT Fixture B','默认模型'].map((title,i)=>({id:'m-'+i,title,kind:'option',selected:i===0}));
     else items=[{id:'model',title:model,kind:'model'}];
     return optionsEvent({key:'native-'+revision,scope:'fixture-conversation',category:menu?'model':'',menu,
       items:items.map(item=>({enabled:true,selected:false,...item}))});
@@ -1083,7 +1142,8 @@ test('one model sheet flattens the native model branch, strength positions and f
   await page.hooks.applyModelDraft();
   assert.equal(choice('quick','quick').item.selected,true);
   assert.equal(choice('effort','strength-3').item.selected,true);
-  assert.equal(choice('model','m-1').item.selected,true);
+  assert.equal(choice('model','m-1').item.selected,false);
+  assert.equal(page.hooks.modelChoiceConfirmed(choice('model','m-1')),true);
   assert.equal(actions.filter(action=>action.targetId==='quick').length,1);
   assert.equal(actions.filter(action=>action.targetId==='strength-3').length,1);
   assert.equal(actions.filter(action=>action.targetId==='m-1').length,1);
@@ -1093,7 +1153,7 @@ test('one model sheet flattens the native model branch, strength positions and f
   page.hooks.setPanel('');await new Promise(resolve=>setImmediate(resolve));
   const closedActions=actions.length;
   await page.hooks.openModelPicker();
-  assert.equal(actions.length,closedActions);
+  assert.ok(actions.length>closedActions);
   assert.equal(choice('quick','quick').item.selected,true);
 });
 
@@ -1145,10 +1205,11 @@ test('option clicks use the observed catalog once and stale window epochs block 
   assert.equal(actions.length,1);
 });
 
-test('synced composer entries open immediately without an extra read and actions return their next menu',async()=>{
+test('opening the model sheet refreshes synced options before invoking a native menu',async()=>{
   const paths=[];
   const page=makePage(async(path,request)=>{
     paths.push(path);
+    if(path==='/api/composer')return response(optionsEvent());
     assert.equal(path,'/api/action');
     return response({ok:true,epoch:7,options:optionsEvent({key:'menu-next',menu:true,category:'model',items:[{id:'choice',title:'One',kind:'option',enabled:true}]})});
   });
@@ -1156,7 +1217,329 @@ test('synced composer entries open immediately without an extra read and actions
   page.hooks.applyConversationEvent({kind:'conversation',replace:true,key:'chat-a',epoch:7,available:true,
     messages:[],order:[],composer:{available:true,hasDraft:false,options:composer}});
   await page.hooks.openModelPicker();
-  assert.deepEqual(paths,['/api/action']);assert.equal(page.hooks.state.options.menu,true);
+  assert.deepEqual(paths,['/api/composer','/api/action']);assert.equal(page.hooks.state.options.menu,true);
+});
+
+test('reopening the model sheet reads the account current choices without retaining unavailable Max',async()=>{
+  let levels=['Standard','Extended','Max'],reads=0;
+  const page=makePage(async path=>{
+    assert.equal(path,'/api/composer');reads++;
+    return response(optionsEvent({menu:true,category:'model',items:levels.map((title,index)=>({
+      id:'native-'+index,title,kind:'option',enabled:true,selected:index===0
+    }))}));
+  });
+  await page.hooks.openModelPicker();
+  assert.ok(page.hooks.state.modelChoices.some(choice=>choice.item.title==='Max'));
+  page.hooks.state.options.menu=false;
+  page.hooks.setPanel('');await Promise.resolve();
+  levels=['Standard','Extended'];
+  await page.hooks.openModelPicker();
+  assert.equal(reads,2);
+  assert.deepEqual(Array.from(page.hooks.state.modelChoices,choice=>choice.item.title),levels);
+  assert.equal(page.hooks.state.modelChoices.some(choice=>choice.item.title==='Max'),false);
+});
+
+test('native power choices use their visible captions and the thumb reaches both endpoints',async()=>{
+  const page=makePage(async()=>response(optionsEvent({menu:true,category:'model',items:
+    Array.from({length:3},(_,index)=>({id:'power-'+index,title:String(index+1),kind:'power-step',
+      enabled:true,selected:index===1,label:['轻度','中','高'][index],level:index+1,currentLevel:2,levelCount:3}))
+  })));
+  await page.hooks.openModelPicker();
+  const choices=page.hooks.state.modelChoices;
+  assert.equal(choices.length,3);
+  assert.ok(choices.every(choice=>choice.section==='effort'));
+  const track=()=>page.elements.get('optionsList').children[0].children[1];
+  assert.equal(track().getAttribute('aria-label'),'思考强度');
+  assert.equal(track().getAttribute('role'),'slider');
+  assert.equal(track().getAttribute('aria-valuetext'),'中');
+  assert.equal(track().textContent,'');
+  assert.equal(track().children[1].getAttribute('aria-label'),'中');
+  assert.equal(track().style.props['--level'],'50%');
+  page.hooks.stageModelChoice(choices[0]);
+  assert.equal(track().style.props['--level'],'0%');
+  page.hooks.stageModelChoice(choices[2]);
+  assert.equal(track().children[2].getAttribute('aria-label'),'高');
+  assert.equal(track().style.props['--level'],'100%');
+});
+
+test('numeric placeholder labels never become selectable thinking tiers',async()=>{
+  const page=makePage(async()=>response(optionsEvent({menu:true,category:'model',items:
+    Array.from({length:6},(_,index)=>({id:'power-'+index,title:String(index+1),label:String(index+1),kind:'power-step',
+      enabled:true,selected:index===4,level:index+1,currentLevel:5,levelCount:6}))
+  })));
+  await page.hooks.openModelPicker();
+  assert.match(page.elements.get('optionsList').textContent,/暂未读全档位名称/);
+  assert.equal(page.elements.get('optionsList').children.some(section=>section.className==='model-tuning'),false);
+});
+
+test('the computer screen follows the top of the composer and floating draft controls',()=>{
+  const page=makePage(),properties={};
+  page.elements.get('screenCard').style.setProperty=(key,value)=>properties[key]=value;
+  page.elements.get('composerCard').getBoundingClientRect=()=>({top:660,left:12,width:366});
+  page.elements.get('composerFloat').getBoundingClientRect=()=>({top:620,height:32});
+  page.hooks.setPanel('screen');
+  assert.equal(properties['--panel-width'],'366px');
+  assert.equal(properties['--panel-max-height'],'600px');
+  assert.equal(properties['--panel-bottom'],'168px');
+  page.elements.get('composerCard').getBoundingClientRect=()=>({top:490,left:12,width:366});
+  page.elements.get('composerFloat').getBoundingClientRect=()=>({top:450,height:32});
+  page.hooks.positionFloatingSurfaces();
+  assert.equal(properties['--panel-max-height'],'430px');
+  assert.equal(properties['--panel-bottom'],'338px');
+});
+
+test('the model sheet and status notice share the composer width and leave room for capsules',()=>{
+  const page=makePage(),properties={},noticeStyles={};
+  const options=page.elements.get('optionsPanel'),notice=page.elements.get('toast');
+  options.style.setProperty=(key,value)=>properties[key]=value;
+  options.getBoundingClientRect=()=>({height:160});
+  notice.getBoundingClientRect=()=>({height:44});
+  notice.style.setProperty=(key,value)=>noticeStyles[key]=value;
+  page.elements.get('composerCard').getBoundingClientRect=()=>({top:600,left:100,width:600});
+  page.elements.get('composerFloat').getBoundingClientRect=()=>({top:560,height:32});
+  page.hooks.setPanel('options');
+  assert.equal(properties['--panel-bottom'],'228px');
+  assert.equal(properties['--panel-center'],'400px');
+  assert.equal(properties['--panel-width'],'600px');
+  assert.equal(properties['--panel-max-height'],'540px');
+  notice.hidden=false;
+  page.hooks.positionFloatingSurfaces();
+  assert.equal(properties['--panel-bottom'],'228px');
+  assert.equal(properties['--panel-max-height'],'488px');
+  assert.deepEqual(noticeStyles,{'--notice-center':'400px','--notice-width':'600px','--notice-top':'12px'});
+});
+
+test('settings and projects cover the composer while complex notices stay below the toolbar',()=>{
+  const page=makePage(),props={},noticeProps={};
+  page.elements.get('remoteToolbar').getBoundingClientRect=()=>({bottom:68});
+  page.elements.get('composerCard').getBoundingClientRect=()=>({top:620,bottom:776,left:12,width:366});
+  page.elements.get('composerFloat').getBoundingClientRect=()=>({top:584,height:28});
+  page.elements.get('toast').hidden=false;
+  page.elements.get('toast').getBoundingClientRect=()=>({height:44});
+  page.elements.get('toast').style.setProperty=(key,value)=>noticeProps[key]=value;
+  for(const name of ['settings','navigation']){
+    page.elements.get(name+'Panel').style.setProperty=(key,value)=>props[key]=value;
+    page.hooks.setPanel(name);
+    page.elements.get('toast').hidden=false;page.hooks.positionFloatingSurfaces();
+    assert.equal(props['--panel-bottom'],'12px');
+    assert.equal(props['--panel-height'],'640px');
+    assert.equal(noticeProps['--notice-top'],'76px');
+  }
+});
+
+test('draft text and attachments survive reload and native conversation identity changes',()=>{
+  const first=makePage();first.hooks.applyConversationEvent(chatEvent({threadId:'thread-a'}));
+  first.elements.get('message').value='A 的草稿';
+  first.hooks.state.phoneFiles=[{id:'photo-a',name:'photo.png',size:8,state:'uploaded',key:'chat-a',epoch:7}];
+  first.hooks.savePhoneDraft();
+  first.hooks.applyConversationEvent(chatEvent({key:'chat-b',threadId:'thread-b'}));
+  assert.equal(first.elements.get('message').value,'');
+  assert.equal(first.hooks.state.phoneFiles.length,0);
+  first.elements.get('message').value='B 的草稿';first.hooks.savePhoneDraft();
+  first.hooks.applyConversationEvent(chatEvent({key:'new-native-a',threadId:'thread-a'}));
+  assert.equal(first.elements.get('message').value,'A 的草稿');
+  assert.equal(first.hooks.state.phoneFiles[0].name,'photo.png');
+  const second=makePage();for(const [key,value] of first.storage)second.storage.set(key,value);
+  second.hooks.applyConversationEvent(chatEvent({key:'after-refresh-a',threadId:'thread-a'}));
+  assert.equal(second.elements.get('message').value,'A 的草稿');
+  assert.equal(second.hooks.state.phoneFiles[0].id,'photo-a');
+  second.hooks.applyConversationEvent(chatEvent({key:'chat-b-again',threadId:'thread-b'}));
+  assert.equal(second.elements.get('message').value,'B 的草稿');
+});
+
+test('removing an attached picture waits for native success and preserves a failure',async()=>{
+  let fail=true;const paths=[];
+  const page=makePage(async(path,options)=>{
+    paths.push(path);assert.equal(path,'/api/uploads/remove');
+    assert.equal(JSON.parse(options.body).ids[0],'photo-a');
+    if(fail)return {ok:false,status:409,json:async()=>({error:'移除失败',code:'attachment_changed'})};
+    return response({ok:true});
+  });
+  const item={id:'photo-a',name:'photo.png',state:'attached',key:'chat-a',epoch:7,previewUrl:'blob:test-photo'};
+  page.hooks.state.phoneFiles=[item];page.hooks.renderPhoneFiles();
+  const remove=page.elements.get('phoneFiles').children[0].children.at(-1);
+  assert.equal(remove.getAttribute('aria-label'),'移除附件 photo.png');
+  await page.hooks.removePhoneFile(item);
+  assert.equal(page.hooks.state.phoneFiles.length,1);assert.equal(item.state,'attached');
+  fail=false;await page.hooks.removePhoneFile(item);
+  assert.equal(page.hooks.state.phoneFiles.length,0);assert.ok(page.revoked.includes('blob:test-photo'));
+  assert.equal(paths.length,2);
+});
+
+test('multiple attachments bind one native file at a time before one message submission',async()=>{
+  const requests=[];const page=makePage(async(path,options)=>{
+    const body=JSON.parse(options.body);requests.push({path,body});
+    if(path==='/api/uploads/attach'){
+      assert.equal(body.ids.length,1);return response({ok:true,state:'attached'});
+    }
+    assert.equal(path,'/api/action');return response({ok:true,epoch:7,submission:{state:'sent'}});
+  });
+  page.hooks.applyConversationEvent(chatEvent());page.elements.get('message').value='图片说明';
+  page.hooks.state.phoneFiles=['first','second'].map(id=>({id,name:id+'.png',state:'uploaded',key:'chat-a',epoch:7}));
+  assert.equal(await page.hooks.sendText(true),true);
+  assert.deepEqual(requests.map(row=>row.path),['/api/uploads/attach','/api/uploads/attach','/api/action']);
+  assert.equal(page.hooks.state.phoneFiles.length,0);
+});
+
+test('short completion status uses the small capsule separately from complex reminders',()=>{
+  const page=makePage();page.hooks.toast('已发送');
+  assert.equal(page.elements.get('sendProgressText').textContent,'已发送');
+  assert.equal(page.elements.get('sendProgressSpinner').hidden,true);
+  assert.equal(page.elements.get('sendProgress').hidden,false);
+  assert.equal(page.elements.get('noticeText').textContent,'');
+  assert.ok(!html.includes('id="keepSendDraftBtn"'));
+});
+
+test('conversation table blocks pass through the message boundary and same-length edits render',()=>{
+  const page=makePage();
+  const make=(value,revision)=>chatEvent({revision,messages:[{id:'m0',role:'assistant',text:'table',blocks:[
+    {kind:'table',text:'h | '+value,headers:[{text:'h'}],rows:[[{text:value}]]}
+  ]}]});
+  page.hooks.applyConversationEvent(make('A','1'));
+  const body=page.hooks.state.chatElements.m0.body;
+  assert.equal(body.children[0].className,'chat-table-wrap');
+  assert.equal(body.children[0].children[0].tagName,'TABLE');
+  page.hooks.applyConversationEvent(make('B','2'));
+  assert.equal(body.textContent.includes('B'),true);
+  assert.equal(body.textContent.includes('A'),false);
+});
+
+test('historical image preview uses binary transport and reuses its decoded resource URL',async()=>{
+  let requests=0;
+  const page=makePage(async path=>{assert.ok(path.startsWith('/api/resource?'));requests++;return {ok:true,status:200,blob:async()=>new Blob(['image'],{type:'image/jpeg'})};});
+  const ref={id:'registered-image',kind:'image',name:'电脑截图.png'};
+  await page.hooks.openMessageResource(ref,page.elements.get('modelPickerBtn'));
+  assert.equal(page.elements.get('attachmentImage').src,'blob:test-1');
+  assert.equal(page.elements.get('attachmentImage').hidden,false);
+  page.hooks.setPanel('');await Promise.resolve();
+  await page.hooks.openMessageResource(ref,page.elements.get('modelPickerBtn'));
+  assert.equal(requests,1);
+  page.hooks.resetRemote();assert.ok(page.revoked.includes('blob:test-1'));
+});
+
+test('recommended defaults are actions rather than model names',async()=>{
+  const page=makePage(async()=>response(optionsEvent({menu:true,category:'model',items:[
+    {id:'default',title:'默认 推荐模型集',kind:'option',enabled:true},
+    {id:'gpt',title:'GPT Fixture',kind:'option',enabled:true,selected:true}
+  ]})));
+  await page.hooks.openModelPicker();
+  assert.deepEqual(Array.from(page.hooks.state.modelChoices,c=>c.item.title),['GPT Fixture']);
+});
+
+test('a native model catalog loads all labels in one request',async()=>{
+  const paths=[];
+  const trigger={id:'model',title:'GPT Fixture',kind:'model',enabled:true};
+  const root=optionsEvent({menu:false,scope:'chat-a',items:[trigger]});
+  const power=optionsEvent({menu:true,scope:'chat-a',category:'model',items:[
+    {id:'a',title:'GPT Fixture Light',label:'GPT Fixture Light',kind:'power-step',enabled:true,selected:true,level:1,currentLevel:1,levelCount:2},
+    {id:'b',title:'GPT Fixture Deep',label:'GPT Fixture Deep',kind:'power-step',enabled:true,level:2,currentLevel:1,levelCount:2},
+    {id:'list',title:'选择模型',kind:'model-list',enabled:true}
+  ]});
+  const models=optionsEvent({menu:true,scope:'chat-a',category:'model',items:[{id:'gpt',title:'GPT Fixture',kind:'option',enabled:true,selected:true}]});
+  const page=makePage(async(path,options)=>{paths.push(path);assert.equal(JSON.parse(options.body).operation,'catalog');return response({ok:true,epoch:7,options:models,catalog:{root,power,models}});});
+  page.hooks.applyConversationEvent(chatEvent());page.hooks.state.capabilities={composerCatalog:true,composerOptions:true};
+  await page.hooks.openModelPicker();
+  assert.deepEqual(paths,['/api/action']);
+  assert.equal(page.hooks.state.modelChoices.length,3);
+  assert.equal(page.hooks.state.modelChoices[1].item.label,'GPT Fixture Deep');
+});
+
+test('a native rail with only its current label is displayed without actionable placeholder tiers',async()=>{
+  const root=optionsEvent({menu:false,scope:'chat-a',items:[{id:'model',title:'GPT Fixture',kind:'model',enabled:true}]});
+  const power=optionsEvent({menu:true,scope:'chat-a',category:'model',items:[
+    {id:'current',title:'GPT Fixture 深度',label:'高',kind:'power-step',enabled:false,selected:true,level:3,currentLevel:3,levelCount:6}
+  ]});
+  const page=makePage(async()=>response({ok:true,epoch:7,options:power,catalog:{root,power,models:power}}));
+  page.hooks.applyConversationEvent(chatEvent());
+  page.hooks.state.capabilities={composerCatalog:true,composerOptions:true,windowView:true,windowPointer:true};
+  await page.hooks.openModelPicker();
+  const tuning=page.elements.get('optionsList').children[0],track=tuning.children[1];
+  assert.equal(tuning.children[0].textContent,'高');
+  assert.equal(track.getAttribute('data-readonly'),'true');
+  assert.equal(track.style.props['--level'],'40%');
+  assert.equal(track.children.filter(child=>child.className==='model-tick').length,6);
+  assert.ok(track.children.every(child=>child.tagName!=='BUTTON'));
+  assert.equal(page.elements.get('optionsScreenBtn').hidden,false);
+});
+
+test('applying after the native model catalog ages rebinds the staged choice before invoking it',async()=>{
+  const requests=[];
+  let generation=0, model='GPT Fixture A';
+  const root=()=>optionsEvent({key:'root-'+generation,menu:false,scope:'chat-a',items:[
+    {id:'model',title:model,kind:'model',enabled:true}
+  ]});
+  const page=makePage(async(path,options)=>{
+    assert.equal(path,'/api/action');
+    const action=JSON.parse(options.body);
+    requests.push(action.operation==='catalog'?'catalog':action.targetId);
+    if(action.operation==='invoke'){
+      assert.equal(action.optionsKey,'models-2');
+      assert.equal(action.targetId,'b-2');
+      model='GPT Fixture B';
+      return response({ok:true,epoch:7,options:root()});
+    }
+    generation++;
+    const models=optionsEvent({key:'models-'+generation,menu:true,scope:'chat-a',category:'model',items:[
+      {id:'a-'+generation,title:'GPT Fixture A',kind:'option',enabled:true,selected:true},
+      {id:'b-'+generation,title:'GPT Fixture B',kind:'option',enabled:true,selected:false}
+    ]});
+    return response({ok:true,epoch:7,options:models,catalog:{root:root(),power:models,models}});
+  });
+  page.hooks.applyConversationEvent(chatEvent());
+  page.hooks.state.capabilities={composerCatalog:true,composerOptions:true};
+  await page.hooks.openModelPicker();
+  page.hooks.stageModelChoice(page.hooks.state.modelChoices.find(choice=>choice.item.id==='b-1'));
+  page.setNow(125_000);
+  await page.hooks.applyModelDraft();
+  assert.deepEqual(requests,['catalog','catalog','b-2','catalog']);
+  const selected=page.hooks.state.modelChoices.find(page.hooks.modelChoiceConfirmed);
+  assert.equal(selected.item.title,'GPT Fixture B');
+  assert.equal(selected.item.selected,false);
+});
+
+test('switching the preview to another model uses its tiers and applies both choices once',async()=>{
+  const calls=[];
+  const labels={low:'轻度',medium:'中',high:'高',xhigh:'极高',max:'Max',ultra:'Ultra'};
+  const profiles={sol:Object.keys(labels),luna:Object.keys(labels).slice(0,-1)};
+  let model='sol',effort='max',key='first-selection';
+  function result(){
+    const modelName=model==='sol'?'GPT Fixture Sol':'GPT Fixture Luna';
+    const root=optionsEvent({key:'root',menu:false,scope:'chat-a',items:[{id:'model',kind:'model',title:modelName,enabled:true}]});
+    const power=optionsEvent({key:'power',menu:true,scope:'chat-a',category:'model',items:profiles[model].map((tier,index)=>({
+      id:tier,kind:'power-step',title:modelName+' '+labels[tier],label:labels[tier],effortKey:tier,
+      enabled:true,selected:tier===effort,level:index+1,currentLevel:profiles[model].indexOf(effort)+1,levelCount:profiles[model].length
+    }))});
+    const models=optionsEvent({key:'models',menu:true,scope:'chat-a',category:'model',items:['sol','luna'].map(name=>({
+      id:name,kind:'option',modelKey:name,title:name==='sol'?'GPT Fixture Sol':'GPT Fixture Luna',enabled:true,selected:name===model
+    }))});
+    const selection={key,current:{model,effort,mode:'model',label:modelName,effortLabel:labels[effort]},
+      profiles:Object.fromEntries(Object.entries(profiles).map(([name,tiers])=>[name,tiers.map(tier=>({key:tier,label:labels[tier]}))]))};
+    return {ok:true,epoch:7,options:models,catalog:{root,power,models,selection}};
+  }
+  const page=makePage(async(path,options)=>{
+    assert.equal(path,'/api/action');
+    const action=JSON.parse(options.body);calls.push(action);
+    if(action.operation==='catalog')return response(result());
+    assert.deepEqual(action,{epoch:7,kind:'composer',operation:'apply-model',optionsKey:'first-selection',model:'luna',effort:'high'});
+    model='luna';effort='high';key='second-selection';
+    return response({...result(),modelApply:{state:'applied',model,effort}});
+  });
+  const {hooks,elements}=page;
+  hooks.applyConversationEvent(chatEvent());hooks.state.capabilities={composerCatalog:true,composerOptions:true};
+  await hooks.openModelPicker();
+  const rail=()=>elements.get('optionsList').children[0].children[1];
+  hooks.stageModelChoice(hooks.state.modelChoices.find(choice=>choice.item.effortKey==='ultra'));
+  hooks.stageModelChoice(hooks.state.modelChoices.find(choice=>choice.item.modelKey==='luna'));
+  assert.equal(calls.length,1);
+  assert.equal(rail().getAttribute('aria-valuemax'),'5');
+  assert.equal(rail().getAttribute('aria-valuetext'),'随模型');
+  rail().children[2].fire('click',{});
+  assert.equal(rail().getAttribute('aria-valuetext'),'高');
+  assert.equal(calls.length,1);
+  await hooks.applyModelDraft();
+  assert.deepEqual(calls.map(call=>call.operation),['catalog','apply-model']);
+  assert.equal(elements.get('modelPickerLabel').textContent,'GPT Fixture Luna 高');
+  assert.equal(rail().getAttribute('aria-valuetext'),'高');
 });
 
 test('the plus opens the system chooser directly without adding a panel or reading desktop options',()=>{
@@ -1242,20 +1625,18 @@ test('one finger sends one left click, two fingers send one right click, and mov
   hooks.setPanel('');assert.equal(hooks.state.view,'chat');assert.equal(elements.get('screenCard').hidden,true);
 });
 
-test('message progress stays in the composer while other-chat attention uses the notice',()=>{
+test('message progress remains independent of other-chat attention notices',()=>{
   const page=makePage(),{hooks,elements}=page;
   hooks.state.pending.sendText=true;
   hooks.applyConversationEvent(chatEvent({pendingRequests:[{id:'question',pending:'input',kind:'thread',title:'另一条对话'}]}));
   assert.equal(elements.get('sendProgress').hidden,false);
   assert.equal(elements.get('sendProgressSpinner').hidden,false);
-  assert.equal(elements.get('keepSendDraftBtn').hidden,true);
   assert.equal(elements.get('noticeText').textContent,'其他对话有待处理请求');
   assert.equal(elements.get('noticeOpenBtn').hidden,false);
   assert.equal(elements.get('desktopPromptBtn').hidden,true);
   hooks.state.sending={state:'confirming',previousAgent:true};
   hooks.renderControls();
-  assert.equal(elements.get('sendProgressText').textContent,'发送待核对');
-  assert.equal(elements.get('keepSendDraftBtn').hidden,false);
+  assert.equal(elements.get('sendProgressText').textContent,'发送中');
 });
 
 test('project navigation retains its running conversation stream',async()=>{
@@ -1395,8 +1776,36 @@ test('closing a nested native menu stops after a failed dismissal instead of ret
     return response({ok:true,epoch:7});
   });
   await page.hooks.dismissOptions(optionsEvent({menu:true}),true);
-  assert.equal(actions.length,2);assert.equal(actions[0].optionsKey,'options-a');
+  assert.equal(actions.length,2);assert.equal(actions[0].optionsKey,'menu-b');
   assert.equal(actions[1].optionsKey,'menu-b');assert.equal(page.hooks.state.optionsBusy,false);
+});
+
+test('closing an already-closed native menu does not invoke an obsolete option',async()=>{
+  let actions=0;
+  const page=makePage(async path=>{
+    if(path==='/api/composer')return response(optionsEvent({menu:false}));
+    actions++;throw new Error('No dismissal should be sent');
+  });
+  await page.hooks.dismissOptions(optionsEvent({key:'obsolete',menu:true}),true);
+  assert.equal(actions,0);
+  assert.equal(page.hooks.state.optionsBusy,false);
+});
+
+test('opening the computer view keeps the native menu available for inspection',()=>{
+  let requests=0;
+  const page=makePage(async()=>{requests++;throw new Error('Keep the native menu open');});
+  page.hooks.setPanel('options');
+  page.hooks.state.options=optionsEvent({menu:true});
+  page.hooks.setPanel('screen');
+  assert.equal(page.hooks.state.panel,'screen');
+  assert.equal(requests,0);
+});
+
+test('a model list with unreadable strength controls retains its computer view entry',async()=>{
+  const page=makePage(async()=>response(optionsEvent({menu:true,category:'model',
+    items:[{id:'a',kind:'option',title:'GPT Fixture A',enabled:true,selected:true}]})));
+  await page.hooks.openModelPicker();
+  assert.equal(page.elements.get('optionsScreenBtn').hidden,false);
 });
 
 test('native control images are bound to their observed option and window',async()=>{
@@ -1594,41 +2003,29 @@ test('native work status is above the answer and never a copied message body or 
   assert.equal(answer.foot.textContent.includes('已处理'),false);
 });
 
-test('one native turn disclosure contains commentary, public reasoning and search with elapsed status',()=>{
+test('process blocks collapse between visible commentary paragraphs and preserve manual expansion',()=>{
   const page=makePage();const blocks=[{kind:'paragraph',text:'检查输入',channel:'commentary'},
     {kind:'paragraph',text:'公开思考摘要',channel:'reasoning'},
     {kind:'operation',icon:'terminal',text:'运行了命令',channel:'activity'},
     {kind:'paragraph',text:'继续核对',channel:'commentary'},
     {kind:'search',text:'搜索网页',channel:'activity'}];
   const event=chatEvent({messages:[{id:'m0',role:'assistant',phase:'activity',text:'过程',blocks,
-    complete:true,work:{status:'worked',durationMs:20000}}]});
+    complete:false,work:{status:'working'}}]});
   page.hooks.applyConversationEvent(event);const row=page.hooks.state.chatElements.m0;
-  assert.equal(row.body.children.length,1);const details=row.body.children[0];
-  assert.equal(details.open,false);assert.equal(details.children[0].textContent,'用时 20 秒');
-  assert.deepEqual(details.children[1].children.map(node=>node.textContent),['检查输入','公开思考摘要','运行了命令','继续核对','搜索网页']);
-  assert.equal(details.children[1].children[1].className,'chat-process-reasoning');
-  assert.equal(details.children[1].children[2].className,'chat-process-action');
-  assert.equal(row.foot.hidden,true);assert.equal(row.copy.hidden,true);
-  details.open=true;event.replace=false;event.messages[0].work.durationMs=21000;
-  page.hooks.applyConversationEvent(event);assert.equal(row.body.children[0].open,true);
-  assert.equal(row.body.children[0].children[0].textContent,'用时 21 秒');
-});
-
-test('active work reveals progress and collapses on completion while a manual collapse is retained',()=>{
-  const page=makePage();const event=chatEvent({messages:[{id:'m0',role:'assistant',phase:'activity',text:'过程',
-    blocks:[{kind:'paragraph',text:'检查输入',channel:'activity'}],complete:false,work:{status:'working'}}]});
-  page.hooks.applyConversationEvent(event);const row=page.hooks.state.chatElements.m0;
-  assert.equal(row.body.children[0].open,true);assert.equal(row.body.children[0].children[0].textContent,'处理中');
-  event.replace=false;event.messages[0].work.hasAnswer=true;
+  assert.equal(row.body.children.length,4);
+  assert.equal(row.body.children[0].textContent,'检查输入');
+  assert.equal(row.body.children[2].textContent,'继续核对');
+  const first=row.body.children[1],second=row.body.children[3];
+  assert.equal(first.tagName,'DETAILS');assert.equal(first.open,false);assert.equal(second.open,false);
+  assert.equal(first.children[0].textContent,'工作过程 · 进行中');
+  assert.equal(second.children[0].textContent,'工作过程 · 进行中');
+  assert.deepEqual(first.children[1].children.map(node=>node.textContent),['公开思考摘要','运行了命令']);
+  first.open=true;event.replace=false;event.messages[0].blocks[1].text='后续摘要';
   page.hooks.applyConversationEvent(event);
-  assert.equal(row.body.children[0].open,false);
-  assert.equal(row.body.children[0].children[0].textContent,'处理过程');
-  event.replace=false;event.messages[0].complete=true;event.messages[0].work={status:'worked',durationMs:65000};
-  page.hooks.applyConversationEvent(event);assert.equal(row.body.children[0].open,false);
-  assert.equal(row.body.children[0].children[0].textContent,'用时 1 分钟 5 秒');
-  event.messages[0].complete=false;event.messages[0].work={status:'working'};page.hooks.applyConversationEvent(event);
-  row.body.children[0].open=false;event.messages[0].blocks[0].text='继续检查';page.hooks.applyConversationEvent(event);
-  assert.equal(row.body.children[0].open,false);
+  assert.equal(row.body.children[1].open,true);assert.equal(row.body.children[3].open,false);
+  event.messages[0].complete=true;event.messages[0].work={status:'worked',durationMs:65000};
+  page.hooks.applyConversationEvent(event);
+  assert.equal(row.body.children[1].open,true);assert.equal(row.body.children[3].open,false);
 });
 
 test('cached project children retain their observed catalog while other projects are read',()=>{
@@ -1666,7 +2063,7 @@ test('a lost action reply queries its receipt, sends once, and preserves the nex
   assert.equal(await page.hooks.sendText(true),true);
   assert.equal(actions,1);assert.equal(lookups,1);
   assert.equal(page.elements.get('message').value,'下一条草稿');
-  assert.equal(page.hooks.state.error,'');assert.equal(page.storage.size,0);
+  assert.equal(page.hooks.state.error,'');assert.equal(page.storage.has('chatgpt-harmony-pending-send'),false);
 });
 
 test('a visible new message confirms a send even when the original response arrives as an error',async()=>{
@@ -1717,7 +2114,7 @@ test('a known send failure keeps editable text and gives its concrete cause',asy
   assert.equal(page.elements.get('message').value,'保留这条消息');
   assert.equal(page.elements.get('sendEnterBtn').disabled,false);
   assert.equal(page.hooks.state.error,'未发送：电脑发送按钮不可用');
-  assert.equal(page.storage.size,0);
+  assert.equal(page.storage.has('chatgpt-harmony-pending-send'),false);
 });
 
 test('creating a first message can change identity but an unrelated existing conversation cannot confirm',()=>{
@@ -1729,7 +2126,9 @@ test('creating a first message can change identity but an unrelated existing con
   page.elements.get('message').value='下一条';
   const next=page.hooks.beginPhoneSend({text:'下一条',conversationKey:'created-chat',epoch:7});
   page.hooks.applyConversationEvent(chatEvent({key:'unrelated',order:['m0'],messages:[{id:'m0',role:'user',text:'下一条',sourceId:'other'}]}));
-  assert.equal(next.state,'sending');assert.equal(page.elements.get('message').value,'下一条');
+  assert.equal(next.state,'sending');assert.equal(page.elements.get('message').value,'');
+  page.hooks.applyConversationEvent(chatEvent({key:'created-chat'}));
+  assert.equal(page.elements.get('message').value,'下一条');
 });
 
 test('a rejected old service instance releases send without waiting for a missing receipt',async()=>{
@@ -1744,7 +2143,7 @@ test('a rejected old service instance releases send without waiting for a missin
   assert.equal(page.elements.get('message').value,'保留并重新发送');
   assert.equal(page.elements.get('sendEnterBtn').disabled,false);
   assert.ok(!paths.some(path=>path.startsWith('/api/delivery')));
-  assert.equal(page.storage.size,0);
+  assert.equal(page.storage.has('chatgpt-harmony-pending-send'),false);
 });
 
 test('reopening the page recovers the same receipt without submitting again',async()=>{
@@ -1796,28 +2195,26 @@ test('a request that never arrived is resolved before re-enabling send',async()=
   assert.equal(page.elements.get('sendEnterBtn').disabled,false);
 });
 
-test('an unrecoverable receipt after Agent restart waits for the user to keep the draft',async()=>{
-  const paths=[];
-  const id='send_previous_startup';
-  const page=makePage(async path=>{
+test('a prior startup receipt is recovered by the service without replaying the message',async()=>{
+  const paths=[],id='send_previous_startup';let registered=false;
+  const page=makePage(async(path,options)=>{
     paths.push(path);
-    if(path==='/api/delivery?id='+id)return {ok:false,status:404,json:async()=>({error:'发送记录不存在'})};
-    assert.equal(path,'/api/delivery/resolve');
-    return response({ok:true,delivery:{id,state:'confirming'}});
+    if(path==='/api/delivery/resolve'){
+      const body=JSON.parse(options.body);registered=true;
+      assert.equal(body.recovery.text,'原始文字');assert.equal(body.recovery.key,'chat-a');
+      return response({ok:true,delivery:{id,state:'confirming'}});
+    }
+    assert.equal(path,'/api/delivery?id='+id);
+    return registered?response({ok:true,delivery:{id,state:'sent'}}):{ok:false,status:404,json:async()=>({error:'missing'})};
   });
-  const {hooks,elements,storage}=page;
-  hooks.state.instance='second';
-  storage.set('chatgpt-harmony-pending-send',JSON.stringify({id,text:'待核对文字',key:'chat-a',epoch:7,instance:'first',
+  page.hooks.state.instance='second';
+  page.storage.set('chatgpt-harmony-pending-send',JSON.stringify({id,text:'原始文字',key:'chat-a',epoch:7,instance:'first',
     state:'confirming',sources:[],matches:0,empty:true,queueIds:[],attachmentIds:[]}));
-  const waiting=hooks.resumePhoneSend();
-  for(let attempt=0;attempt<20 && !hooks.state.sending?.previousAgent;attempt++)await new Promise(resolve=>setTimeout(resolve,25));
-  assert.equal(elements.get('keepSendDraftBtn').hidden,false);
-  assert.equal(elements.get('sendEnterBtn').disabled,true);
-  hooks.keepUnconfirmedDraft();await waiting;
-  assert.equal(elements.get('message').value,'待核对文字');
-  assert.equal(elements.get('sendEnterBtn').disabled,false);
-  assert.equal(storage.size,0);
-  assert.deepEqual(paths,['/api/delivery?id='+id,'/api/delivery/resolve']);
+  await page.hooks.resumePhoneSend();
+  assert.equal(page.elements.get('message').value,'');
+  assert.equal(page.elements.get('sendProgressText').textContent,'已发送');
+  assert.equal(page.storage.has('chatgpt-harmony-pending-send'),false);
+  assert.equal(paths.filter(path=>path==='/api/action').length,0);
 });
 
 function queueSnapshot(){

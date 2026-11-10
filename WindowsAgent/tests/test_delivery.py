@@ -1,5 +1,7 @@
 """Delivery acknowledgement, duplicate suppression and observation recovery."""
 import copy
+import json
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import sys
@@ -13,6 +15,31 @@ from windows_control import TargetError
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_persistent_receipts_reconcile_after_restart_without_replaying_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'receipts.json'
+            store=DeliveryStore(lambda *_:None,lambda:copy.deepcopy(self.snapshot),path)
+            try:
+                store.submit(self.command,'phone')
+                until=time.monotonic()+1
+                while time.monotonic()<until:
+                    if store.get('phone',self.command['messageId'])['state']=='confirming':break
+                    time.sleep(.01)
+                saved=path.read_text()
+                self.assertNotIn('继续',saved)
+                self.assertNotIn('phone',saved)
+            finally:store.close()
+            self.snapshot['messages'].append({'role':'user','text':'继续','sourceId':'new'})
+            replay=[]
+            restarted=DeliveryStore(lambda *_:replay.append(True),lambda:copy.deepcopy(self.snapshot),path)
+            try:
+                until=time.monotonic()+2
+                while time.monotonic()<until and restarted.get('phone',self.command['messageId'])['state']!='sent':time.sleep(.01)
+                self.assertEqual(restarted.get('phone',self.command['messageId'])['state'],'sent')
+                self.assertEqual(restarted.submit(self.command,'phone')['state'],'sent')
+                self.assertEqual(replay,[])
+            finally:restarted.close()
+
     def setUp(self):
         self.snapshot={'key':'chat','epoch':7,'messages':[{'role':'user','text':'继续','sourceId':'old'}],'queued':[]}
         self.calls=[]

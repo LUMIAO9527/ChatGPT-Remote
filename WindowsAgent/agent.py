@@ -10,6 +10,7 @@ access uses the existing authenticated HTTPS reverse proxy.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import hmac
 import io
@@ -29,11 +30,11 @@ from pathlib import Path
 from typing import Any, Callable
 from functools import lru_cache
 from collections import deque
-from urllib.parse import parse_qs, urlsplit, unquote
+from urllib.parse import parse_qs, urlsplit, unquote, urlencode
 
 from windows_control import InputError, TargetError, WindowTracker
 from control_channel import ChannelClosed, WebSocket
-from conversation import conversation_event, draft_snapshot
+from conversation import conversation_event, draft_snapshot, normalize_editor_text
 from attachments import UploadStore, UploadError, MAX_FILE
 from delivery import DeliveryStore
 from frame_clock import FrameClock
@@ -44,6 +45,9 @@ from app_version import APP_VERSION
 VERSION = APP_VERSION
 DEFAULT_MAX_WIDTH = 1280
 DEFAULT_JPEG_QUALITY = 65
+COMPRESSIBLE_TYPES = {"text/html", "text/css", "text/plain", "text/javascript",
+                      "application/json", "application/javascript", "application/x-ndjson",
+                      "image/svg+xml"}
 DEFAULT_FPS = 8
 PROFILES = {
     "lan": (8.0, 1280, 65),
@@ -67,6 +71,18 @@ main{width:min(100%,480px);margin:clamp(0px,5vh,48px) auto;padding:clamp(24px,6v
 <h1>连接电脑</h1><p>在电脑托盘中打开 ChatGPT Remote，扫描二维码或打开连接链接。</p>
 </main></body></html>"""
 
+PAIR_TTL_SECONDS = 60
+
+
+def computer_name(data_dir: Path) -> str:
+    try:
+        value=json.loads((data_dir/'desktop_settings.json').read_text(encoding='utf-8')).get('computerName')
+        if isinstance(value,str) and 1<=len(value.strip())<=60 and not any(ord(char)<32 for char in value):
+            return value.strip()
+    except (OSError,ValueError,AttributeError):
+        pass
+    return socket.gethostname()
+
 
 @lru_cache(maxsize=9)
 def website_icon(kind: str, theme: str = 'auto') -> bytes:
@@ -75,7 +91,7 @@ def website_icon(kind: str, theme: str = 'auto') -> bytes:
     if kind == 'svg':
         from desktop_icon import vector
         return vector(theme).encode('utf-8')
-    icon = (HERE / ('desktop-light.ico' if theme == 'light' else 'desktop.ico')).read_bytes()
+    icon = (HERE / 'desktop.ico').read_bytes()
     if kind == 'ico':
         return icon
     count = struct.unpack_from('<H', icon, 4)[0]
@@ -287,7 +303,17 @@ class MockBackend:
             if self.frozen_info_locked()['active'] or self.mode!='window' or epoch!=self.tracker.epoch or conversation_key!=f'mock-{epoch}':
                 raise TargetError('窗口或对话已变化，文件尚未附加')
             self.mock_attachments.extend({'id':path.parent.name,'name':path.name,'kind':'image' if path.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.gif','.heic') else 'file'} for path in paths)
-            return {'state':'attached'}
+            return {'state':'attached', 'nativeAttachments': [{'id':path.parent.name,'name':path.name} for path in paths]}
+
+    def remove_file(self, conversation_key: str, epoch: int, reference: dict, verification: dict | None = None) -> None:
+        with self.lock:
+            if self.mode != 'window' or epoch != self.tracker.epoch or conversation_key != f'mock-{epoch}':
+                raise TargetError('附件所属对话已变化。', 'attachment_context_changed')
+            if not reference:raise TargetError('暂时无法定位此附件。', 'attachment_unavailable')
+            self.mock_attachments = [item for item in self.mock_attachments if item['id'] != reference.get('id')]
+
+    def files_present(self, conversation_key: str, epoch: int, references: list[dict]) -> bool:
+        return all(reference and any(item['id']==reference.get('id') for item in self.mock_attachments) for reference in references)
 
     def composer_options(self) -> dict[str, Any]:
         with self.lock:
@@ -576,10 +602,11 @@ class MockBackend:
                         raise TargetError("电脑已切换对话，请等手机更新后再发送")
                     if not text.strip() and not command.get('attachmentsOnly'):
                         raise InputError("请输入消息")
-                    if 'draftRevision' in command:
+                    same_draft = normalize_editor_text(self.draft) == normalize_editor_text(text)
+                    if 'draftRevision' in command and not (command.get('submit') and same_draft):
                         self._clear_draft(command)
-                    if self.draft:
-                        raise TargetError("电脑输入框已有草稿，请在“电脑草稿”中取回、清空或替换发送", 'draft_exists')
+                    if self.draft and not (command.get('submit') and same_draft):
+                        raise TargetError('电脑有不同草稿。', 'draft_exists')
                     if command.get("submit"):
                         if self.generating:
                             self.queued_messages.append({'id':f'q{len(self.queued_messages)}','text':text or ('附件 · '+str(len(self.mock_attachments))+' 个'),
@@ -590,7 +617,7 @@ class MockBackend:
                             self.messages.append({"id": f"m{len(self.messages)}", "role": "assistant", "text": f"模拟回复：已收到 {text}"})
                     else:
                         self.draft = text
-                    if command.get('submit'):self.mock_attachments=[]
+                    if command.get('submit'):self.mock_attachments=[];self.draft=''
                 self.last_action = f"text:{text[:60]}"
                 if command.get("submit"):
                     self.last_action += " + " + ("BUTTON" if submit_method == "button" else submit_method)
@@ -706,7 +733,7 @@ class FrameHub:
             self.frame_counter += 1
             frame = {"id": self.frame_counter, **meta, "published_at": time.monotonic()}
             self.latest = frame
-            if frame.get('pointer_target') and frame.get('method') in ('printwindow', 'mock') and frame.get('mode') == 'window':
+            if frame.get('pointer_target') and frame.get('method') in ('printwindow', 'wgc', 'mock') and frame.get('mode') == 'window':
                 self.pointer_frames[frame['id']] = (frame['epoch'], frame['published_at'], frame['pointer_target'])
                 while len(self.pointer_frames) > 64:
                     self.pointer_frames.pop(next(iter(self.pointer_frames)))
@@ -972,7 +999,10 @@ class AgentState:
         self.tokens = TokenStore(data_dir / "paired_devices.json")
         self.session_path = data_dir / "session.json"
         self.pin = f"{secrets.randbelow(1_000_000):06d}"
-        self.pin_expires = time.monotonic() + 15 * 60
+        self.pin_expires = time.monotonic() + PAIR_TTL_SECONDS
+        self.pin_ticket = secrets.token_urlsafe(18)
+        self.pin_ttl = PAIR_TTL_SECONDS
+        self.computer_name_dir = data_dir
         self.failed: dict[str, list[float]] = {}
         self.streams: dict[str, StreamFlow] = {}
         self.controls = 0
@@ -981,7 +1011,7 @@ class AgentState:
         self.action_lock = threading.RLock()
         self.maintenance_token = ''
         self.maintenance_expires = 0.0
-        self.deliveries = DeliveryStore(self._perform_action, self.backend.read_conversation)
+        self.deliveries = DeliveryStore(self._perform_action, self.backend.read_conversation, data_dir/'delivery_receipts.json', self.backend.read_draft)
         self.guard = guard or SwitchGuard([])
         self.hub = hub or FrameHub(backend)
         self.access = AccessGate(access_key)
@@ -1027,9 +1057,9 @@ class AgentState:
             if len(attempts) >= 5:
                 raise RemoteError("配对尝试次数过多，5 分钟后再试", 429)
             if now >= self.pin_expires:
-                raise RemoteError("配对码已过期，请重启 Windows Agent 生成新码", 403)
+                raise RemoteError("配对码已过期，请使用电脑端的新配对码", 403)
             if not self.pin:
-                raise RemoteError("本次配对码已使用，请重启 Windows Agent 生成新码", 403)
+                raise RemoteError("配对码已使用，请使用电脑端的新配对码", 403)
             valid_format = (isinstance(pin, str) and len(pin) == 6
                             and pin.isascii() and pin.isdigit())
             if not valid_format or not hmac.compare_digest(pin, self.pin):
@@ -1039,15 +1069,19 @@ class AgentState:
             self.pin = ""  # one new device per startup; restart to enroll another
         return self.tokens.issue(name or "手机")
 
+    def pair_ticket_valid(self, ticket: str) -> bool:
+        with self.lock:
+            return bool(self.pin and time.monotonic()<self.pin_expires and hmac.compare_digest(str(ticket),self.pin_ticket))
+
     # -- state -------------------------------------------------------------
     def info(self) -> dict[str, Any]:
         data = self.backend.info()
         return {"ok": True, "version": VERSION, "mock": self.mock,
-                "computerName": socket.gethostname(),
+                "computerName": computer_name(self.computer_name_dir),
                 'instance': self.deliveries.instance,
                 "guard": self.guard.snapshot(),
                 "paired_count": self.tokens.count(),
-                "capabilities": self.policy.capabilities(),
+                "capabilities": {**self.policy.capabilities(),'composerCatalog':not self.mock},
                 **data}
 
     def transport_info(self) -> dict[str, Any]:
@@ -1114,7 +1148,7 @@ class AgentState:
         with self.backend.lock:
             self.require_public_window()
             method = frame.get("method")
-            safe_method = method == "printwindow" or (method == "mock" and self.mock)
+            safe_method = method in ("printwindow", "wgc") or (method == "mock" and self.mock)
             if frame.get("mode") != "window" or not safe_method:
                 raise RemoteError("当前无法安全读取窗口画面，请回到对话或在电脑端检查窗口。", 403)
             if type(frame.get("epoch")) is not int or frame["epoch"] != self.backend.tracker.epoch:
@@ -1143,9 +1177,12 @@ class AgentState:
                 attached=self.uploads.resolve(token,data['attachmentIds'],'attached')
                 if any(item.get('conversationKey')!=data.get('conversationKey') or item.get('epoch')!=data['epoch'] for item in attached):
                     raise UploadError('附件所属对话已变化，请先检查电脑输入框')
+                if not self.backend.files_present(data['conversationKey'],data['epoch'],[item.get('nativeAttachment') for item in attached]):
+                    raise TargetError('电脑附件已变化，消息未发送。','attachment_changed')
                 data['attachmentsOnly']=True
                 outcome = self.backend.action(data)
                 for item in attached:item['state']='submitted'
+                self.uploads.save()
         else:
             if data.get('kind')=='queue' and self.deliveries.needs_observation():
                 self.deliveries.observe(self.backend.read_conversation())
@@ -1157,6 +1194,8 @@ class AgentState:
         return {"ok": True, "epoch": self.backend.tracker.epoch,
                 "actionSequence": action_sequence,
                 **({"options": outcome['options']} if isinstance(outcome, dict) and 'options' in outcome else {}),
+                **({'catalog':outcome['catalog']} if isinstance(outcome,dict) and isinstance(outcome.get('catalog'),dict) else {}),
+                **({'modelApply': outcome['modelApply']} if isinstance(outcome, dict) and 'modelApply' in outcome else {}),
                 **({"navigation": outcome['navigation']} if isinstance(outcome, dict) and 'navigation' in outcome else {}),
                 **({field:outcome[field] for field in ('queue','queueDraft') if field in outcome} if isinstance(outcome,dict) else {}),
                 **({'navigationUnchanged':True} if isinstance(outcome,dict) and outcome.get('navigationUnchanged') else {}),
@@ -1172,6 +1211,7 @@ class AgentState:
             existing=any(item['state']!='uploaded' for item in items)
             if not existing:
                 for item in items:item['state']='attaching'
+                self.uploads.save()
         if existing:return self.upload_status(token,data)
         try:
             result=self.backend.attach_files([item['path'] for item in items],data['conversationKey'],data['epoch'])
@@ -1182,25 +1222,81 @@ class AgentState:
                 with self.uploads.lock:
                     for item in items:item.update(state='attaching',conversationKey=data['conversationKey'],epoch=data['epoch'],
                         nativeBefore=before,batchIds=list(data['ids']))
+                    self.uploads.save()
                 return {'ok':True,'state':'attaching','files':[self.uploads.public(item) for item in items]}
-            for item in items:item['state']='uploaded' if getattr(exc,'code','')=='attachment_not_started' else 'unknown'
+            for item in items:item.update(state='uploaded' if getattr(exc,'code','')=='attachment_not_started' else 'unknown',
+                conversationKey=data['conversationKey'],epoch=data['epoch'])
+            with self.uploads.lock:self.uploads.save()
             raise
         for item in items:
             item.update(state='attached',conversationKey=data['conversationKey'],epoch=data['epoch'])
+        self.bind_uploads(items, result)
+        with self.uploads.lock:self.uploads.save()
         return {'ok':True,'state':'attached','files':[self.uploads.public(item) for item in items]}
+
+    @staticmethod
+    def bind_uploads(items: list[dict], result: dict) -> None:
+        bindings = result.get('nativeAttachments', [])
+        if len(bindings) == len(items):
+            for item, reference in zip(items, bindings):
+                if isinstance(reference, dict) and isinstance(reference.get('id'), str):
+                    item['nativeAttachment'] = reference
+
+    def remove_upload(self, token: str, data: dict) -> dict:
+        self.require_public_window()
+        ids = data.get('ids')
+        if not isinstance(ids, list) or len(ids) != 1:
+            raise UploadError('请逐个移除附件。')
+        with self.uploads.lock:
+            if self.uploads.was_removed(token,ids[0]):return {'ok':True}
+            item = self.uploads.resolve(token, ids)[0]
+            if item['state'] in ('uploaded', 'failed'):
+                self.uploads.discard(token, ids)
+                return {'ok': True}
+            if item['state'] == 'submitted':
+                raise UploadError('该附件已发送。')
+            if type(data.get('epoch')) is not int or not isinstance(data.get('conversationKey'), str):
+                raise UploadError('缺少附件所属对话信息。')
+            if item.get('conversationKey') != data['conversationKey']:
+                raise TargetError('请返回附件所属对话后移除。', 'attachment_context_changed')
+            if item['state'] in ('attaching', 'unknown') or item.get('epoch') != data['epoch']:
+                self.upload_status(token, data)
+            try:
+                self.backend.remove_file(data['conversationKey'], data['epoch'], item.get('nativeAttachment'), item.get('removalProof'))
+            except TargetError as exc:
+                if getattr(exc, 'attachment_removal', None):
+                    item.update(state='removing', removalProof=exc.attachment_removal)
+                    self.uploads.save()
+                raise
+            self.uploads._remove(item)
+            self.uploads.remember_removed(item)
+            self.uploads.save()
+            return {'ok': True}
 
     def upload_status(self, token: str, data: dict) -> dict:
         with self.uploads.lock:
             items=self.uploads.resolve(token,data.get('ids'))
             if all(item['state']=='uploaded' for item in items):return {'ok':True,'state':'uploaded'}
-            if any(item.get('conversationKey') not in (None,data.get('conversationKey')) or item.get('epoch') not in (None,data.get('epoch')) for item in items):
+            if type(data.get('epoch')) is not int or not isinstance(data.get('conversationKey'),str):
+                raise UploadError('缺少附件所属对话信息。')
+            if any(item.get('conversationKey') not in (None,data.get('conversationKey')) for item in items):
                 raise TargetError('附件属于另一个对话，请返回原对话继续发送','attachment_context_changed')
-            if all(item['state']=='attached' for item in items):return {'ok':True,'state':'attached'}
+            if all(item['state']=='attached' for item in items):
+                if any(item.get('epoch')!=data['epoch'] for item in items):
+                    if not self.backend.files_present(data['conversationKey'],data['epoch'],[item.get('nativeAttachment') for item in items]):
+                        raise TargetError('电脑附件已变化，请检查输入框。','attachment_changed')
+                    for item in items:item['epoch']=data['epoch']
+                    self.uploads.save()
+                return {'ok':True,'state':'attached'}
             before=items[0].get('nativeBefore');batch=items[0].get('batchIds',[])
             if not before and any(item['state']=='unknown' for item in items):raise UploadError('无法读取电脑附件')
-        if before and self.backend.attached_files_ready(before,len(batch),data.get('epoch')):
+        result = self.backend.attached_files_ready(before,len(batch),data.get('epoch')) if before else None
+        if result:
             with self.uploads.lock:
-                for item in self.uploads.resolve(token,batch):item['state']='attached'
+                bound = self.uploads.resolve(token,batch)
+                for item in bound:item['state']='attached'
+                if isinstance(result, dict):self.bind_uploads(bound, result)
+                self.uploads.save()
             return {'ok':True,'state':'attached'}
         return {'ok':True,'state':'attaching'}
 
@@ -1272,23 +1368,40 @@ def make_handler(state: AgentState):
         def send_bytes(self, data: bytes, code: int = 200,
                        content_type: str = "application/json; charset=utf-8",
                        extra_headers: dict[str, str] | None = None) -> None:
+            headers = dict(extra_headers or {})
+            body = data
+            compressed = False
+            if (code == 200 and len(data) >= 512
+                    and "gzip" in self.headers.get("Accept-Encoding", "").lower()
+                    and content_type.split(";")[0].strip() in COMPRESSIBLE_TYPES
+                    and "Content-Encoding" not in headers):
+                body = gzip.compress(data, 6)
+                compressed = True
             self.send_response(code)
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store, private")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", headers.get('Cache-Control', "no-store, private"))
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
-            keep_alive = code == 200
+            keep_alive = code in (200, 304)
             self.send_header("Connection", "keep-alive" if keep_alive else "close")
             self.close_connection = not keep_alive
             self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' blob:; "
                              "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
                              "base-uri 'none'; frame-ancestors 'none'")
-            for key, value in (extra_headers or {}).items():
-                self.send_header(key, value)
+            if compressed:
+                self.send_header("Content-Encoding", "gzip")
+            vary = headers.get("Vary", "")
+            if compressed:
+                vary = (vary + ", " if vary else "") + "Accept-Encoding"
+            if vary:
+                self.send_header("Vary", vary)
+            for key, value in headers.items():
+                if key.lower() not in ('cache-control', 'content-encoding', 'vary'):
+                    self.send_header(key, value)
             self.end_headers()
-            self.wfile.write(data)
+            self.wfile.write(body)
 
         def send_empty(self, code: int = 204) -> None:
             self.send_response(code)
@@ -1321,6 +1434,11 @@ def make_handler(state: AgentState):
             auth = self.headers.get("Authorization", "")
             return auth[7:] if auth.startswith("Bearer ") else ""
 
+        def send_expired_pair(self) -> None:
+            page=ACCESS_PAGE.replace('<h1>连接电脑</h1><p>在电脑托盘中打开 ChatGPT Remote，扫描二维码或打开连接链接。</p>',
+                '<h1>二维码已过期</h1><p>请扫描电脑端更新后的二维码。</p>')
+            self.send_bytes(page.encode('utf-8'),403,content_type='text/html; charset=utf-8')
+
         def authorized(self) -> bool:
             if state.tokens.valid(self.token()):
                 return True
@@ -1335,7 +1453,11 @@ def make_handler(state: AgentState):
                 query = parse_qs(urlsplit(self.path).query)
                 candidate = query.get("k", [None])[0] or ""
                 if candidate and gate.matches(candidate):
-                    self.send_redirect("/", {
+                    ticket=query.get('pair',[''])[0]
+                    if ticket and not state.pair_ticket_valid(ticket):
+                        self.send_expired_pair()
+                        return False
+                    self.send_redirect('/?'+urlencode({'pair':ticket}) if ticket else '/', {
                         "Set-Cookie": (f"{ACCESS_COOKIE}={gate.digest}; Path=/; "
                                        "HttpOnly; SameSite=Lax; Max-Age=2592000"),
                     })
@@ -1387,22 +1509,35 @@ def make_handler(state: AgentState):
             if path in icons:
                 kind, content_type = icons[path]
                 theme = parse_qs(urlsplit(self.path).query).get('theme', ['auto'])[0]
-                self.send_bytes(website_icon(kind, theme), content_type=content_type)
+                self.send_bytes(website_icon(kind, theme), content_type=content_type,
+                                extra_headers={'Cache-Control': 'private, max-age=3600'})
                 return
             if path == '/computer-cover.svg':
                 self.send_bytes((HERE / 'assets' / 'computer-cover.svg').read_bytes(),
-                                content_type='image/svg+xml')
+                                content_type='image/svg+xml',
+                                extra_headers={'Cache-Control': 'private, max-age=3600'})
                 return
             if not self.require_access():
                 return
             try:
                 if path == "/":
-                    self.send_bytes((HERE / "web" / "index.html").read_bytes(),
-                                    content_type="text/html; charset=utf-8")
+                    ticket=parse_qs(urlsplit(self.path).query).get('pair',[''])[0]
+                    if ticket and not state.pair_ticket_valid(ticket):
+                        self.send_expired_pair()
+                        return
+                    page = (HERE / "web" / "index.html").read_bytes()
+                    etag = '"' + hashlib.sha256(page).hexdigest()[:24] + '"'
+                    headers = {"Cache-Control": "no-cache", "ETag": etag}
+                    if self.headers.get("If-None-Match") == etag:
+                        self.send_bytes(b"", code=304, content_type="text/html; charset=utf-8",
+                                        extra_headers=headers)
+                    else:
+                        self.send_bytes(page, content_type="text/html; charset=utf-8",
+                                        extra_headers=headers)
                 elif path == "/api/health":
                     self.send_json({"ok": True, "name": "ChatGPT Remote",
                                     "version": VERSION, "mock": state.mock,
-                                    "computerName": socket.gethostname(),
+                                    "computerName": computer_name(state.computer_name_dir),
                                     "transport": state.transport_info()})
                 elif path == "/api/windows":
                     if self.authorized():
@@ -1438,6 +1573,15 @@ def make_handler(state: AgentState):
                 elif path == "/api/composer":
                     if self.authorized():
                         self.send_json({"ok": True, **state.backend.composer_options()})
+                elif path == '/api/resource':
+                    if self.authorized():
+                        state.require_public_window()
+                        query=parse_qs(urlsplit(self.path).query)
+                        try:data,mime,name,etag=state.backend.message_resource(query.get('id',[''])[0],query.get('variant',['original'])[0])
+                        except (ValueError,OSError):self.reject('原文件暂不可预览',404);return
+                        headers={'Cache-Control':'private, max-age=60','ETag':'"'+etag+'"','Vary':'Authorization'}
+                        if self.headers.get('If-None-Match')=='"'+etag+'"':self.send_bytes(b'',code=304,content_type=mime,extra_headers=headers)
+                        else:self.send_bytes(data,content_type=mime,extra_headers=headers)
                 elif path == "/api/composer/surface":
                     if self.authorized():
                         query = parse_qs(urlsplit(self.path).query)
@@ -1715,6 +1859,8 @@ def make_handler(state: AgentState):
                     self.send_json(state.upload_status(self.token(),self.read_json()))
                 elif path == '/api/uploads/discard':
                     state.uploads.discard(self.token(),self.read_json().get('ids'));self.send_json({'ok':True})
+                elif path == '/api/uploads/remove':
+                    self.send_json(state.remove_upload(self.token(),self.read_json()))
                 elif path == "/api/stream/ack":
                     data = self.read_json()
                     state.acknowledge_frame(self.token(), data)
@@ -1752,7 +1898,7 @@ def make_handler(state: AgentState):
                 elif path == "/api/delivery/resolve":
                     data = self.read_json()
                     self.send_json({'ok': True, 'delivery': state.deliveries.resolve(
-                        self.token(), data.get('id'), data.get('instance', ''))})
+                        self.token(), data.get('id'), data.get('instance', ''), data.get('recovery'))})
                 elif path == "/api/action":
                     data = self.read_json()
                     self.send_json(state.perform_action(data,self.token()))

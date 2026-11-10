@@ -25,6 +25,7 @@ class RemotePolicy:
             'conversation': True,
             'nativeQueue': True,
             'composerOptions': True,
+            'composerCatalog': True,
         }
 
     def require_window(self, mode: str) -> None:
@@ -41,5 +42,5 @@ class RemotePolicy:
         self.require_window(mode)
         if data.get('kind') not in ('message', 'navigate', 'draft', 'composer', 'queue', 'window-pointer'):
             raise PolicyError('请使用 ChatGPT 窗口的画面或对话控件。')
-        if data.get('kind') == 'composer' and data.get('operation') not in ('invoke', 'dismiss'):
+        if data.get('kind') == 'composer' and data.get('operation') not in ('invoke', 'dismiss', 'catalog', 'apply-model'):
             raise PolicyError('该选项需要在电脑端完成；公网不开放原始坐标控制。')

@@ -48,6 +48,7 @@ class WgcCapture:
                 self._error = error
                 return
             with self._lock:
+                self._error = None
                 self._image = image
                 self._size = (frame.width, frame.height)
                 self._at = time.monotonic()
@@ -79,11 +80,12 @@ class WgcCapture:
         self._thread = None
 
     # -- reads -------------------------------------------------------------
-    def latest(self, max_age: float = 10.0):
+    def latest(self, max_age: float | None = None):
         with self._lock:
-            if self._image is None:
+            if self._image is None or self._error is not None:
                 return None
-            if time.monotonic() - self._at > max_age:
+            # A healthy WGC session emits no new frame for unchanged content.
+            if max_age is not None and time.monotonic() - self._at > max_age:
                 return None
             return self._image
 

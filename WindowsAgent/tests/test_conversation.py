@@ -28,6 +28,64 @@ def masked(payload, opcode=1, final=True):
 
 
 class ConversationTests(unittest.TestCase):
+    def setUp(self):
+        # Tests of UI snapshots must never read the operator's account files
+        # or make authenticated network requests.
+        catalog=Mock()
+        catalog.enrich.side_effect=lambda raw:raw
+        self.catalog_patch=patch('conversation.ModelCatalog',return_value=catalog)
+        self.catalog_patch.start()
+        self.addCleanup(self.catalog_patch.stop)
+
+    def test_model_catalog_serializes_menu_reads_with_background_polling(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import hashlib
+        reader=ConversationReader();entered=threading.Event();calls=[]
+        root={'ok':True,'identity':'chat','menu':False,'context':'','items':[
+            {'id':'model','title':'GPT Fixture','kind':'model','enabled':True}]}
+        power={'ok':True,'identity':'chat','menu':True,'context':'power','category':'model','items':[
+            {'id':'models','title':'选择模型','kind':'model-list','enabled':True}]}
+        models={'ok':True,'identity':'chat','menu':True,'context':'models','category':'model','items':[
+            {'id':'one','title':'GPT Fixture','kind':'option','enabled':True,'selected':True}]}
+        def call(**request):
+            entered.set()
+            calls.append((request['operation'], (request.get('item') or {}).get('kind')))
+            self.assertNotIn('discover',request)
+            if request['operation']=='composer':return root
+            return {'ok':True,'next':power if request['item']['kind']=='model' else models}
+        reader._call=call
+        backend=WindowsBackend.__new__(WindowsBackend);backend.lock=threading.RLock();backend.mode='window'
+        backend.tracker=SimpleNamespace(epoch=7,current_id=42)
+        backend.frozen_info_locked=lambda:{'active':False}
+        backend._resolve_target=lambda:42;backend._reader=lambda:reader
+        backend._rect=Mock(side_effect=AssertionError('catalog must not restore the target'))
+        backend._focus=Mock(side_effect=AssertionError('catalog must not activate the target'))
+        backend._key=Mock(side_effect=AssertionError('catalog must not press any keys'))
+        command={'kind':'composer','operation':'catalog','epoch':7,
+                 'conversationKey':hashlib.sha256(b'chat').hexdigest()[:24]}
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with reader.lock:
+                result=pool.submit(backend.action,command)
+                self.assertFalse(entered.wait(.05),'catalog touched the worker while a background read owned it')
+            catalog=result.result(timeout=2)
+        self.assertEqual(calls,[('composer',None),('composer_invoke','model'),('composer_invoke','model-list')])
+        self.assertEqual(catalog['catalog']['models']['items'][0]['title'],'GPT Fixture')
+        command['conversationKey']='old-chat'
+        with self.assertRaisesRegex(TargetError,'电脑对话已变化'):
+            backend.action(command)
+        self.assertEqual(calls[-1],('composer',None))
+
+    def test_composer_dismiss_reads_through_native_close_animation_without_repeating_escape(self):
+        backend=WindowsBackend.__new__(WindowsBackend)
+        backend.u32=SimpleNamespace(GetForegroundWindow=lambda:42)
+        backend._key=Mock()
+        reader=Mock()
+        reader.composer_options.side_effect=[{'key':'menu','menu':True},{'key':'root','menu':False}]
+        with patch('windows_control.time.sleep'):
+            result=backend._dismiss_composer_menu(reader,42,'menu')
+        self.assertEqual(result,{'key':'root','menu':False})
+        self.assertEqual(backend._key.call_count,2)
+
     def test_local_project_catalog_keeps_the_native_new_chat_target_private(self):
         reader=ConversationReader();reader.history=Mock()
         reader.history.resolve.return_value={'id':'existing'}
@@ -465,154 +523,103 @@ ConvertTo-Json -InputObject $r -Compress
             {'kind': 'list', 'text': '完整项目：包括粗体以外的正文'},
             {'kind': 'code', 'text': 'print("one")\nprint("two")'}])
 
-    @patch('attachments.paste_text', side_effect=AssertionError('Short text must not need the clipboard'))
-    def test_default_submission_types_once_reads_back_then_invokes_one_button(self, clipboard):
-        backend = WindowsBackend.__new__(WindowsBackend)
-        backend.lock = threading.RLock()
-        backend.mode = 'window'
-        backend.tracker = SimpleNamespace(epoch=7, current_id=123)
-        backend.frozen_info_locked = lambda: {'active': False}
-        backend._rect = lambda: (0, 0, 900, 600)
-        backend._focus = lambda _: None
-        backend.u32 = SimpleNamespace(GetForegroundWindow=lambda: 123)
-        calls = []
-        def prepare(hwnd, key, reuse_text):
-            calls.append(('prepare', hwnd, key, reuse_text))
-            return 'observed-key'
-        def submit(hwnd, key, text): calls.append(('button', hwnd, key, text))
-        reader = SimpleNamespace(prepare=prepare, submit=submit, prepared_generating=False, prepared_text_present=False,
-            confirm_input=lambda *args, **kw: calls.append(('verify', args, kw)))
-        backend._reader = lambda: reader
-        backend._key_chord = lambda *args: calls.append(('paste', args))
-        backend._unicode_text = lambda text, **kwargs: calls.append(('type', text, kwargs))
-        command = {'kind': 'message', 'text': '你好\n第二行', 'submit': True,
-                   'epoch': 7, 'conversationKey': 'observed-key'}
-        backend.action(command)
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'button'])
-        clipboard.assert_not_called()
-        self.assertEqual(calls[1][1],command['text'])
-        self.assertEqual(calls[0][3],command['text'])
-        calls.clear()
-        reader.prepared_text_present=True
-        backend.action(command)
-        self.assertEqual([call[0] for call in calls], ['prepare', 'verify', 'button'])
-        reader.prepared_text_present=False
-        calls.clear()
-        reader.prepared_generating = True
-        reader.submit = lambda *args: calls.append(('button', *args)) or {'state':'queued'}
-        result = backend.action({**command, 'submitMethod':'CTRL+ENTER'})
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'button'])
-        self.assertEqual(result, {'submission':{'state':'queued'}})
-        calls.clear()
-        reader.prepared_generating = False
-        backend.action({**command, 'submitMethod':'CTRL+ENTER'})
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify', 'type'])
-        self.assertEqual(calls[-1][1:], ('', {'submit': True, 'submit_key':'CTRL+ENTER'}))
-        calls.clear()
-        def unavailable(*_, **kwargs):
-            calls.append(('verify',))
-            raise TargetError('input changed', 'send_not_started')
-        reader.confirm_input = unavailable
-        with self.assertRaises(TargetError): backend.action(command)
-        self.assertEqual([call[0] for call in calls], ['prepare', 'type', 'verify'])
-
-    def test_long_text_changes_input_route_only_before_a_paste_was_invoked(self):
-        from attachments import ClipboardUnavailable
-        backend=WindowsBackend.__new__(WindowsBackend);backend.tracker=SimpleNamespace(current_id=123)
-        backend._focus=lambda _:None;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:123,GetOpenClipboardWindow=lambda:0)
-        calls=[];reader=SimpleNamespace(prepare=lambda *args:'key',prepared_generating=False,prepared_text_present=False,
-            confirm_input=lambda *args,**kw:calls.append('verify'),submit=lambda *args:calls.append('submit'))
-        backend._reader=lambda:reader;backend._unicode_text=lambda *args,**kw:calls.append('unicode')
-        backend._key_chord=lambda *args:calls.append('paste');command={'submit':True,'conversationKey':'key'}
-        with patch('attachments.paste_text',side_effect=ClipboardUnavailable('busy')):
-            backend._compose_message(command,'长文字'*600,'button')
-        self.assertEqual(calls,['unicode','verify','submit']);calls.clear()
-        with patch('attachments.paste_text',side_effect=lambda text,paste:paste()):
-            backend._compose_message(command,'长文字'*600,'button')
-        self.assertEqual(calls,['paste','verify','submit']);calls.clear()
-        backend.u32.GetOpenClipboardWindow=lambda:456
-        with patch('attachments.paste_text',side_effect=AssertionError('Known busy clipboard must be skipped')):
-            backend._compose_message(command,'长文字'*600,'button')
-        self.assertEqual(calls,['unicode','verify','submit']);calls.clear()
-        backend.u32.GetOpenClipboardWindow=lambda:0
-        def failed_readback(*args,**kwargs):calls.append('verify');raise ClipboardUnavailable('callback has run')
-        reader.confirm_input=failed_readback
-        with patch('attachments.paste_text',side_effect=lambda text,paste:paste()),self.assertRaises(ClipboardUnavailable):
-            backend._compose_message(command,'长文字'*600,'button')
-        self.assertEqual(calls,['paste','verify'])
-
-    def test_attachment_focus_can_be_recovered_before_the_single_paste(self):
-        backend=WindowsBackend.__new__(WindowsBackend)
-        backend.lock=threading.RLock();backend.mode='window';backend.tracker=SimpleNamespace(epoch=7)
-        backend._resolve_target=lambda:123;backend.frozen_info_locked=lambda:{'active':False}
-        foreground=[123]
-        def focus(hwnd):
-            foreground[0]=hwnd
-        def read_focus(hwnd,key):
-            if reader.attachment_focus.call_count==2:
-                foreground[0]=456
-            return {'identity':key}
-        backend._focus=focus;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:foreground[0])
-        backend._key_chord=Mock()
-        reader=SimpleNamespace(attachment_focus=Mock(side_effect=read_focus),confirm_attachments=Mock(return_value={'state':'attached'}))
-        backend._reader=lambda:reader
-        with patch('attachments.paste_files',side_effect=lambda paths,paste:paste()):
-            result=backend.attach_files([Path('phone.jpg')],'chat',7)
-        self.assertEqual(result,{'state':'attached'})
-        self.assertEqual(reader.attachment_focus.call_count,3)
-        backend._key_chord.assert_called_once_with(0x11,0x56)
-        reader.confirm_attachments.assert_called_once_with(123,{'identity':'chat'},['phone.jpg'])
-
-    def test_focus_is_recovered_only_before_input_and_rechecks_the_empty_draft(self):
-        backend=WindowsBackend.__new__(WindowsBackend);backend.tracker=SimpleNamespace(current_id=123)
-        current=[123];calls=[]
-        def focus(hwnd):current[0]=hwnd;calls.append('focus')
-        def prepare(*args):
-            calls.append('prepare')
-            if calls.count('prepare')==1:current[0]=456
-            return 'key'
-        backend._focus=focus;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:current[0])
-        reader=SimpleNamespace(prepare=prepare,prepared_generating=False,prepared_text_present=False,
-            confirm_input=lambda *args,**kw:calls.append('verify'),submit=lambda *args:calls.append('submit'))
-        backend._reader=lambda:reader;backend._unicode_text=lambda *args,**kw:calls.append('input')
-        command={'submit':True,'conversationKey':'key'}
-        backend._compose_message(command,'继续','button')
-        self.assertEqual(calls,['focus','prepare','focus','prepare','input','verify','submit'])
-        calls.clear()
-        def changed(*args):
-            result=prepare(*args)
-            if calls.count('prepare')==2:raise TargetError('draft changed')
-            return result
-        reader.prepare=changed
-        with self.assertRaises(TargetError):backend._compose_message(command,'继续','button')
-        self.assertNotIn('input',calls);self.assertNotIn('submit',calls)
-
-    @patch('attachments.paste_text', side_effect=lambda text, paste: paste())
-    def test_windows_replace_clears_prepares_types_and_submits_under_one_lock(self, clipboard):
+    def test_direct_send_binds_the_editor_and_never_injects_desktop_input(self):
         backend=WindowsBackend.__new__(WindowsBackend)
         backend.lock=threading.RLock();backend.mode='window'
         backend.tracker=SimpleNamespace(epoch=7,current_id=123)
         backend.frozen_info_locked=lambda:{'active':False}
         backend._rect=lambda:(0,0,900,600)
-        backend._focus=lambda _:None
+        backend._focus=Mock(side_effect=AssertionError('Direct send must not take focus'))
+        backend.u32=SimpleNamespace(GetForegroundWindow=lambda:123)
+        backend._unicode_text=Mock(side_effect=AssertionError('No system keyboard text'))
+        backend._key_chord=Mock(side_effect=AssertionError('No system clipboard paste'))
+        reader=SimpleNamespace(fill_input=Mock(),submit=Mock(return_value={'state':'sent'}))
+        backend._reader=lambda:reader
+        for method,text in [('button','你好\n第二行'),('CTRL+ENTER','1. first\n2. second'),('ENTER','长文本'*500),('button','')]:
+            reader.fill_input.reset_mock();reader.submit.reset_mock()
+            result=backend.action({'kind':'message','text':text,'submit':True,'attachmentsOnly':not text,
+                'epoch':7,'conversationKey':'observed-key','submitMethod':method})
+            reader.fill_input.assert_called_once_with(123,'observed-key',text,submit=True)
+            reader.submit.assert_called_once_with(123,'observed-key',text)
+            self.assertEqual(result,{'submission':{'state':'sent'}})
+        reader.fill_input.side_effect=TargetError('different draft','draft_exists')
+        reader.submit.reset_mock()
+        with self.assertRaises(TargetError):
+            backend.action({'kind':'message','text':'new','submit':True,'epoch':7,'conversationKey':'observed-key'})
+        reader.submit.assert_not_called()
+
+    def test_replacement_and_fill_are_serialized_under_the_window_lock(self):
+        backend=WindowsBackend.__new__(WindowsBackend)
+        backend.lock=threading.RLock();backend.mode='window'
+        backend.tracker=SimpleNamespace(epoch=7,current_id=123)
+        backend.frozen_info_locked=lambda:{'active':False};backend._rect=lambda:(0,0,900,600)
         backend.u32=SimpleNamespace(GetForegroundWindow=lambda:123)
         calls=[]
         def record(kind,*args,**kwargs):
-            self.assertTrue(backend.lock._is_owned())
-            calls.append((kind,args,kwargs))
-            return 'observed-key'
-        backend._reader=lambda:SimpleNamespace(clear_draft=lambda *args,**kw:record('clear',*args,**kw),
-            prepare=lambda *args:record('prepare',*args),submit=lambda *args:record('submit',*args),
-            confirm_input=lambda *args,**kw:record('verify',*args,**kw),prepared_generating=False,prepared_text_present=False)
-        backend._key_chord=lambda *args:record('paste',*args)
-        backend._unicode_text=lambda *args,**kw:record('type',*args,**kw)
-        command={'kind':'message','text':'Mobile replacement','submit':True,'epoch':7,
-            'conversationKey':'observed-key','draftRevision':'observed-draft'}
-        backend.action(command)
-        self.assertEqual([c[0] for c in calls],['clear','prepare','type','verify','submit'])
-        clipboard.assert_not_called()
-        self.assertEqual(calls[0][1],(123,'observed-key','observed-draft'))
-        self.assertEqual(calls[0][2],{'for_send':True})
+            self.assertTrue(backend.lock._is_owned());calls.append((kind,args,kwargs))
+        reader=SimpleNamespace(clear_draft=lambda *a,**kw:record('clear',*a,**kw),
+            fill_input=lambda *a,**kw:record('fill',*a,**kw),submit=lambda *a:record('submit',*a))
+        backend._reader=lambda:reader
+        backend.action({'kind':'message','text':'replacement','submit':True,'epoch':7,
+            'conversationKey':'chat','draftRevision':'seen'})
+        self.assertEqual([row[0] for row in calls],['clear','fill','submit'])
+        self.assertEqual(calls[0][2],{'for_send':True,'replacement_text':'replacement'})
+
+    def test_direct_fill_stops_while_the_user_is_typing_in_another_window(self):
+        backend=WindowsBackend.__new__(WindowsBackend)
+        backend.tracker=SimpleNamespace(current_id=123)
+        backend.u32=SimpleNamespace(GetForegroundWindow=lambda:456)
+        backend._local_input_recent=lambda:True
+        reader=SimpleNamespace(fill_input=Mock(),submit=Mock());backend._reader=lambda:reader
+        with self.assertRaises(TargetError) as raised:
+            backend._compose_message({'conversationKey':'chat','submit':True},'phone','button')
+        self.assertEqual(raised.exception.code,'local_input_active')
+        reader.fill_input.assert_not_called();reader.submit.assert_not_called()
+
+    def test_attachment_focus_loss_does_not_recapture_foreground_or_paste(self):
+        backend=WindowsBackend.__new__(WindowsBackend)
+        backend.lock=threading.RLock();backend.mode='window';backend.tracker=SimpleNamespace(epoch=7)
+        backend._resolve_target=lambda:123;backend.frozen_info_locked=lambda:{'active':False}
+        foreground=[123]
+        backend._focus=Mock()
+        def read_focus(hwnd,key):
+            if reader.attachment_focus.call_count==2:foreground[0]=456
+            return {'identity':key}
+        reader=SimpleNamespace(attachment_focus=Mock(side_effect=read_focus),confirm_attachments=Mock())
+        backend._reader=lambda:reader;backend.u32=SimpleNamespace(GetForegroundWindow=lambda:foreground[0])
+        backend._key_chord=Mock()
+        with patch('attachments.paste_files',side_effect=lambda paths,paste:paste()):
+            with self.assertRaises(TargetError) as raised:backend.attach_files([Path('phone.jpg')],'chat',7)
+        self.assertEqual(raised.exception.code,'attachment_not_started')
+        backend._key_chord.assert_not_called();reader.confirm_attachments.assert_not_called()
+        self.assertEqual(reader.attachment_focus.call_count,2)
+
+    def test_fill_rejects_changed_conversation_and_reads_native_errors(self):
+        reader=ConversationReader();identity='stable';key=parse_snapshot({'identity':identity})['key'];calls=[]
+        def call(**request):
+            calls.append(request)
+            if request['operation']=='identity':return {'ok':True,'identity':identity}
+            return {'ok':False,'reason':'draft exists'}
+        reader._call=call
+        with self.assertRaises(TargetError) as raised:reader.fill_input(123,key,'phone',True)
+        self.assertEqual(raised.exception.code,'draft_exists')
+        self.assertEqual([r['operation'] for r in calls],['identity','fill'])
+        calls.clear()
+        with self.assertRaises(TargetError):reader.fill_input(123,'other','phone',True)
+        self.assertNotIn('fill',[r['operation'] for r in calls])
+
+    def test_identical_recovered_draft_can_send_without_clearing_a_stale_revision(self):
+        reader=ConversationReader();operations=[]
+        raw={'ok':True,'identity':'stable','text':'a\u00a0b\r\n第二行\n'}
+        def call(**request):
+            operations.append(request['operation'])
+            return raw
+        reader._call=call
+        key=draft_snapshot(raw)['conversationKey']
+        reader.clear_draft(123,key,'old-revision',for_send=True,replacement_text='a b\n第二行')
+        self.assertEqual(operations,['draft'])
+        with self.assertRaises(TargetError):
+            reader.clear_draft(123,key,'old-revision',for_send=True,replacement_text='不同内容')
 
     def test_delta_sends_changes_and_resets_on_conversation_or_epoch_switch(self):
         one = {'key': 'a', 'epoch': 2, 'revision': '1', 'messages': [

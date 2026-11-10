@@ -16,6 +16,7 @@ import io
 import math
 import ntpath
 import os
+import re
 import sys
 import threading
 import time
@@ -47,6 +48,7 @@ SRCCOPY = 0x00CC0020
 CAPTUREBLT = 0x40000000
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 SW_RESTORE = 9
+SW_SHOWNOACTIVATE = 4
 VK_MENU = 0x12
 SM_XVIRTUALSCREEN = 76
 SM_YVIRTUALSCREEN = 77
@@ -104,6 +106,10 @@ def window_matches(title: str, exe_path: str, *, custom_keywords: bool,
     return exe in _BROWSER_EXES and title_hit
 
 _ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [('cbSize', wintypes.UINT), ('dwTime', wintypes.DWORD)]
 
 
 class _MOUSEINPUT(ctypes.Structure):
@@ -485,8 +491,6 @@ class WindowsBackend:
             raise TargetError("ChatGPT 窗口已退出或正在重新登录；正在等待重新发现（无需重新配对）")
         if not self.u32.IsWindowVisible(hwnd):
             raise TargetError("目标窗口当前不可见，请在电脑上恢复它")
-        if self.u32.IsIconic(hwnd):
-            raise TargetError("目标窗口已最小化，请在电脑上将它恢复")
         if self.dwm is not None:
             cloaked = wintypes.DWORD(0)
             hr = self.dwm.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED,
@@ -510,11 +514,30 @@ class WindowsBackend:
             if self.mode == "desktop":
                 return self._virtual_screen_rect()
             target = self._resolve_target()
+            self._restore_window(target)
             _, visible = self._window_rects(target)
             x, y, w, h = visible
             if w < 80 or h < 80 or w * h > 25_000_000:
                 raise TargetError("目标窗口尺寸无效或过大")
             return x, y, w, h
+
+    def _restore_window(self, hwnd: int) -> None:
+        if not self.u32.IsIconic(hwnd):
+            return
+        # Restore only the selected target when an action or picture needs it.
+        # ShowWindow returns before Chromium/DWM finishes restoring geometry.
+        self.u32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+        deadline = time.monotonic() + 1.2
+        while True:
+            if not self.u32.IsWindow(hwnd):
+                raise TargetError("ChatGPT 窗口已退出；正在等待重新发现（无需重新配对）")
+            if not self.u32.IsIconic(hwnd):
+                _, visible = self._window_rects(hwnd)
+                if visible[2] >= 80 and visible[3] >= 80:
+                    return
+            if time.monotonic() >= deadline:
+                raise TargetError("电脑窗口正在恢复，请稍后重试")
+            time.sleep(.02)
 
     # -- capture -----------------------------------------------------------
     def _dib_to_image(self, mem_dc: int, bitmap: int, width: int, height: int):
@@ -617,23 +640,26 @@ class WindowsBackend:
             return None
         size = self._wgc.frame_size()
         full, visible = self._window_rects(hwnd)
-        width, height = full[2] - full[0], full[3] - full[1]
-        if size and width > 0 and abs(size[0] - width) > max(48, width * 0.05):
+        width, height = full[2], full[3]
+        if size and width > 0 and height > 0 and (abs(size[0] - width) > max(48, width * 0.05) or
+                                                  abs(size[1] - height) > max(48, height * 0.05)):
             return None
-        vw, vh = visible[2] - visible[0], visible[3] - visible[1]
+        vw, vh = visible[2], visible[3]
         if width > 0 and height > 0 and vw >= 80 and vh >= 80:
             scale = image.width / width
             left = max(0, round((visible[0] - full[0]) * scale))
             top = max(0, round((visible[1] - full[1]) * scale))
-            right = min(image.width, round((visible[2] - full[0]) * scale))
-            bottom = min(image.height, round((visible[3] - full[1]) * scale))
+            right = min(image.width, round((visible[0] + vw - full[0]) * scale))
+            bottom = min(image.height, round((visible[1] + vh - full[1]) * scale))
             if right - left >= 80 and bottom - top >= 80:
                 image = image.crop((left, top, right, bottom))
         self.last_capture_method = "wgc"
         image.info["rm_capture_method"] = "wgc"
+        image.info["rm_capture_rect"] = visible
         return image
 
     def _grab_window(self, hwnd: int, max_width: int = 1280):
+        self._restore_window(hwnd)
         captured = self._wgc_frame(hwnd, max_width)
         if captured is not None:
             return captured
@@ -733,7 +759,7 @@ class WindowsBackend:
                     "captured_ms": captured_ms, "method": capture_method,
                     "width": image.width, "height": image.height,
                     "pointer_target": (target, image.info["rm_capture_rect"])
-                    if capture_method == "printwindow" and "rm_capture_rect" in image.info else None}
+                    if capture_method in ("printwindow", "wgc") and "rm_capture_rect" in image.info else None}
 
     def capture(self) -> bytes:  # compatibility helper
         return self.capture_meta()["jpeg"]
@@ -815,12 +841,19 @@ class WindowsBackend:
             target = self._resolve_target()
             epoch = self.tracker.epoch
             reader = self._reader()
-        result = reader.read(target)
+        result=reader.read_minimized(target) if self.u32.IsIconic(target) else None
+        if result is None:
+            self._restore_window(target)
+            result=reader.read(target)
         with self.lock:
             if self.mode != "window" or self.tracker.epoch != epoch or self.tracker.current_id != target:
                 raise TargetError("目标窗口已经变化，正在同步对话", "conversation_changed")
             return {**result, "epoch": epoch, "frozen": self.frozen_info_locked(),
                     "status": self.tracker.status, "mode": self.mode}
+
+    def message_resource(self, ident: str, variant: str = 'original'):
+        with self.lock:reader=self._reader()
+        return reader.history.resources.read(ident,variant)
 
     def navigation(self) -> dict[str, Any]:
         with self.lock:
@@ -919,10 +952,8 @@ class WindowsBackend:
                     nonlocal invoked
                     self._focus(target)
                     before=reader.attachment_focus(target,conversation_key)
-                    if int(self.u32.GetForegroundWindow() or 0)!=target:
-                        self._focus(target)
-                        before=reader.attachment_focus(target,conversation_key)
                     if int(self.u32.GetForegroundWindow() or 0)!=target:raise TargetError('电脑焦点已变化，文件尚未附加')
+                    before['expectedNames']=[path.name for path in paths]
                     invoked=True
                     self._key_chord(0x11,0x56)
                     try:return reader.confirm_attachments(target,before,[path.name for path in paths])
@@ -934,11 +965,27 @@ class WindowsBackend:
                 if not invoked:exc.code='attachment_not_started'
                 raise
 
-    def attached_files_ready(self, before: dict, count: int, epoch: int) -> bool:
+    def attached_files_ready(self, before: dict, count: int, epoch: int) -> dict | None:
         with self.lock:
             if self.mode!='window' or epoch!=self.tracker.epoch:raise TargetError('电脑窗口已切换，请返回附加文件的窗口','attachment_context_changed')
             target=self._resolve_target()
             return self._reader().attachments_ready(target,before,count)
+
+    def remove_file(self, conversation_key: str, epoch: int, reference: dict, verification: dict | None = None) -> None:
+        with self.lock:
+            if self.frozen_info_locked()['active']:
+                raise TargetError('操作已冻结，请解冻后移除附件。')
+            if self.mode != 'window' or epoch != self.tracker.epoch:
+                raise TargetError('电脑窗口已变化，请返回附件所属对话。', 'attachment_context_changed')
+            target = self._resolve_target()
+            self._restore_window(target)
+            self._reader().remove_attachment(target, conversation_key, reference, verification)
+
+    def files_present(self, conversation_key: str, epoch: int, references: list[dict]) -> bool:
+        with self.lock:
+            if self.mode != 'window' or epoch != self.tracker.epoch:
+                raise TargetError('电脑窗口已变化。', 'attachment_context_changed')
+            return self._reader().files_present(self._resolve_target(), conversation_key, references)
 
     def _focus(self, hwnd: int) -> None:
         if self.mode == "desktop":
@@ -946,8 +993,9 @@ class WindowsBackend:
         fg = int(self.u32.GetForegroundWindow() or 0)
         if fg == hwnd:
             return
-        if self.u32.IsIconic(hwnd):
-            self.u32.ShowWindow(hwnd, SW_RESTORE)
+        if self._local_input_recent():
+            raise TargetError('电脑正在操作其他窗口，请稍后重试。', 'local_input_active')
+        self._restore_window(hwnd)
         self.u32.SetForegroundWindow(hwnd)
         if int(self.u32.GetForegroundWindow() or 0) == hwnd:
             return
@@ -975,6 +1023,263 @@ class WindowsBackend:
                 self.u32.AttachThreadInput(current_thread, fg_thread, False)
         if int(self.u32.GetForegroundWindow() or 0) != hwnd:
             raise TargetError("Windows 拒绝切换窗口焦点；请先在电脑上点一下 ChatGPT 再操作")
+
+    def _local_input_recent(self) -> bool:
+        function = getattr(self.u32, 'GetLastInputInfo', None)
+        if function is None:
+            return False
+        info = _LASTINPUTINFO(ctypes.sizeof(_LASTINPUTINFO), 0)
+        if not function(ctypes.byref(info)):
+            return True
+        self.k32.GetTickCount.restype = wintypes.DWORD
+        return ((self.k32.GetTickCount() - info.dwTime) & 0xffffffff) < 2000
+
+    def _dismiss_composer_menu(self, reader, hwnd: int, previous_key: str) -> dict:
+        if int(self.u32.GetForegroundWindow() or 0) != hwnd:
+            raise TargetError("电脑焦点已变化，请刷新选项")
+        self._key(0x1B, True)
+        self._key(0x1B, False)
+        deadline = time.monotonic() + .55
+        while True:
+            time.sleep(.08)
+            options = reader.composer_options(hwnd)
+            if not options['menu'] or options['key'] != previous_key or time.monotonic() >= deadline:
+                return options
+
+    def _composer_catalog(self, hwnd: int, conversation_key: str) -> dict:
+        reader = self._reader()
+
+        def scoped(snapshot):
+            if snapshot['scope'] != conversation_key:
+                raise TargetError('电脑对话已变化，请重新读取。', 'conversation_changed')
+            return {**snapshot, 'epoch': self.tracker.epoch}
+
+        def open_menu(snapshot, item):
+            # The only actions here open native menus. Selection and keyboard
+            # input belong to an explicit user action outside discovery.
+            reply = reader.composer_action(hwnd, snapshot['key'], item['id'], refresh=True)
+            return scoped(reply['options'])
+
+        with reader.lock:
+            root = scoped(reader.composer_options(hwnd))
+            if root.get('prompt'):
+                return {'options': root}
+            if root['menu']:
+                if root['category'] != 'model' and not any(
+                        item['kind'] in ('power-step', 'model-list') for item in root['items']):
+                    raise TargetError('请先收起电脑上的其他菜单')
+                power = root
+            else:
+                controls = [item for item in root['items'] if item['kind'] == 'model' and item['enabled']]
+                if len(controls) != 1:
+                    raise TargetError('暂时无法读取模型入口')
+                power = open_menu(root, controls[0])
+                if power.get('prompt'):
+                    return {'options': power}
+                if not power['menu']:
+                    raise TargetError('电脑模型菜单未打开，请重新读取')
+            model_lists = [item for item in power['items'] if item['kind'] == 'model-list' and item['enabled']]
+            models = open_menu(power, model_lists[0]) if len(model_lists) == 1 else power
+            if models.get('prompt'):
+                return {'options': models}
+            data = None
+            if not power.get('modelState') and reader.last_model_power:
+                from model_catalog import CatalogUnavailable
+
+                last_hwnd, last_scope, owner, observed = reader.last_model_power
+                if (last_hwnd, last_scope) == (hwnd, conversation_key):
+                    try:
+                        data = reader.model_catalog.read()
+                    except CatalogUnavailable:
+                        pass
+                    if data and data['owner'] == owner:
+                        # The model list hides the slider. Recheck the last
+                        # observed value against fresh native state on Apply.
+                        power = scoped(observed)
+            return self._model_catalog_result(reader, hwnd, root, power, models, data)
+
+    def _model_catalog_result(self, reader, hwnd, root, power, models, data=None):
+        from model_catalog import CatalogUnavailable
+
+        catalog = {'root': root, 'power': power, 'models': models}
+        result = {'options': models, 'catalog': catalog}
+        if not power.get('modelState'):
+            return result
+        try:
+            data = data or reader.model_catalog.read()
+        except CatalogUnavailable:
+            return result
+        current = power['modelState']
+        native_title = root.get('rootModel')
+        native_model = reader.model_catalog.model_key(native_title, data['titles'], announcement=True) if native_title else None
+        if current.get('verified'):
+            profile = reader.model_catalog.profiles(data, current['locale']).get(current['model'], [])
+            observed = [item['effortKey'] for item in power['items'] if item.get('effortKey')]
+            if observed != [level['key'] for level in profile]:
+                return {'options': models, 'catalog': {**catalog, 'power': {**power, 'items': [
+                    item for item in power['items'] if item['kind'] != 'power-step']}}}
+        if current['mode'] == data['mode'] and (not native_model or native_model == current['model']):
+            catalog['selection'] = reader.remember_model_picker(hwnd, self.tracker.epoch, power, models, data)
+        return result
+
+    def _apply_model_picker(self, hwnd: int, command: dict) -> dict:
+        from model_catalog import CatalogUnavailable
+
+        reader = self._reader()
+        epoch = self.tracker.epoch
+        with reader.lock:
+            picker = reader.take_model_picker(hwnd, epoch, command['optionsKey'])
+            saved = picker['current']
+            desired_model = command.get('model') or saved['model']
+            desired_effort = command.get('effort')
+            desired_quick = command.get('quick')
+            if command.get('model') and desired_model not in picker['models']:
+                raise TargetError('这个模型不在已读取的列表中', 'model_options_changed')
+            try:
+                data = reader.model_catalog.read(force=True)
+            except CatalogUnavailable as error:
+                raise TargetError(str(error), 'model_options_changed') from None
+            profiles = reader.model_catalog.profiles(data, saved['locale'])
+            if (data['owner'] != picker['owner'] or data['mode'] != saved['mode'] or
+                    profiles.get(desired_model) != picker['profiles'].get(desired_model)):
+                raise TargetError('账号或可用档位已变化，请重新读取', 'model_options_changed')
+            if desired_effort and not any(level['key'] == desired_effort for level in profiles.get(desired_model, [])):
+                raise TargetError('这个模型没有所选思考档位', 'model_effort_unavailable')
+
+            def scoped(snapshot):
+                if snapshot['scope'] != picker['scope'] or self.tracker.epoch != epoch:
+                    raise TargetError('电脑对话已变化，请重新读取', 'conversation_changed')
+                return {**snapshot, 'epoch': epoch}
+
+            def read():
+                return scoped(reader.composer_options(hwnd))
+
+            def find(snapshot, predicate):
+                items = [item for item in snapshot['items'] if predicate(item)]
+                return items[0] if len(items) == 1 else None
+
+            def invoke(snapshot, item, *, prechecked=False):
+                if not item or not item['enabled']:
+                    raise TargetError('这个电脑选项当前不可用', 'model_options_changed')
+                try:
+                    owner = reader.model_catalog.account().owner
+                except CatalogUnavailable as error:
+                    raise TargetError(str(error), 'model_options_changed') from None
+                if owner != picker['owner']:
+                    raise TargetError('电脑账号已变化，请重新读取', 'model_options_changed')
+                try:
+                    result = reader.composer_action(hwnd, snapshot['key'], item['id'], refresh=True,
+                                                    prechecked_power=prechecked)
+                except TargetError as error:
+                    if error.code != 'composer_stale':
+                        raise
+                    fresh = read()
+                    old_state = snapshot.get('modelState')
+                    if fresh.get('prompt') or (old_state and any(
+                            fresh.get('modelState', {}).get(field) != old_state.get(field)
+                            for field in ('model', 'effort', 'mode'))):
+                        raise TargetError('电脑选择已变化，请重新读取', 'model_options_changed') from None
+                    fields = ('kind', 'title', 'selected', 'level', 'currentLevel', 'levelCount', 'effortKey', 'modelKey')
+                    rebound = find(fresh, lambda entry: all(entry.get(field) == item.get(field) for field in fields))
+                    if not rebound or not rebound['enabled']:
+                        raise TargetError('这个电脑选项已变化，请重新读取', 'model_options_changed') from None
+                    result = reader.composer_action(hwnd, fresh['key'], rebound['id'], refresh=True,
+                                                    prechecked_power=prechecked)
+                return scoped(result['options']) if 'options' in result else read()
+
+            def power_view(snapshot):
+                if snapshot.get('prompt') or any(item['kind'] == 'power-step' for item in snapshot['items']):
+                    return snapshot
+                if snapshot['menu']:
+                    if snapshot['category'] != 'model' and not any(item.get('modelKey') for item in snapshot['items']):
+                        raise TargetError('请先收起电脑上的其他菜单', 'model_options_changed')
+                    result = reader.composer_action(hwnd, snapshot['key'], None, dismiss=True, refresh=True)
+                    if not result.get('escape'):
+                        raise TargetError('暂时无法返回思考档位', 'model_options_changed')
+                    snapshot = scoped(self._dismiss_composer_menu(reader, hwnd, snapshot['key']))
+                    if snapshot.get('prompt') or any(item['kind'] == 'power-step' for item in snapshot['items']):
+                        return snapshot
+                trigger = find(snapshot, lambda item: item['kind'] == 'model') if not snapshot['menu'] else None
+                if not trigger:
+                    raise TargetError('暂时无法读取思考档位', 'model_options_changed')
+                return invoke(snapshot, trigger)
+
+            def prompt_result(snapshot):
+                return {'options': snapshot, 'modelApply': {'state': 'prompt'}}
+
+            # Only the explicit Apply request activates the computer window.
+            snapshot = read()
+            if snapshot.get('prompt'):
+                return prompt_result(snapshot)
+            self._focus(hwnd)
+            power = power_view(read())
+            if power.get('prompt'):
+                return prompt_result(power)
+            current = power.get('modelState', {})
+            if any(current.get(field) != saved.get(field) for field in ('model', 'effort', 'mode')):
+                raise TargetError('电脑模型或档位已变化，请重新读取', 'model_options_changed')
+
+            model_changed = False
+            try:
+                if command.get('model') and (desired_model != current['model'] or current['mode'] != 'model'):
+                    model_list = find(power, lambda item: item['kind'] == 'model-list')
+                    models = invoke(power, model_list)
+                    if models.get('prompt'):
+                        return prompt_result(models)
+                    item = find(models, lambda item: item.get('modelKey') == desired_model)
+                    next_options = invoke(models, item)
+                    power = power_view(next_options)
+                    if power.get('prompt'):
+                        return prompt_result(power)
+                    # The renderer can switch to the simple view before its
+                    # selected model and account mode finish updating.
+                    for _ in range(5):
+                        current = power.get('modelState', {})
+                        if current.get('model') == desired_model and current.get('mode') == 'model':
+                            break
+                        time.sleep(.08)
+                        power = read()
+                        if power.get('prompt'):
+                            return prompt_result(power)
+                    else:
+                        raise TargetError('电脑尚未确认模型切换，请重新读取', 'composer_pending')
+                    model_changed = True
+
+                if desired_effort and current.get('effort') != desired_effort:
+                    choice = find(power, lambda item: item.get('effortKey') == desired_effort)
+                    power = invoke(power, choice, prechecked=True)
+                    if power.get('prompt'):
+                        return prompt_result(power)
+                    power = power_view(power)
+                    if power.get('prompt'):
+                        return prompt_result(power)
+                    current = power.get('modelState', {})
+                if desired_effort and (current.get('model') != desired_model or current.get('effort') != desired_effort or not current.get('verified')):
+                    raise TargetError('电脑尚未确认所选档位，请重新读取', 'composer_pending')
+                if desired_quick is not None:
+                    choice = find(power, lambda item: item['kind'] == 'quick')
+                    if not choice:
+                        raise TargetError('电脑当前未提供快速模式', 'model_options_changed')
+                    if choice['selected'] != desired_quick:
+                        power = invoke(power, choice)
+                        if power.get('prompt'):
+                            return prompt_result(power)
+                        after = find(power, lambda item: item['kind'] == 'quick')
+                        if not after or after['selected'] != desired_quick:
+                            raise TargetError('电脑尚未确认快速模式，请重新读取', 'composer_pending')
+            except TargetError as error:
+                if model_changed:
+                    raise TargetError(f"模型已切换到 {data['titles'][desired_model]}。{error}", 'model_partially_applied') from None
+                raise
+
+            result = self._composer_catalog(hwnd, picker['scope'])
+            if result['options'].get('prompt'):
+                return prompt_result(result['options'])
+            confirmed = result['catalog']['power'].get('modelState', {})
+            if confirmed.get('model') != desired_model or (desired_effort and confirmed.get('effort') != desired_effort):
+                raise TargetError('电脑选择结果待确认，请重新读取', 'composer_pending')
+            result['modelApply'] = {'state': 'applied', 'model': confirmed['model'], 'effort': confirmed.get('effort')}
+            return result
 
     def _post_window_pointer(self, hwnd: int, rect: tuple, command: dict) -> None:
         if self.mode != 'window' or command.get('pointer_target') != (hwnd, rect):
@@ -1014,7 +1319,15 @@ class WindowsBackend:
         if kind == "navigate" and (not isinstance(command.get("navigationKey"), str)
                 or not isinstance(command.get("targetId"), str) or type(command.get("expanded", True)) is not bool):
             raise InputError("项目与对话选择参数无效")
-        if kind == "composer" and (command.get("operation") not in ("invoke", "dismiss", "tap")
+        if kind == 'composer' and command.get('operation')=='catalog' and not isinstance(command.get('conversationKey'),str):
+            raise InputError('缺少当前对话标识')
+        if kind == 'composer' and command.get('operation') == 'apply-model':
+            if (not isinstance(command.get('optionsKey'), str) or not re.fullmatch(r'[a-f0-9]{32}', command['optionsKey']) or
+                    not any(field in command for field in ('model', 'effort', 'quick')) or
+                    any(field in command and (not isinstance(command[field], str) or not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,99}', command[field]))
+                        for field in ('model', 'effort')) or ('quick' in command and type(command['quick']) is not bool)):
+                raise InputError('模型选项参数无效，请重新读取')
+        if kind == "composer" and command.get('operation') not in ('catalog', 'apply-model') and (command.get("operation") not in ("invoke", "dismiss", "tap")
                 or not isinstance(command.get("optionsKey"), str) or not command["optionsKey"]
                 or (command.get("operation") != "dismiss" and not isinstance(command.get("targetId"), str))):
             raise InputError("对话选项参数无效，请刷新后重新选择")
@@ -1039,6 +1352,15 @@ class WindowsBackend:
             if self.frozen_info_locked()["active"]:
                 reason = self.frozen_info_locked()["reason"]
                 raise TargetError(f"输入已冻结（{reason}），请先解冻")
+            if kind == 'composer' and command['operation'] in ('catalog', 'apply-model'):
+                if self.mode != 'window':
+                    raise TargetError('请返回窗口模式后查看对话选项')
+                hwnd = self._resolve_target()
+                if command['epoch'] != self.tracker.epoch:
+                    raise TargetError('目标窗口已经变化，请刷新后重试')
+                if command['operation'] == 'apply-model':
+                    return self._apply_model_picker(hwnd, command)
+                return self._composer_catalog(hwnd, command['conversationKey'])
             x, y, w, h = self._rect()
             if command.get("epoch") != self.tracker.epoch:
                 raise TargetError("目标窗口已经变化，已阻止旧指令；请刷新画面后重试")
@@ -1057,7 +1379,9 @@ class WindowsBackend:
             if kind == "composer":
                 if self.mode != "window":
                     raise TargetError("请返回窗口模式后调整对话选项")
-                self._focus(self.tracker.current_id)
+                hwnd = self.tracker.current_id
+                self._focus(hwnd)
+                reader = self._reader()
                 if command['operation'] == 'tap':
                     r = self._reader().composer_surface(self.tracker.current_id, command['optionsKey'], command['targetId'], consume=True)['rect']
                     if not (all(isinstance(r.get(k), (int, float)) and math.isfinite(r[k]) for k in ('x','y','width','height'))
@@ -1070,14 +1394,11 @@ class WindowsBackend:
                         raise Win32Error('Windows 拒绝移动鼠标')
                     self._mouse_input(MOUSEEVENTF_LEFTDOWN);self._mouse_input(MOUSEEVENTF_LEFTUP)
                     return
-                result = self._reader().composer_action(self.tracker.current_id, command["optionsKey"],
-                    command.get("targetId"), dismiss=command["operation"] == "dismiss", refresh=True)
-                if result.get('escape'):
-                    if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
-                        raise TargetError("电脑焦点已变化，请刷新选项")
-                    self._key(0x1B, True)
-                    self._key(0x1B, False)
-                    result['options'] = self._reader().composer_options(self.tracker.current_id)
+                with reader.lock:
+                    result = reader.composer_action(hwnd, command["optionsKey"],
+                        command.get("targetId"), dismiss=command["operation"] == "dismiss", refresh=True)
+                    if result.get('escape'):
+                        result['options'] = self._dismiss_composer_menu(reader,hwnd,command["optionsKey"])
                 return {"options": {**result['options'], 'epoch': self.tracker.epoch}} if 'options' in result else None
             if kind == "navigate":
                 if self.mode != "window":
@@ -1103,7 +1424,8 @@ class WindowsBackend:
                     raise TargetError("请返回窗口模式后发送消息")
                 if command.get("draftRevision"):
                     self._reader().clear_draft(self.tracker.current_id, command["conversationKey"],
-                                               command["draftRevision"], for_send=command.get("submit", False))
+                                               command["draftRevision"], for_send=command.get("submit", False),
+                                               replacement_text=text if kind == 'message' else None)
                 return self._compose_message(command, text, submit_method)
             elif self.mode != "desktop":
                 self._focus(self.tracker.current_id)
@@ -1154,50 +1476,14 @@ class WindowsBackend:
                 raise InputError("不支持的操作")
 
     def _compose_message(self, command: dict, text: str, submit_method: str):
-        def enter_text(use_clipboard=False):
-            self._focus(self.tracker.current_id)
-            reader = self._reader()
-            reuse_text = text if text and command.get("submit") else None
-            key = reader.prepare(self.tracker.current_id, command.get("conversationKey"), reuse_text)
-            already_present = reader.prepared_text_present is True
-            if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
-                # Focusing an accessibility control can move the foreground.
-                # No text has been entered: restore once and recheck both the
-                # conversation and composer before taking any input action.
-                self._focus(self.tracker.current_id)
-                key=reader.prepare(self.tracker.current_id,key,reuse_text)
-                if already_present and reader.prepared_text_present is not True:
-                    raise TargetError("电脑草稿已变化，手机草稿已保留", "send_not_started")
-                if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
-                    raise TargetError("电脑焦点已变化，手机草稿已保留")
-            if text:
-                if reader.prepared_text_present is not True:
-                    if use_clipboard:self._key_chord(0x11, 0x56)
-                    else:self._unicode_text(text)
-                reader.confirm_input(self.tracker.current_id, key, text, submit=command.get("submit", False))
-            if not command.get("submit"):
-                return
-            if submit_method == "button" or reader.prepared_generating or command.get('attachmentsOnly'):
-                return {"submission": reader.submit(self.tracker.current_id, key, text)}
-            if int(self.u32.GetForegroundWindow() or 0) != self.tracker.current_id:
-                raise TargetError("电脑焦点已变化，手机草稿已保留")
-            try:
-                self._unicode_text("", submit=True, submit_key=submit_method)
-            except (TargetError, Win32Error):
-                raise TargetError('正在确认发送', 'send_pending') from None
-        if len(text)>1024 and not self.u32.GetOpenClipboardWindow():
-            from attachments import ClipboardUnavailable, paste_text
-            invoked=False
-            def paste_once():
-                nonlocal invoked
-                invoked=True
-                return enter_text(True)
-            try:return paste_text(text,paste_once)
-            except ClipboardUnavailable:
-                if invoked:raise
-                # No input has occurred. Use one native Unicode input batch.
-                return enter_text()
-        return enter_text()
+        reader = self._reader()
+        target = self.tracker.current_id
+        key = command.get('conversationKey')
+        if int(self.u32.GetForegroundWindow() or 0) != target and self._local_input_recent():
+            raise TargetError('电脑正在输入，消息未发送，请稍后重试。', 'local_input_active')
+        reader.fill_input(target, key, text, submit=command.get('submit', False))
+        if command.get('submit'):
+            return {'submission': reader.submit(target, key, text)}
 
     def _send(self, inp: _INPUT) -> None:
         result = self.u32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))

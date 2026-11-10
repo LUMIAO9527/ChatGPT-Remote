@@ -33,8 +33,42 @@ class UploadStore:
         self.root = root.resolve()
         self.lock = threading.RLock()
         self.items: dict[str, dict] = {}
+        self.removed: dict[str, dict] = {}
         self.stop_event = threading.Event()
         self.cleaner = None
+        manifest = self.root/'manifest.json'
+        if manifest.is_file():
+            try:
+                saved=json.loads(manifest.read_text(encoding='utf-8'))
+                for row in saved.get('removed',[])[:256]:
+                    if isinstance(row,dict) and re.fullmatch('[a-f0-9]{32}',row.get('id','')) and re.fullmatch('[a-f0-9]{64}',row.get('owner','')) and time.time()-row.get('at',0)<86400:
+                        self.removed[row['id']]=row
+                for row in saved.get('files', [])[:128]:
+                    if (not isinstance(row, dict) or not re.fullmatch('[0-9a-f]{32}', row.get('id','')) or
+                            not re.fullmatch('[0-9a-f]{64}', row.get('owner','')) or
+                            row.get('state') not in ('uploaded','attaching','attached','unknown','removing','submitted','failed')):
+                        continue
+                    name=self.filename(row.get('name',''))
+                    path=self.root/row['id']/name
+                    if path.is_symlink() or path.parent.is_symlink() or not path.is_file() or path.stat().st_size!=row.get('size'):
+                        continue
+                    if time.time()-row.get('created',0)>86400:
+                        continue
+                    self.items[row['id']]={**row,'path':path}
+            except (OSError, ValueError, TypeError, UploadError):
+                pass
+
+    def save(self) -> bool:
+        if not self.root.exists():return True
+        rows=[{key:value for key,value in item.items() if key in ('id','owner','name','size','created','state',
+            'conversationKey','epoch','nativeBefore','batchIds','nativeAttachment','removalProof')} for item in self.items.values()]
+        temporary=self.root/'manifest.tmp'
+        try:
+            temporary.write_text(json.dumps({'version':1,'files':rows,'removed':list(self.removed.values())[-256:]},ensure_ascii=False),encoding='utf-8')
+            temporary.replace(self.root/'manifest.json')
+            return True
+        except OSError:
+            return False
 
     def start_cleanup(self) -> None:
         def clean():
@@ -82,6 +116,7 @@ class UploadStore:
                         path.unlink()
                 try:folder.rmdir()
                 except OSError:pass
+        self.save()
 
     def receive(self, token: str, name: str, size: int, stream) -> dict:
         name=self.filename(name)
@@ -104,6 +139,7 @@ class UploadStore:
             except Exception:
                 self._remove(item);raise
             self.items[ident]=item
+            self.save()
             return self.public(item)
 
     @staticmethod
@@ -121,9 +157,24 @@ class UploadStore:
 
     def discard(self, token: str, ids: list) -> None:
         with self.lock:
-            for item in self.resolve(token,ids):
+            if not isinstance(ids,list) or not 1<=len(ids)<=5:raise UploadError('附件列表无效')
+            pending=[ident for ident in ids if not self.was_removed(token,ident)]
+            if not pending:return
+            items=self.resolve(token,pending)
+            if any(item['state'] not in ('uploaded','failed') for item in items):
+                raise UploadError('附件可能已在电脑输入框中，请在画面中移除')
+            for item in items:
                 if item['state'] not in ('uploaded','failed'):raise UploadError('附件可能已在电脑输入框中，请在画面中移除')
-                self._remove(item);self.items.pop(item['id'],None)
+                self._remove(item);self.remember_removed(item)
+            self.save()
+
+    def remember_removed(self, item: dict) -> None:
+        self.items.pop(item['id'],None)
+        self.removed[item['id']]={'id':item['id'],'owner':item['owner'],'at':time.time()}
+
+    def was_removed(self, token: str, ident: str) -> bool:
+        row=self.removed.get(ident) if isinstance(ident,str) else None
+        return bool(row and row['owner']==self.owner(token) and time.time()-row['at']<86400)
 
 
 _CLIPBOARD = r'''

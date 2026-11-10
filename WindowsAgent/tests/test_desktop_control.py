@@ -71,6 +71,30 @@ class DesktopTests(unittest.TestCase):
             self.assertNotIn(value, encoded)
         self.assertEqual(status['devices'][0]['name'], 'Phone')
 
+    def test_maintenance_preserves_recovered_receipts_and_blocks_live_sends(self):
+        record = {'id': 'recovered-message-id', 'state': 'confirming', 'restarted': True,
+                  'recovery': {'key': 'old-chat', 'textHash': hashlib.sha256(b'fixture').hexdigest()}}
+        self.state.deliveries.records[('owner', record['id'])] = record
+        self.assertTrue(self.state.deliveries._persist())
+        receipt_path = self.folder / 'delivery_receipts.json'
+        before = receipt_path.read_bytes()
+        token = self.client.request('maintenance.prepare')['token']
+        self.assertTrue(self.state.maintenance_active())
+        with patch.object(self.state, '_accept_action', side_effect=AssertionError('action replayed')):
+            with self.assertRaisesRegex(Exception, '维护'):
+                self.state.perform_action({})
+        self.assertEqual(receipt_path.read_bytes(), before)
+        self.assertEqual(record['state'], 'confirming')
+        self.client.request('maintenance.cancel', {'token': token})
+        self.assertFalse(self.state.maintenance_active())
+        for live in ({'state': 'sending'}, {'state': 'confirming'}, {'state': 'unknown'},
+                     {**record, 'command': {'kind': 'message'}}):
+            with self.subTest(record=live):
+                self.state.deliveries.records[('owner', 'live')] = live
+                with self.assertRaises(DesktopControlError):
+                    self.client.request('maintenance.prepare')
+                self.assertFalse(self.state.maintenance_active())
+
     def test_authentication_expiry_nan_and_replay_are_rejected(self):
         body = {'operation': 'status', 'payload': {}, 'at': time.time()}
         self.assertIsNone(self.raw(self.packet(body, key=b'x'*32)))
@@ -90,13 +114,16 @@ class DesktopTests(unittest.TestCase):
         self.assertRegex(result['pin'], r'^[0-9]{6}$')
         self.assertEqual(result['pin'], self.client.request('pair')['pin'])
         self.assertIn('?k=fixture-access-key', result['url'])
-        self.assertGreater(result['expiresAt'], time.time()+890)
+        self.assertGreater(result['expiresAt'], time.time()+58)
+        self.assertLessEqual(result['expiresAt'], time.time()+60)
+        self.assertIn('&pair=',result['url'])
         paired = self.state.pair('127.0.0.1', result['pin'], 'New phone')
         self.assertTrue(self.state.tokens.valid(paired))
         self.assertTrue(self.state.tokens.valid(token))
         with self.assertRaises(Exception):
             self.state.pair('127.0.0.1', result['pin'], 'Duplicate')
         next_pair = self.client.request('pair')
+        self.assertNotEqual(next_pair['url'],result['url'])
         self.assertTrue(self.state.tokens.valid(token))
         self.assertRegex(next_pair['pin'], r'^[0-9]{6}$')
 
@@ -134,6 +161,13 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(result['qr'].startswith('data:image/png;base64,'))
         self.assertTrue(manager.call('settings.theme', {'theme': 'dark'})['ok'])
         self.assertEqual(manager.call('status')['preferences']['theme'], 'dark')
+        self.assertTrue(manager.call('settings.computerName', {'computerName':'书房电脑'})['ok'])
+        self.assertEqual(manager.call('status')['computerName'],'书房电脑')
+        self.assertEqual(self.state.info()['computerName'],'书房电脑')
+        with patch('desktop_manager.copy_text') as copy:
+            self.assertTrue(manager.call('pair.copy', {'pin':result['pin']})['ok'])
+            copy.assert_called_once_with(result['pin'])
+            self.assertFalse(manager.call('pair.copy', {'pin':'not-current'})['ok'])
         for action, payload in [('shell', {'cmd': 'anything'}), ('settings.theme', {'theme': '<script>'}),
                                 ('settings.autostart', {'enabled': 'yes'}), ('target.select', {'id': []})]:
             with self.subTest(action=action):

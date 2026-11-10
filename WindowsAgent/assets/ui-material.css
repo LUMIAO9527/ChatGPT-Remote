@@ -1,26 +1,31 @@
 /* Adapted from ChatGPTnx v1.6.0; see THIRD_PARTY_NOTICES.md. */
 /* One native backdrop under the whole panel; controls keep their text opaque. */
 :root[data-material="glass"] {
-  --bg: rgb(247 249 253 / .58); --surface: rgb(255 255 255 / .61);
-  --surface-2: rgb(207 214 227 / .38); --line: rgb(81 96 119 / .13);
-  --muted: #515c6c; --glass-edge: rgb(255 255 255 / .77);
-  --glass-card-edge: rgb(255 255 255 / .72);
-  --glass-card-shadow: none;
-  --status-surface: rgb(248 250 255 / .97); --status-edge: rgb(109 126 153 / .22);
-  --shadow-window: 0 22px 65px rgb(17 31 53 / .18), 0 2px 10px rgb(17 31 53 / .08);
+  --bg: rgb(250 250 249 / .62); --surface: rgb(255 255 255 / .62);
+  --surface-2: rgb(233 233 229 / .55); --line: rgb(60 64 66 / .14);
+  --muted: #54585c; --glass-edge: rgb(255 255 255 / .78);
+  --glass-card-edge: rgb(255 255 255 / .80);
+  --glass-card-shadow: none; --card-edge: rgb(255 255 255 / .80);
+  --status-surface: rgb(252 252 251 / .97); --status-edge: rgb(90 96 100 / .20);
+  --floating-surface:rgb(252 252 251 / .78); --floating-edge:rgb(255 255 255 / .74);
+  --floating-filter:blur(24px) saturate(1.15);
+  --field-surface:rgb(255 255 255 / .55); --field-edge:rgb(80 86 90 / .32);
+  --shadow-window: 0 22px 65px rgb(17 31 53 / .16), 0 2px 10px rgb(17 31 53 / .07);
 }
 :root[data-material="glass"][data-theme="dark"] {
-  --bg: rgb(22 27 35 / .46); --surface: rgb(95 108 127 / .25);
-  --surface-2: rgb(121 140 170 / .18); --line: rgb(213 226 248 / .12);
-  --muted: #c0c9d7; --ink: #f5f7fc; --glass-edge: rgb(226 237 255 / .23);
-  --glass-card-edge: rgb(221 234 255 / .12);
-  --glass-card-shadow: none;
-  --status-surface: rgb(35 42 55 / .98); --status-edge: rgb(204 222 250 / .20);
+  --bg: rgb(15 17 19 / .55); --surface: rgb(255 255 255 / .07);
+  --surface-2: rgb(255 255 255 / .12); --line: rgb(255 255 255 / .12);
+  --muted: #b3bcc4; --ink: #f5f7f8; --glass-edge: rgb(226 237 255 / .22);
+  --glass-card-edge: rgb(255 255 255 / .10);
+  --glass-card-shadow: none; --card-edge: rgb(255 255 255 / .10);
+  --status-surface: rgb(27 30 33 / .98); --status-edge: rgb(204 222 250 / .20);
+  --floating-surface:rgb(27 30 33 / .72); --floating-edge:rgb(220 232 255 / .22);
+  --field-surface:rgb(12 14 16 / .22); --field-edge:rgb(220 232 255 / .28);
   --shadow-window: 0 22px 65px rgb(0 0 0 / .38), 0 2px 10px rgb(0 0 0 / .15);
 }
 :root[data-material="glass"] body.live { background: transparent; }
 :root[data-material="glass"] #shell {
-  background: linear-gradient(145deg, rgb(255 255 255 / .16), transparent 43%, rgb(255 255 255 / .035)), var(--bg);
+  background: linear-gradient(145deg, rgb(255 255 255 / .14), transparent 43%, rgb(255 255 255 / .03)), var(--bg);
 }
 :root[data-material="glass"] #shell::after {
   content: ''; position: absolute; inset: 0; z-index: 1000; pointer-events: none;
@@ -31,11 +36,10 @@
 }
 :root[data-material="glass"] .sheet { background: transparent; }
 :root[data-material="glass"] .footer { background: transparent; }
-:root[data-material="glass"] :is(.settings-list,.quota-overview-toolbar) .segmented { background: rgb(60 75 97 / .07); }
-:root[data-material="glass"] .segmented::before { background: rgb(247 249 253 / .42); }
-:root[data-material="glass"][data-theme="dark"] :is(.settings-list,.quota-overview-toolbar) .segmented { background: rgb(185 205 233 / .08); }
+:root[data-material="glass"] .segmented { background: rgb(60 75 97 / .08); }
+:root[data-material="glass"] .segmented::before { background: rgb(250 250 249 / .50); }
+:root[data-material="glass"][data-theme="dark"] .segmented { background: rgb(185 205 233 / .09); }
 :root[data-material="glass"][data-theme="dark"] .segmented::before { background: rgb(187 205 229 / .17); }
-:root[data-material="glass"] .quota-overview-toolbar { background:transparent; backdrop-filter:none; }
 /* Browser previews have their own backdrop, inside the same document. */
 :root[data-material-preview] body.demo {
   background: radial-gradient(ellipse at 12% 12%, #b4d4f8 0, transparent 52%),
@@ -52,7 +56,7 @@
 }
 :root[data-material="glass"] body.demo #shell { backdrop-filter: blur(25px) saturate(1.22); }
 @media (forced-colors: active) {
-  :root[data-material="glass"] { --bg: Canvas; --surface: Canvas; --surface-2: Canvas; --ink: CanvasText; --muted: CanvasText; --line: ButtonBorder; }
+  :root[data-material="glass"] { --bg: Canvas; --surface: Canvas; --surface-2: Canvas; --ink: CanvasText; --muted: CanvasText; --line: ButtonBorder; --floating-solid:Canvas; --floating-surface:Canvas; --floating-edge:ButtonBorder; --floating-filter:none; --field-surface:Field; --field-edge:ButtonBorder; }
   :root[data-material="glass"] #shell { background: Canvas; backdrop-filter: none !important; }
   :root[data-material="glass"] #shell::after { display: none; }
 }

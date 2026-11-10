@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -21,6 +22,7 @@ from urllib.parse import urlsplit
 
 from windows_control import TargetError
 from local_history import LocalHistory, UUID
+from model_catalog import ModelCatalog, CatalogUnavailable
 
 ROLE_MARKERS = {"你说：": "user", "你说:": "user", "You said:": "user",
                 "ChatGPT 说：": "assistant", "ChatGPT 说:": "assistant",
@@ -38,6 +40,26 @@ def option_labels(title: str, category: str) -> dict:
             if title == label or (title.startswith(label) and title[len(label):len(label)+1].isspace()):
                 return {'label':label,'description':title[len(label):].strip()}
     return {'label':title,'description':''}
+
+
+def normalize_editor_text(text: str) -> str:
+    return re.sub('[\u200b\ufeff\u2060]', '', text.replace('\r\n', '\n').replace('\r', '\n').replace('\u00a0', ' ')).rstrip('\n\0')
+
+
+def attachment_result(before: dict, current: dict, names: list[str]) -> dict:
+    old_ids = {item.get('id') for item in before.get('items', [])}
+    added = [item for item in current.get('items', []) if item.get('id') not in old_ids]
+    bindings = [None] * len(names)
+    if len(added) == len(names):
+        for index, name in enumerate(names):
+            matches = [item for item in added if item.get('name') == name]
+            if len(matches) == 1:
+                bindings[index] = dict(matches[0])
+                added.remove(matches[0])
+        remaining = [index for index, item in enumerate(bindings) if item is None]
+        if len(remaining) == len(added) == 1:
+            bindings[remaining[0]] = dict(added[0])
+    return {'state': 'attached', 'nativeAttachments': bindings}
 
 
 def draft_snapshot(raw: dict) -> dict:
@@ -233,7 +255,7 @@ def conversation_event(previous: dict[str, Any] | None, current: dict[str, Any])
 
 class ConversationReader:
     def __init__(self) -> None:
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.process: subprocess.Popen | None = None
         self.replies: queue.Queue = queue.Queue()
         self.sequence = 0
@@ -247,6 +269,9 @@ class ConversationReader:
         self.prepared_generating = False
         self.prepared_text_present = False
         self.history = LocalHistory()
+        self.model_catalog = ModelCatalog()
+        self.model_pickers: dict[str, dict] = {}
+        self.last_model_power: tuple[int, str, str, dict] | None = None
 
     def _remember_queue(self, hwnd: int, raw: dict) -> dict:
         if not raw.get('ok') or not isinstance(raw.get('identity'),str):
@@ -330,6 +355,7 @@ class ConversationReader:
     def _remember_options(self, hwnd: int, raw: dict) -> dict:
         if not raw.get("ok"):
             raise TargetError("暂时无法读取输入框选项，请刷新或切换画面")
+        raw = self.model_catalog.enrich(raw)
         items = []
         for item in raw.get("items", [])[:200]:
             if not isinstance(item.get("id"), str) or not isinstance(item.get("title"), str):
@@ -344,16 +370,28 @@ class ConversationReader:
                       **option_labels(title, str(raw.get("category") or ""))}
             if kind in ('prompt-radio','prompt-check') and isinstance(item.get('description'),str) and item['description']:
                 option['description']=item['description'][:800]
-            if kind == "effort-step":
+            if kind in ("effort-step", "power-step"):
                 level, current, count = (item.get(field) for field in ("level", "currentLevel", "levelCount"))
                 if not (all(type(value) is int for value in (level, current, count)) and
-                        2 <= count <= 12 and 1 <= level <= count and 1 <= current <= count):
+                        1 <= count <= 12 and 1 <= level <= count and 1 <= current <= count):
                     continue
                 option.update(level=level, currentLevel=current, levelCount=count,
-                              label=str(item.get("label") or title)[:500])
+                              label=str(item.get("label") or '')[:500])
+                if item.get('effortKey'):
+                    option['effortKey'] = item['effortKey']
+            if item.get('modelKey'):
+                option['modelKey'] = item['modelKey']
+                option['label'] = item.get('modelLabel') or title
             items.append(option)
         snapshot = {"items": items, "menu": bool(raw.get("menu")), "context": str(raw.get("context") or ""),
                     "identity": str(raw.get("identity") or ""),"category":str(raw.get('category') or '')}
+        if raw.get('powerActions'):
+            snapshot['powerActions'] = raw['powerActions']
+        if raw.get('powerNotice'):
+            snapshot['powerNotice'] = str(raw['powerNotice'])[:200]
+        for field in ('modelState', 'rootModel'):
+            if raw.get(field):
+                snapshot[field] = raw[field]
         prompt = raw.get('prompt')
         if isinstance(prompt, dict) and snapshot['context'].startswith('prompt:'):
             snapshot['menu'] = False
@@ -377,10 +415,36 @@ class ConversationReader:
         while len(self.option_catalogs) > 8:
             self.option_catalogs.pop(next(iter(self.option_catalogs)))
         scope = hashlib.sha256(snapshot["identity"].encode()).hexdigest()[:24]
-        return {"key": key, "scope": scope, "items": items, "menu": snapshot["menu"], "available": bool(items),"category":snapshot['category'],
+        result = {"key": key, "scope": scope, "items": items, "menu": snapshot["menu"], "available": bool(items),"category":snapshot['category'],
+                **({'powerNotice': snapshot['powerNotice']} if 'powerNotice' in snapshot else {}),
                 **({'prompt': snapshot['prompt']} if 'prompt' in snapshot else {})}
+        for field in ('modelState', 'rootModel'):
+            if field in snapshot:
+                result[field] = snapshot[field]
+        if result.get('modelState') and raw.get('modelOwner'):
+            self.last_model_power = (hwnd, scope, raw['modelOwner'], result)
+        return result
 
-    def composer_action(self, hwnd: int, key: str, target: str | None, dismiss: bool = False, refresh: bool = False) -> bool | dict:
+    def remember_model_picker(self, hwnd: int, epoch: int, power: dict, models: dict, data: dict) -> dict:
+        current = power['modelState']
+        profiles = self.model_catalog.profiles(data, current['locale'])
+        targets = {item['modelKey'] for item in models['items'] if item.get('modelKey') and item['enabled']}
+        key = secrets.token_hex(16)
+        self.model_pickers[key] = {'at': time.monotonic(), 'hwnd': hwnd, 'epoch': epoch, 'scope': power['scope'],
+                                   'owner': data['owner'], 'current': current, 'profiles': profiles, 'models': targets}
+        while len(self.model_pickers) > 8:
+            self.model_pickers.pop(next(iter(self.model_pickers)))
+        return {'key': key, 'current': current, 'profiles': profiles}
+
+    def take_model_picker(self, hwnd: int, epoch: int, key: str) -> dict:
+        picker = self.model_pickers.get(key)
+        if (not picker or picker['hwnd'] != hwnd or picker['epoch'] != epoch or
+                time.monotonic() - picker['at'] > 600):
+            raise TargetError('选项已过期，请重新读取', 'model_options_changed')
+        return self.model_pickers.pop(key)
+
+    def composer_action(self, hwnd: int, key: str, target: str | None, dismiss: bool = False,
+                        refresh: bool = False, prechecked_power: bool = False) -> bool | dict:
         """Invoke one observed control, or validate an open menu before Escape."""
         with self.lock:
             reference = self.option_catalogs.get(key)
@@ -396,6 +460,12 @@ class ConversationReader:
             matches = [item for item in snapshot["items"] if item["id"] == target and item["enabled"]]
             if (dismiss and not snapshot["menu"]) or (not dismiss and len(matches) != 1):
                 raise TargetError("选项已变化或不可用，请刷新后重新选择")
+            power = snapshot.get('powerActions', {}).get(target) if not dismiss else None
+            if power:
+                try:
+                    self.model_catalog.validate(power, prechecked=prechecked_power)
+                except CatalogUnavailable as error:
+                    raise TargetError(str(error)) from None
             # Consume before invocation. An uncertain action is never repeated.
             self.option_catalogs.pop(key, None)
             attempt = key
@@ -409,15 +479,21 @@ class ConversationReader:
             try:
                 reply = self._call(operation="composer_dismiss" if dismiss else "composer_invoke", hwnd=hwnd,
                                    identity=snapshot["identity"], context=snapshot["context"],
-                                   item=matches[0] if not dismiss else None, refresh=refresh)
+                                   item=power['native'] if power else matches[0] if not dismiss else None,
+                                   **({'power': {k: v for k, v in power.items() if k != 'native'}} if power else {}),
+                                   refresh=refresh)
             except TargetError:
-                raise TargetError("选项操作结果未确认，请刷新查看；没有自动重试") from None
+                raise TargetError("电脑操作结果待确认，请重新读取", 'composer_pending') from None
             finally:
                 self.cached = None
             if not reply.get("ok"):
                 if prompt and reply.get('reason') in ('options changed', 'option changed', 'option unavailable'):
                     self.prompt_attempts.pop(attempt, None)
-                raise TargetError("电脑选项或当前对话已变化，请刷新后重新选择")
+                if power and reply.get('reason') == 'effort pending':
+                    raise TargetError('电脑尚未确认思考强度，请重新读取', 'composer_pending')
+                if reply.get('reason') in ('options changed', 'option changed'):
+                    raise TargetError('电脑控件已更新', 'composer_stale')
+                raise TargetError("电脑选项或当前对话已变化，请刷新后重新选择", 'composer_changed')
             if refresh:
                 updated = reply.get('next')
                 result = {"escape": bool(dismiss and reply.get("escape"))}
@@ -451,12 +527,20 @@ class ConversationReader:
         with self.lock:
             return draft_snapshot(self._call(operation="draft", hwnd=hwnd))
 
-    def clear_draft(self, hwnd: int, key: str, revision: str, for_send: bool = False) -> None:
+    def clear_draft(self, hwnd: int, key: str, revision: str, for_send: bool = False,
+                    replacement_text: str | None = None) -> None:
         with self.lock:
             raw = self._call(operation="draft", hwnd=hwnd)
             snapshot = draft_snapshot(raw)
-            if snapshot["conversationKey"] != key or snapshot["revision"] != revision:
+            if snapshot["conversationKey"] != key:
                 raise TargetError("电脑草稿或当前对话已经变化，请刷新草稿后重新选择", "draft_changed")
+            # A send of the current, identical content needs no destructive clear,
+            # including when a previous preview's revision is obsolete.
+            if (for_send and replacement_text is not None and not snapshot['truncated']
+                    and normalize_editor_text(snapshot['text']) == normalize_editor_text(replacement_text)):
+                return
+            if snapshot['revision'] != revision:
+                raise TargetError('电脑草稿已变化，请重新查看。', 'draft_changed')
             if not snapshot["canClear"]:
                 raise TargetError("草稿超过完整读取上限，请切换画面处理")
             try:
@@ -674,7 +758,7 @@ class ConversationReader:
             self.process.stdin.flush()
             # Loading Windows PowerShell and UIAutomation happens only once.
             # Keep that startup budget separate from subsequent native actions.
-            reply = self.replies.get(timeout=10 if starting or request['operation'] == 'read' else 5)
+            reply = self.replies.get(timeout=10 if starting or request['operation'] in ('read','fill') or request['operation'].startswith('composer') else 5)
             if not reply or reply.get("request_id") != self.sequence:
                 raise ValueError("reader stopped")
             return reply
@@ -710,6 +794,13 @@ class ConversationReader:
             self.cached = (hwnd, time.monotonic(), result, raw["identity"])
             return dict(result)
 
+    def read_minimized(self, hwnd: int) -> dict | None:
+        with self.lock:
+            if not self.cached or self.cached[0]!=hwnd:return None
+            previous=self.cached[2]
+            return self.history.snapshot({'ok':True,'selectedTitle':previous.get('title',''),
+                'identity':self.cached[3],'composer':previous.get('composer',{}),'generating':False})
+
     def _identity(self, hwnd: int, key: str | None = None) -> dict:
         raw = self._call(operation="identity", hwnd=hwnd)
         def matches():
@@ -737,7 +828,7 @@ class ConversationReader:
             self.prepared_text_present = reply.get("present") is True
             self.cached = None
             if not reply.get("ok"):
-                reasons = {"draft exists": "电脑输入框已有草稿，请在“电脑草稿”中取回、清空或替换发送",
+                reasons = {"draft exists": "电脑有不同草稿。",
                            "draft changed": "电脑草稿已变化，手机草稿已保留",
                            "composer focus rejected": "无法聚焦电脑输入框，请切换画面后重试",
                            "conversation changed": "电脑已切换对话，请等手机更新后再发送"}
@@ -755,10 +846,29 @@ class ConversationReader:
             self.cached = None
             self.prepared_generating = bool(reply.get('generating'))
             if not reply.get("ok"):
-                reasons = {"draft changed": "电脑草稿已被修改，手机草稿已保留",
+                reasons = {"draft changed": "输入尚未核对，手机内容已保留。",
                            "conversation changed": "电脑已切换对话，手机草稿已保留",
                            "send button unavailable": "电脑发送按钮尚未就绪，手机草稿已保留"}
                 raise TargetError(reasons.get(reply.get("reason"), "文字尚未完整填入，手机草稿已保留"), "send_not_started")
+
+    def fill_input(self, hwnd: int, key: str, text: str, submit: bool = False) -> None:
+        with self.lock:
+            raw = self._identity(hwnd, key)
+            if hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24] != key:
+                raise TargetError('电脑已切换对话，消息未发送。', 'conversation_changed')
+            try:
+                reply = self._call(operation='fill', hwnd=hwnd, identity=raw['identity'], text=text, submit=submit, fresh=True)
+            except TargetError:
+                raise TargetError('文字填入失败，消息未发送。', 'send_not_started') from None
+            finally:
+                self.cached = None
+            if not reply.get('ok'):
+                reasons = {'draft exists': ('电脑有不同草稿。', 'draft_exists'),
+                           'conversation changed': ('电脑已切换对话，消息未发送。', 'conversation_changed'),
+                           'direct input unavailable': ('当前电脑输入框不支持直接填入，消息未发送。', 'send_not_started'),
+                           'send button unavailable': ('电脑发送按钮尚未就绪，消息未发送。', 'send_not_started')}
+                message, code = reasons.get(reply.get('reason'), ('文字填入失败，消息未发送。', 'send_not_started'))
+                raise TargetError(message, code)
 
     def attachment_focus(self, hwnd: int, key: str) -> dict:
         with self.lock:
@@ -777,17 +887,59 @@ class ConversationReader:
                     if not raw.get('ok'):raise TargetError('附加结果未确认，请检查电脑输入框；没有自动重试')
                     current=raw.get('attachments',{})
                     if current.get('ready') and current.get('count',0)>=before.get('count',0)+len(names):
-                        return {'state':'attached'}
+                        return attachment_result(before, current, names)
                     time.sleep(.18)
                 raise TargetError('文件已传到电脑，附加结果未确认；请在画面中检查，没有自动重试')
             finally:self.cached=None
 
-    def attachments_ready(self, hwnd: int, before: dict, count: int) -> bool:
+    def attachments_ready(self, hwnd: int, before: dict, count: int) -> dict | None:
         with self.lock:
             raw=self._call(operation='attachments',hwnd=hwnd,identity=before['identity'])
             if not raw.get('ok'):raise TargetError('电脑已切换对话，请返回附加文件的对话','attachment_context_changed')
             current=raw.get('attachments',{})
-            return bool(current.get('ready') and current.get('count',0)>=before.get('count',0)+count)
+            if current.get('ready') and current.get('count',0)>=before.get('count',0)+count:
+                return attachment_result(before, current, before.get('expectedNames', []))
+            return None
+
+    def remove_attachment(self, hwnd: int, key: str, reference: dict, verification: dict | None = None) -> None:
+        with self.lock:
+            raw = self._identity(hwnd, key)
+            if hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24] != key:
+                raise TargetError('电脑已切换对话，请返回附件所属对话。', 'attachment_context_changed')
+            if not reference or not isinstance(reference.get('id'), str):
+                raise TargetError('暂时无法定位此附件，请在电脑画面中移除。', 'attachment_unavailable')
+            if verification is None:
+                current = self._call(operation='attachments', hwnd=hwnd, identity=raw['identity'], fresh=True)
+                attachments = current.get('attachments', {})
+                ids = [item['id'] for item in attachments.get('items', [])]
+                if not current.get('ok') or reference['id'] not in ids:
+                    raise TargetError('电脑附件已变化，请在画面中检查。', 'attachment_changed')
+                proof = {'targetId': reference['id'], 'beforeIds': ids, 'beforeCount': attachments['count']}
+            else:
+                proof = verification
+            try:
+                reply = self._call(operation='remove_attachment', hwnd=hwnd, identity=raw['identity'],
+                                   verifyOnly=verification is not None, fresh=True, **proof)
+            except TargetError as exc:
+                exc.attachment_removal = proof
+                exc.code = 'attachment_remove_pending'
+                raise
+            finally:
+                self.cached = None
+            if not reply.get('ok'):
+                error = TargetError('附件移除结果待核对，请稍后再试。' if reply.get('reason') == 'attachment removal pending'
+                                    else '电脑附件已变化，请在画面中检查。', 'attachment_remove_pending')
+                error.attachment_removal = proof
+                raise error
+
+    def files_present(self, hwnd: int, key: str, references: list[dict]) -> bool:
+        with self.lock:
+            raw = self._identity(hwnd, key)
+            if hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24] != key:
+                raise TargetError('电脑已切换对话。', 'attachment_context_changed')
+            current = self._call(operation='attachments', hwnd=hwnd, identity=raw['identity'], fresh=True)
+            ids = {item['id'] for item in current.get('attachments', {}).get('items', [])}
+            return bool(current.get('ok') and references and all(reference and reference.get('id') in ids for reference in references))
 
     def submit(self, hwnd: int, key: str, text: str) -> dict:
         with self.lock:

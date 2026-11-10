@@ -2,6 +2,8 @@
 
 原生托盘、窗口停靠、磨砂玻璃、圆角、设计令牌、设置写入、动效、更新事务、卸载与本地文件保护的部分实现适配自同一作者的 [ChatGPTnx v1.6.0](https://github.com/LUMIAO9527/ChatGPTnx/tree/v1.6.0)。
 
+桌面设置齿轮图标取自同一作者的 [ChatGPTnx v1.7.3](https://github.com/LUMIAO9527/ChatGPTnx/tree/v1.7.3) 的 `src/ui/components.js`。
+
 手机连接首页的布局与电脑插画适配自同一作者的 DSH Connect 原生连接界面（`ConnectionViews.ets`、`computer_cover.svg`），并使用 ChatGPT Remote 的 Rm 标识。
 
 Copyright (c) 2026 ChatGPTnx. 保留所有权利 / All rights reserved.
@@ -10,7 +12,7 @@ Copyright (c) 2026 ChatGPTnx. 保留所有权利 / All rights reserved.
 
 相关实现位于 `desktop_tray.py`、`desktop_platform.py`、`desktop_material.py`、`native_backdrop.cpp` 和 `WindowsAgent/assets/`。保留原有代码说明与署名，按本项目 LICENSE 发布。
 
-Python 运行依赖包括 pywebview、Pillow、qrcode 及其依赖，分别遵循各自发布包内的许可。离线预览中的二维码和设备信息为示例数据；支持页的公开联系方式与打赏图片沿用作者的 ChatGPTnx 支持页。
+Python 运行依赖包括 pywebview、Pillow、qrcode、markdown-it-py、mdurl 及其依赖，分别遵循各自发布包内的许可。markdown-it-py 和 mdurl 遵循 MIT 许可，用于消息 Markdown 解析。离线预览中的二维码和设备信息为示例数据；支持页的公开联系方式与打赏图片沿用作者的 ChatGPTnx 支持页。
 
 原生宿主使用 Windows SDK 提供的 C++/WinRT v2.0.250303.1 投影，适用 [MIT License](https://github.com/microsoft/cppwinrt/blob/master/LICENSE)：
 
