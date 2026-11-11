@@ -4,7 +4,9 @@
 
 桌面设置齿轮图标取自同一作者的 [ChatGPTnx v1.7.3](https://github.com/LUMIAO9527/ChatGPTnx/tree/v1.7.3) 的 `src/ui/components.js`。
 
-手机连接首页的布局与电脑插画适配自同一作者的 DSH Connect 原生连接界面（`ConnectionViews.ets`、`computer_cover.svg`），并使用 ChatGPT Remote 的 Rm 标识。
+归档的手机连接首页布局与电脑插画适配自同一作者的 DSH Connect 原生连接界面（`ConnectionViews.ets`、`computer_cover.svg`），并使用 ChatGPT Remote 的 Rm 标识。
+
+手机启动页使用的 OpenAI 图标来自本机 ChatGPT 客户端资源 `webview/assets/openai-blossom-31ad67e73c52.svg`，保存在 `WindowsAgent/assets/openai-mark.svg`，由手机 HTML 内联引用。
 
 Copyright (c) 2026 ChatGPTnx. 保留所有权利 / All rights reserved.
 

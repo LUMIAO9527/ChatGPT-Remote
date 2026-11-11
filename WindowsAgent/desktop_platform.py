@@ -6,6 +6,7 @@ Remote keeps its backend independent and retains a quiet, hidden panel.
 from __future__ import annotations
 import ctypes
 from ctypes import wintypes as wt
+from pathlib import Path
 
 PANEL_SIZE = (312, 458)
 PANEL_SIZES = dict.fromkeys(('home', 'settings', 'support', 'support-qr', 'update', 'install', 'uninstall', 'first-use'), PANEL_SIZE)
@@ -30,14 +31,24 @@ def popup_position(icon, work, monitor, size, gap=8, margin=8):
     return max(wl+margin,min(x,wr-width-margin)),max(wt_+margin,min(y,wb-height-margin))
 
 
+def rail_popup_bounds(icon, client, work, size, gap=8, margin=8):
+    """Place the popup beside the rail, aligned with the button's lower edge."""
+    _,_,ir,ib=icon;cl,ct,cr,cb=client;wl,wt_,wr,wb=work
+    x=max(ir+gap,cl+margin,wl+margin)
+    top=max(ct,wt_)+margin;bottom=min(cb,wb)-margin;right=min(cr,wr)-margin
+    width=min(size[0],max(1,right-x));height=min(size[1],max(1,bottom-top))
+    return x,max(top,min(ib-height,bottom-height)),width,height
+
+
 class MonitorInfo(ctypes.Structure):
     _fields_=[('cbSize',wt.DWORD),('rcMonitor',wt.RECT),('rcWork',wt.RECT),('flags',wt.DWORD)]
 
 
 class NativePanel:
-    def __init__(self, window, manager, signals, anchor=None, log=None, *, tray_identity=None):
+    def __init__(self, window, manager, signals, anchor=None, log=None, *, tray_identity=None, enable_rail=False):
         self.window,self.manager,self.signals,self.anchor,self.log=window,manager,signals,anchor,log
         self.tray_identity=tray_identity
+        self.enable_rail=enable_rail;self.rail=None;self.rail_anchor=None
         self.page='home';self.visible=False;self.busy=False;self.modal=False
         self.generation=0;self.bound=False;self.ready=False;self.blur_timer=None
         self.blur_generation=None
@@ -76,7 +87,9 @@ class NativePanel:
 
     def place(self, form):
         hwnd=int(form.Handle.ToInt64());point=wt.POINT()
-        if self.tray_identity:
+        if self.rail_anchor:
+            icon,client=self.rail_anchor
+        elif self.tray_identity:
             from desktop_tray import tray_rect
             icon=tray_rect(*self.tray_identity)
         else:icon=self.anchor
@@ -96,9 +109,12 @@ class NativePanel:
         except (AttributeError,OSError):pass
         width,height=(round(n*dpi/96) for n in PANEL_SIZE)
         work=info.rcWork;screen=info.rcMonitor
-        width=min(width,work.right-work.left-16);height=min(height,work.bottom-work.top-16)
-        x,y=popup_position(icon,(work.left,work.top,work.right,work.bottom),
-                            (screen.left,screen.top,screen.right,screen.bottom),(width,height))
+        work_rect=(work.left,work.top,work.right,work.bottom)
+        if self.rail_anchor:
+            x,y,width,height=rail_popup_bounds(icon,client,work_rect,(width,height),round(8*dpi/96),round(8*dpi/96))
+        else:
+            width=min(width,work.right-work.left-16);height=min(height,work.bottom-work.top-16)
+            x,y=popup_position(icon,work_rect,(screen.left,screen.top,screen.right,screen.bottom),(width,height))
         if not self.user.SetWindowPos(hwnd,None,x,y,width,height,0x0004|0x0010):
             raise ctypes.WinError(ctypes.get_last_error())
         self.round_window(hwnd,width,height,dpi)
@@ -110,7 +126,6 @@ class NativePanel:
 
     def apply_material(self,form):
         from desktop_material import WindowMaterial
-        from pathlib import Path
         hwnd=int(form.Handle.ToInt64())
         pref=self.manager.preferences()
         dark=(self.appearance or initial_theme(pref))=='dark'
@@ -170,10 +185,34 @@ class NativePanel:
                 self.blur_timer.Tick+=lambda *_:self.check_blur(form)
                 form.Deactivate+=self.on_blur
                 form.Activated+=self.on_activate
+                if self.enable_rail:self.bind_rail(form)
                 self.bound=True
             self.place(form)
             self.apply_material(form)
         self.dispatch(apply)
+
+    def bind_rail(self,form):
+        try:
+            import clr
+            clr.AddReference(str(Path(__file__).with_name('ChatGPTRemote.Rail.dll')))
+            from ChatGPTRemote.Native import RailButton
+            self.rail=RailButton(int(form.Handle.ToInt64()))
+            self.rail.Clicked+=self.rail_clicked
+            form.FormClosed+=self.dispose_rail
+        except Exception as exc:
+            if self.log:self.log.warning('rail_button_unavailable type=%s',type(exc).__name__)
+
+    def rail_clicked(self,_,location):
+        if self.visible and self.rail_anchor:
+            self.hide()
+        else:
+            def rect(box):return int(box.Left),int(box.Top),int(box.Right),int(box.Bottom)
+            self.show(rail_anchor=(rect(location.Button),rect(location.Client)))
+
+    def dispose_rail(self,*_):
+        if self.rail is not None:
+            self.rail.Dispose()
+            self.rail=None
 
     def on_activate(self,*_):
         if self.visible and self.blur_timer:
@@ -209,10 +248,11 @@ class NativePanel:
         self.blur_timer.Stop()
         if self.manager.preferences()['autoHide']:self.hide()
 
-    def show(self):
+    def show(self,*,rail_anchor=None):
         import time
         started=time.perf_counter()
         self.show_requested=True
+        self.rail_anchor=rail_anchor
         self.signals.set_desired(True)
         if not self.ready:return
         self.generation+=1;self.visible=True

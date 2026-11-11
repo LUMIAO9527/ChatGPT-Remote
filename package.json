@@ -3,6 +3,13 @@
   "private": true,
   "scripts": {
     "dev": "python3 tools/serve_review.py",
-    "review": "python3 tools/build_review.py"
+    "review": "python3 tools/build_review.py",
+    "build:preview": "node tools/build_panel.cjs",
+    "test:panel": "node tools/verify_panel.cjs"
+  },
+  "devDependencies": {
+    "lucide-static": "1.71.0",
+    "playwright-core": "1.65.0",
+    "qrcode-generator": "2.0.4"
   }
 }

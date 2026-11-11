@@ -37,7 +37,7 @@ def main():
     arguments=sys.argv[1:]
     if '--self-test' in arguments:
         required=['desktop.html','desktop.ico','desktop-light.ico','desktop-dark.ico','uia_reader.ps1',
-                  'manage_frozen.ps1','ChatGPTRemote.Update.exe','assets/rm-mark.svg','web/index.html']
+                  'manage_frozen.ps1','ChatGPTRemote.Update.exe','ChatGPTRemote.Rail.dll','assets/rm-mark.svg','web/index.html']
         missing=[name for name in required if not (app_paths.HERE/name).is_file()]
         result={'app':'ChatGPT Remote','version':APP_VERSION,'missingResources':missing}
         try:
@@ -48,6 +48,8 @@ def main():
             import clr
             from webview.platforms import winforms
             import desktop_manager
+            clr.AddReference(str(app_paths.HERE/'ChatGPTRemote.Rail.dll'))
+            from ChatGPTRemote.Native import RailButton
             result['desktopRuntimeReady']=True
         except Exception as error:
             result['desktopRuntimeReady']=False

@@ -111,9 +111,10 @@ class DesktopClient:
 
 
 class DesktopControl:
-    def __init__(self, state: Any, folder: Path, *, port: int = 8765, phone_url: str = '') -> None:
+    def __init__(self, state: Any, folder: Path, *, port: int = 8765, phone_url: str = '', shutdown=None, owner_token: str = '') -> None:
         self.state, self.folder, self.port = state, folder, port
         self.phone_url = phone_url
+        self.shutdown, self.owner_token = shutdown, owner_token
         self.key = local_secret(folder, create=True)
         self.listener = None
         self.stopped = threading.Event()
@@ -186,6 +187,19 @@ class DesktopControl:
         return url + ('?' + urlencode({'k': key}) if key else '')
 
     def dispatch(self, operation: str, payload: dict) -> dict:
+        if operation in ('service.stop', 'service.close'):
+            if self.shutdown is None:
+                raise DesktopControlError('连接组件尚未切换到插件，请先完成更新。')
+            if operation == 'service.close':
+                valid = self.owner_token and hmac.compare_digest(self.owner_token, str(payload.get('owner', '')))
+            else:
+                valid = self.state.maintenance_active() and hmac.compare_digest(self.state.maintenance_token, str(payload.get('token', '')))
+            if not valid:
+                raise DesktopControlError('连接状态已改变，请重试。')
+            # Let the authenticated reply leave this pipe before shutdown closes
+            # the listener. The HTTP server exits through its normal cleanup.
+            threading.Timer(.08, self.shutdown).start()
+            return {}
         if operation == 'maintenance.prepare':
             with self.state.action_lock, self.state.deliveries.lock:
                 # Recovered receipts only observe history. Their persisted proof
@@ -210,6 +224,7 @@ class DesktopControl:
             info = self.state.info()
             selected = next((window for window in info.get('windows', []) if window.get('selected')), None)
             return {'version': info['version'], 'running': True, 'phoneUrl': self.phone_url,
+                    'managedBy': 'plugin' if self.shutdown else 'desktop', 'localPort': self.port,
                     'windows': info.get('windows', []), 'target': selected,
                     'targetStatus': info.get('status', ''), 'mode': info.get('mode', ''),
                     'paused': bool(info.get('frozen', {}).get('active')), 'devices': self.devices()}
@@ -219,8 +234,17 @@ class DesktopControl:
                     self.state.pin = f'{secrets.randbelow(1_000_000):06d}'
                     self.state.pin_expires = time.monotonic() + self.state.pin_ttl
                     self.state.pin_ticket = secrets.token_urlsafe(18)
-                return {'pin': self.state.pin, 'expiresAt': time.time() + self.state.pin_expires - time.monotonic(),
-                        'url': self._access_link()+('&' if '?' in self._access_link() else '?')+urlencode({'pair':self.state.pin_ticket})}
+                result = {'pin': self.state.pin, 'expiresAt': time.time() + self.state.pin_expires - time.monotonic(),
+                          'url': self._access_link()+('&' if '?' in self._access_link() else '?')+urlencode({'pair':self.state.pin_ticket})}
+            if payload.get('renderQr'):
+                import base64
+                import io
+                import qrcode
+                image = qrcode.make(result['url'], border=3, box_size=7)
+                output = io.BytesIO()
+                image.save(output, format='PNG')
+                result['qr'] = 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()
+            return result
         if operation == 'access_link':
             return {'url': self._access_link()}
         if operation in ('device.rename', 'device.remove'):

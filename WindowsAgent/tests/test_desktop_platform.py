@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock,patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from desktop_platform import NativePanel,popup_position,PANEL_SIZE,PANEL_SIZES
+from desktop_platform import NativePanel,popup_position,rail_popup_bounds,PANEL_SIZE,PANEL_SIZES
 
 
 class GeometryTests(unittest.TestCase):
@@ -26,6 +26,7 @@ class GeometryTests(unittest.TestCase):
 
     def test_reopening_queries_the_moved_icon_and_the_destination_dpi(self):
         panel=NativePanel.__new__(NativePanel);panel.user=Mock();panel.anchor=(1800,1040,1824,1080)
+        panel.rail_anchor=None
         panel.tray_identity=(0x123456789,1);panel.user.GetDpiForWindow.return_value=96
         panel.user.MonitorFromRect.return_value=1;panel.round_window=Mock()
         def monitor(_,p):
@@ -43,6 +44,12 @@ class GeometryTests(unittest.TestCase):
             panel.place(form);second=panel.user.SetWindowPos.call_args.args[2:6]
         self.assertNotEqual(first[0],second[0]);self.assertEqual(second[2:],(546,802))
         self.assertEqual(panel.anchor,(1300,1040,1324,1080));self.assertEqual(locate.call_count,2)
+
+    def test_rail_popup_opens_to_the_right_and_stays_inside_the_app(self):
+        self.assertEqual(rail_popup_bounds((-991,780,-955,816),(-1000,100,0,900),
+            (-1200,0,0,860),(312,458)),(-947,358,312,458))
+        self.assertEqual(rail_popup_bounds((10,250,46,286),(0,100,450,400),
+            (0,0,1920,1040),(312,458)),(54,108,312,284))
 
     @unittest.skipUnless(os.name=='nt','Windows GDI regions')
     def test_native_region_excludes_the_square_corner_and_keeps_the_center(self):

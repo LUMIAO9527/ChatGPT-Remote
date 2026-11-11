@@ -1,9 +1,9 @@
 [CmdletBinding()]
-param([string]$PythonPath='', [string]$DependencyPath='', [string]$OutputDirectory='', [switch]$DiagnosticConsole)
+param([string]$PythonPath='', [string]$DependencyPath='', [string]$OutputDirectory='', [string]$BuildDirectory='', [switch]$DiagnosticConsole)
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
 if(!$PythonPath){$PythonPath=(& py -3 -B -c 'import sys; print(sys.executable)').Trim()}
-$batch=Join-Path $root '_wip\build'
+$batch=if($BuildDirectory){[IO.Path]::GetFullPath($BuildDirectory)}else{Join-Path $root '_wip\build'}
 $temporary=Join-Path $batch 'temp'
 New-Item -ItemType Directory -Path $temporary -Force | Out-Null
 $env:TEMP=$env:TMP=$temporary
@@ -41,19 +41,25 @@ Path(sys.argv[2]).write_text(str(info), encoding='utf-8')
 $versionScript | & $PythonPath -B - $agent $versionInfo
 if($LASTEXITCODE){throw 'Windows version metadata generation failed.'}
 $manifest=Join-Path $batch 'netfx-bundle.json'
-& $PythonPath -B (Join-Path $agent 'build_runtime_manifest.py') $manifest
-if($LASTEXITCODE){throw 'Desktop runtime inventory failed.'}
 $helper=Join-Path $batch 'ChatGPTRemote.Update.exe'
 $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.Web.Extensions.dll (('/out:')+$helper) (Join-Path $agent 'update_common.cs') (Join-Path $agent 'update_helper.cs')
 if($LASTEXITCODE){throw 'Update helper compilation failed.'}
+$rail=Join-Path $batch 'ChatGPTRemote.Rail.dll'
+$railRefs=@('UIAutomationClient.dll','UIAutomationTypes.dll','WindowsBase.dll') | ForEach-Object {
+  '/reference:'+(Join-Path (Split-Path -Parent $compiler) ('WPF\'+$_))
+}
+& $compiler /nologo /target:library /platform:x64 /optimize+ /utf8output /codepage:65001 /reference:System.Drawing.dll /reference:System.Windows.Forms.dll @railRefs ('/out:'+$rail) (Join-Path $agent 'sidebar_button.cs')
+if($LASTEXITCODE){throw 'Sidebar button compilation failed.'}
+& $PythonPath -B (Join-Path $agent 'build_runtime_manifest.py') $manifest $rail
+if($LASTEXITCODE){throw 'Desktop runtime inventory failed.'}
 $arguments=@('-B','-m','PyInstaller','--noconfirm','--clean','--onedir','--windowed','--name','ChatGPTRemote.Core',
   '--distpath',(Join-Path $batch 'dist'),'--workpath',(Join-Path $batch 'work'),'--specpath',$batch,
   '--paths',$agent,'--paths',$DependencyPath,'--icon',(Join-Path $agent 'desktop.ico'),
   '--version-file',(Join-Path $batch 'version-info.txt'),
   '--hidden-import','webview.platforms.winforms','--hidden-import','qrcode',
   '--collect-all','webview','--collect-all','pythonnet','--collect-all','clr_loader',
-  '--add-binary',($helper+';.'),'--add-data',((Join-Path $root 'THIRD_PARTY_NOTICES.md')+';.'),
+  '--add-binary',($helper+';.'),'--add-binary',($rail+';.'),'--add-data',((Join-Path $root 'THIRD_PARTY_NOTICES.md')+';.'),
   '--add-data',($manifest+';.'),'--add-data',((Join-Path $agent 'netfx.config')+';.'))
 foreach($name in @('desktop.html','desktop.ico','desktop-light.ico','desktop-dark.ico','assets','web','uia_reader.ps1','manage_frozen.ps1','uninstall.ps1','legacy_tasks.ps1')){
   $arguments+=@('--add-data',((Join-Path $agent $name)+';.'))

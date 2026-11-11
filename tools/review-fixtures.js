@@ -207,7 +207,7 @@
     const data=typeof init.body==='string'?JSON.parse(init.body):{};
     switch(url.pathname) {
       case '/api/health':return json(windows());
-      case '/api/pair':return data.pin==='246810'?json({ok:true,token:'review-only-token'}):json({ok:false,error:'示例配对码是 246810。'},403);
+      case '/api/pair':return data.pin==='246810'||data.ticket==='review-ticket'?json({ok:true,token:'review-only-token'}):json({ok:false,error:'示例配对码是 246810。'},403);
       case '/api/windows': case '/api/select':case '/api/window':return json(windows());
       case '/api/conversation':return json(snapshot());
       case '/api/conversation/stream': {

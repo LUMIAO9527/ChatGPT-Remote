@@ -1,0 +1,67 @@
+:root {
+  color-scheme: dark;
+  --page: #131415;
+  --stage: #191a1c;
+  --rail: #1f2024;
+  --surface: #26272a;
+  --tile: #303134;
+  --tile-hover: #3a3b3e;
+  --menu: #2f3033;
+  --ink: #f2f2f3;
+  --ink-soft: #c9cbd0;
+  --muted: #a6a8ae;
+  --line: #ffffff14;
+  --line-strong: #ffffff1f;
+  --hover: #ffffff10;
+  --accent: #5ed3a0;
+  --accent-halo: #5ed3a01f;
+  --red: #ff9d96;
+  --red-halo: #ff9d9620;
+  --amber: #e0b062;
+  --amber-halo: #e0b06224;
+  --shadow: #00000055;
+  --shadow-tight: #00000033;
+  --dot-halo: #ffffff0f;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f4f2;
+  --stage: #fbfbfa;
+  --rail: #eceded;
+  --surface: #fff;
+  --tile: #f5f5f4;
+  --tile-hover: #eeeeec;
+  --menu: #fff;
+  --ink: #1e1f22;
+  --ink-soft: #3c3e44;
+  --muted: #6a6c73;
+  --line: #00000012;
+  --line-strong: #0000001f;
+  --hover: #00000008;
+  --accent: #137a57;
+  --accent-halo: #137a5714;
+  --red: #b0392f;
+  --red-halo: #b0392f12;
+  --amber: #8a6115;
+  --amber-halo: #8a611518;
+  --shadow: #1f212614;
+  --shadow-tight: #1f21260a;
+  --dot-halo: #0000000a;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 13px/1.45 "Segoe UI Variable Text", "Microsoft YaHei UI", system-ui, sans-serif;
+}
+button, input, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, .device-track:focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: -1px;
+}
+.icon { width: 15px; height: 15px; flex: none; display: inline-flex; }
+.icon svg { display: block; width: 100%; height: 100%; stroke-width: 1.65; }

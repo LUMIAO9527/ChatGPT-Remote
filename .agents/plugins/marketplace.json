@@ -1,0 +1,19 @@
+{
+  "name": "chatgpt-remote-local",
+  "interface": {
+    "displayName": "ChatGPT Remote 本机"
+  },
+  "plugins": [
+    {
+      "name": "chatgpt-remote",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
+    }
+  ]
+}

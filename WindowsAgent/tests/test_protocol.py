@@ -18,17 +18,51 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent import (AgentState, FrameEncoder, FrameHub, MockBackend, StreamFlow, SwitchGuard, TokenStore, RemoteError,
-                   VERSION, allowed_ip, make_handler, resolve_profile)
+                   VERSION, allowed_ip, make_handler, resolve_profile, mobile_document, _mobile_document)
 from windows_control import WindowTracker, window_matches
 
 
+class MobileDocumentTests(unittest.TestCase):
+    def test_document_reuses_encoding_and_invalidates_when_the_source_changes(self):
+        import gzip
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'web/index.html'
+            source.parent.mkdir()
+            source.write_text('<html>first</html>', encoding='utf-8')
+            _mobile_document.cache_clear()
+            try:
+                with patch('agent.HERE', root), patch('agent.gzip.compress', wraps=gzip.compress) as encode:
+                    first = mobile_document()
+                    self.assertIs(mobile_document(), first)
+                    self.assertEqual(encode.call_count, 1)
+                    source.write_text('<html>after</html>', encoding='utf-8')
+                    modified = source.stat()
+                    os.utime(source, ns=(modified.st_atime_ns, modified.st_mtime_ns + 1_000_000))
+                    after = mobile_document()
+                    self.assertNotEqual(after[1], first[1])
+                    self.assertEqual(gzip.decompress(after[2]), after[0])
+                    self.assertEqual(encode.call_count, 2)
+            finally:
+                _mobile_document.cache_clear()
+
+
 class ProtocolTests(unittest.TestCase):
+    def test_scan_ticket_pairs_through_http_without_a_manual_code(self):
+        ticket = self.state.pin_ticket
+        status, _, body = self.req('POST', '/api/pair', {'ticket': ticket, 'name': '扫码手机'})
+        self.assertEqual(status, 200)
+        self.token = json.loads(body)['token']
+        self.assertEqual(self.req('GET', '/api/windows', authorized=True)[0], 200)
+        self.assertEqual(self.req('POST', '/api/pair', {'ticket': ticket})[0], 403)
+
     def test_catalog_action_preserves_the_complete_native_directory(self):
         from unittest.mock import patch
         self.pair();epoch=self.select()['epoch']

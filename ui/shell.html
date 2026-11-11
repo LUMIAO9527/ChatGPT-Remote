@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- __REMOTE_LICENSES__ -->
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatGPT Remote · 浮层预览</title>
+  <style>
+__STYLES__  </style>
+</head>
+<body>
+  <main class="review">
+    <header class="masthead">
+      <div><div class="wordmark"><img data-brand alt=""><span>Remote</span></div><h1>手机连接</h1></div>
+      <div class="controls">
+        <div class="theme-switch" aria-label="配色预览">
+          <button data-theme="dark" aria-pressed="true">深色</button>
+          <button data-theme="light" aria-pressed="false">浅色</button>
+        </div>
+        <select id="scene-choice" aria-label="操作预览">
+          <option value="home">设备</option><option value="pair">配对</option><option value="settings">设置</option>
+          <option value="rename">重命名</option><option value="remove">移除确认</option>
+        </select>
+        <select id="scenario-choice" aria-label="场景">
+          <option value="normal">2 台设备</option><option value="single">1 台设备</option>
+          <option value="three">3 台设备</option><option value="many">8 台设备</option>
+          <option value="empty">0 台设备</option><option value="long">长设备名</option>
+          <option value="paused">连接暂停</option><option value="expired">配对码过期</option>
+          <option value="update">有可用更新</option><option value="failure">操作失败</option>
+        </select>
+        <button class="control" id="reset">重置</button>
+      </div>
+    </header>
+    <div class="gallery" id="gallery"></div>
+    <footer class="review-footer">
+      <button class="control" id="simulate-pair">模拟完成配对</button>
+      <button class="control" id="preview-mobile">手机启动</button>
+    </footer>
+  </main>
+  <dialog class="context" id="context">
+    <div class="context-bar">
+      <button class="control" id="close-context">返回预览</button><strong id="context-label"></strong>
+      <button class="control" id="replay-mobile" hidden>重播</button>
+    </div>
+    <div class="context-app" id="context-app"></div>
+  </dialog>
+  <script>
+__SCRIPT__  </script>
+</body>
+</html>

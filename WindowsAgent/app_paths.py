@@ -8,9 +8,9 @@ FROZEN = bool(getattr(sys, 'frozen', False))
 HERE = Path(__file__).resolve().parent
 _launcher = os.environ.get('CHATGPTREMOTE_LAUNCHER_EXE') if FROZEN else None
 EXECUTABLE = Path(_launcher or sys.executable).resolve() if FROZEN else Path(sys.executable)
-ROOT = EXECUTABLE.parent if FROZEN else HERE.parent
-DATA = ROOT / '_data' if FROZEN else HERE / 'data'
-RUNTIME = ROOT / '_wip' / 'desktop-runtime'
+ROOT = Path(os.environ['CHATGPTREMOTE_HOME']).resolve() if os.environ.get('CHATGPTREMOTE_HOME') else (EXECUTABLE.parent if FROZEN else HERE.parent)
+DATA = Path(os.environ['CHATGPTREMOTE_DATA']).resolve() if os.environ.get('CHATGPTREMOTE_DATA') else (ROOT / '_data' if FROZEN else HERE / 'data')
+RUNTIME = ROOT / '_wip' / ('plugin-runtime' if os.environ.get('CHATGPTREMOTE_HOME') else 'desktop-runtime')
 
 
 def launch_command(role='tray', *arguments):

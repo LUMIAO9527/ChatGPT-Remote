@@ -3,6 +3,7 @@ WindowsAgent/data/
 WindowsAgent/.venv/
 __pycache__/
 *.pyc
+/node_modules/
 
 # 过程与临时文件
 _wip/
@@ -16,3 +17,12 @@ docs/screenshots/
 /HANDOFF.md
 /_data/
 /.chatgptremote*
+
+# Generated plugin runtime; rebuilt from source and pinned dependencies.
+/plugin/core/
+/plugin/vendor/
+/plugin/runtime-manifest.json
+/plugin/mcp.json
+/plugin/plugin.json
+/plugin/.codex-plugin/plugin.json
+/plugin/assets/

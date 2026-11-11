@@ -12,6 +12,26 @@
 <link rel="apple-touch-icon" href="/icon.png?v=rm4">
 <title>ChatGPT Remote</title>
 <style>
+/* Initial paint is the same across phone themes. */
+.startup-screen{position:fixed;inset:0;z-index:150;background:#fff;color:#111;display:grid;place-items:center;contain:layout paint}
+.startup-content{position:relative;height:64px;display:flex;flex-direction:column;align-items:center}
+.startup-content>.loading-dots{position:absolute;left:50%;top:84px;transform:translateX(-50%)}
+.startup-logo{display:block;width:64px;height:64px;color:#111}
+.startup-logo svg{display:block;width:100%;height:100%;fill:currentColor}
+.loading-dots{display:flex;align-items:center;justify-content:center;gap:6px;height:10px}
+.loading-dots span{display:block;width:5px;height:5px;border-radius:50%;background:#111;animation:startup-dot 1.15s ease-in-out infinite;opacity:.22}
+.loading-dots span:nth-child(2){animation-delay:.14s}
+.loading-dots span:nth-child(3){animation-delay:.28s}
+@keyframes startup-dot{0%,60%,100%{transform:translateY(0);opacity:.22}30%{transform:translateY(-4px);opacity:1}}
+@media(prefers-reduced-motion:reduce){.loading-dots span{animation:none;opacity:.45}}
+body.starting{background:#fff}
+#homeView{max-width:none;background:#fff;color:#111}
+#homeView>.connection-header{justify-content:flex-end}
+#homeView .panel-icon{color:#747474;background:transparent}
+#homeView .connection-home-body{display:flex;flex:1;align-items:center;justify-content:center}
+#homeOpenBtn{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;width:104px;min-height:120px;padding:0;background:transparent;border:0;border-radius:0;color:#111}
+#homeView .connection-footer{visibility:hidden}
+#homeView[data-ready="true"] .loading-dots span{animation:none;opacity:.25}
 /* Mobile conversation and bottom sheets. */
 :root{
   --bg:#f5f6f8;--card:#fff;--surface-alt:#f0f2f5;--surface-pressed:#e8ebf0;
@@ -98,7 +118,15 @@ svg{flex-shrink:0}
 .connection-brand img{border-radius:10px}
 .connection-help{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:10px 18px;background:var(--card);border:1px solid var(--line);border-radius:15px;font-size:12px;font-weight:500}
 .connection-subtitle{color:var(--muted);font-size:14px;line-height:1.8}
-.pair-card{padding:24px;margin-top:24px;border:1px solid var(--line)}
+.pair-card{padding:0;margin-top:26px;background:transparent}
+#pairView{overflow:auto;gap:24px}
+.pair-heading{height:auto;flex:none}
+.pair-entry{position:static;display:block;width:100%;max-width:360px;margin:auto;flex:none;padding:30px 0 44px;overflow:visible;background:transparent;border:0;border-radius:0}
+.pair-entry h2{font-size:30px;letter-spacing:-1px;margin-bottom:10px}
+.pair-entry .panel-body{padding:0;overflow:visible}
+.pair-card .primary{margin-top:18px;height:52px}
+#pairView .connection-footer{margin-top:auto}
+@media(max-height:520px){.pair-entry{padding:6px 0 18px}.pair-entry h2{font-size:25px}#pairView{gap:10px}}
 .pair-card label{display:block;font-size:14px;font-weight:600;margin-bottom:12px}
 .pair-card input{width:100%;height:52px;background:var(--surface-alt);border:1px solid transparent;border-radius:14px;padding:12px 14px}
 .pair-card input:focus{border-color:var(--accent)}
@@ -518,7 +546,19 @@ svg{flex-shrink:0}
 
 </style>
 </head>
-<body>
+<body class="starting">
+<svg width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden"><defs><symbol id="openai-startup-mark" viewBox="0 0 21 21">
+  <path
+    d="M11.6475 18.3409C11.0975 18.3409 10.575 18.2364 10.08 18.0274C9.58502 17.8184 9.14502 17.5269 8.76002 17.1529C8.34202 17.2959 7.90751 17.3674 7.45651 17.3674C6.71951 17.3674 6.03751 17.1859 5.41051 16.8229C4.78351 16.4599 4.27751 15.9649 3.89251 15.3379C3.51851 14.7109 3.33151 14.0124 3.33151 13.2424C3.33151 12.9234 3.37551 12.5769 3.46351 12.2029C3.02351 11.7959 2.68251 11.3284 2.44051 10.8004C2.19851 10.2614 2.07751 9.70044 2.07751 9.11744C2.07751 8.52344 2.20401 7.95144 2.45701 7.40144C2.71001 6.85144 3.06201 6.37844 3.51301 5.98244C3.97501 5.57544 4.50851 5.29494 5.11351 5.14094C5.23451 4.51394 5.48751 3.95294 5.87251 3.45794C6.26851 2.95194 6.75252 2.55594 7.32452 2.26994C7.89652 1.98394 8.50702 1.84094 9.15602 1.84094C9.70602 1.84094 10.2285 1.94544 10.7235 2.15444C11.2185 2.36344 11.6585 2.65494 12.0435 3.02894C12.4615 2.88594 12.896 2.81444 13.347 2.81444C14.084 2.81444 14.766 2.99594 15.393 3.35894C16.02 3.72194 16.5205 4.21694 16.8945 4.84394C17.2795 5.47094 17.472 6.16944 17.472 6.93944C17.472 7.25844 17.428 7.60494 17.34 7.97894C17.78 8.38594 18.121 8.85894 18.363 9.39794C18.605 9.92594 18.726 10.4814 18.726 11.0644C18.726 11.6584 18.5995 12.2304 18.3465 12.7804C18.0935 13.3304 17.736 13.8089 17.274 14.2159C16.823 14.6119 16.295 14.8869 15.69 15.0409C15.569 15.6679 15.3105 16.2289 14.9145 16.7239C14.5295 17.2299 14.051 17.6259 13.479 17.9119C12.907 18.1979 12.2965 18.3409 11.6475 18.3409ZM7.57201 16.2784C8.12201 16.2784 8.60051 16.1629 9.00751 15.9319L12.1095 14.1499C12.2195 14.0729 12.2745 13.9684 12.2745 13.8364V12.4174L8.28152 14.7109C8.03952 14.8539 7.79751 14.8539 7.55552 14.7109L4.43701 12.9124C4.43701 12.9454 4.43151 12.9839 4.42051 13.0279C4.42051 13.0719 4.42051 13.1379 4.42051 13.2259C4.42051 13.7869 4.55252 14.3039 4.81651 14.7769C5.09152 15.2389 5.47101 15.6019 5.95501 15.8659C6.43901 16.1409 6.97801 16.2784 7.57201 16.2784ZM7.73701 13.5889C7.80301 13.6219 7.86351 13.6384 7.91851 13.6384C7.97351 13.6384 8.02852 13.6219 8.08352 13.5889L9.32101 12.8794L5.34451 10.5694C5.10251 10.4264 4.98151 10.2119 4.98151 9.92594V6.34544C4.43151 6.58744 3.99151 6.96144 3.66151 7.46744C3.33151 7.96244 3.16651 8.51244 3.16651 9.11744C3.16651 9.65644 3.30401 10.1734 3.57901 10.6684C3.85401 11.1634 4.21151 11.5374 4.65151 11.7904L7.73701 13.5889ZM11.6475 17.2519C12.2305 17.2519 12.7585 17.1199 13.2315 16.8559C13.7045 16.5919 14.0785 16.2289 14.3535 15.7669C14.6285 15.3049 14.766 14.7879 14.766 14.2159V10.6519C14.766 10.5199 14.711 10.4209 14.601 10.3549L13.347 9.62894V14.2324C13.347 14.5184 13.226 14.7329 12.984 14.8759L9.86551 16.6744C10.4045 17.0594 10.9985 17.2519 11.6475 17.2519ZM12.2745 11.2129V8.96894L10.41 7.91294L8.52902 8.96894V11.2129L10.41 12.2689L12.2745 11.2129ZM7.45651 5.94944C7.45651 5.66344 7.57752 5.44894 7.81952 5.30594L10.938 3.50744C10.399 3.12244 9.80502 2.92994 9.15602 2.92994C8.57302 2.92994 8.04501 3.06194 7.57201 3.32594C7.09902 3.58994 6.72502 3.95294 6.45002 4.41494C6.18602 4.87694 6.05401 5.39394 6.05401 5.96594V9.51344C6.05401 9.64544 6.10901 9.74994 6.21902 9.82694L7.45651 10.5529V5.94944ZM15.8385 13.8364C16.3885 13.5944 16.823 13.2204 17.142 12.7144C17.472 12.2084 17.637 11.6584 17.637 11.0644C17.637 10.5254 17.4995 10.0084 17.2245 9.51344C16.9495 9.01844 16.592 8.64444 16.152 8.39144L13.0665 6.60944C13.0005 6.56544 12.94 6.54894 12.885 6.55994C12.83 6.55994 12.775 6.57644 12.72 6.60944L11.4825 7.30244L15.4755 9.62894C15.5965 9.69494 15.6845 9.78294 15.7395 9.89294C15.8055 9.99194 15.8385 10.1129 15.8385 10.2559V13.8364ZM12.522 5.45444C12.764 5.30044 13.006 5.30044 13.248 5.45444L16.383 7.28594C16.383 7.20894 16.383 7.10994 16.383 6.98894C16.383 6.46094 16.251 5.96044 15.987 5.48744C15.734 5.00344 15.3655 4.61844 14.8815 4.33244C14.4085 4.04644 13.8585 3.90344 13.2315 3.90344C12.6815 3.90344 12.203 4.01894 11.796 4.24994L8.69402 6.03194C8.58402 6.10894 8.52902 6.21344 8.52902 6.34544V7.76444L12.522 5.45444Z"
+    fill="currentColor"
+  />
+</symbol></defs></svg>
+<section class="startup-screen" id="startupView" role="status" aria-label="正在连接">
+  <div class="startup-content">
+    <div class="startup-logo" aria-hidden="true"><svg viewBox="0 0 21 21"><use href="#openai-startup-mark"/></svg></div>
+    <div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+  </div>
+</section>
 <svg width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden"><defs><symbol id="icon-new-chat" viewBox="0 0 24 24"><path d="M15.6729 3.91287C16.8918 2.69392 18.8682 2.69392 20.0871 3.91287C21.3061 5.13182 21.3061 7.10813 20.0871 8.32708L14.1499 14.2643C13.3849 15.0293 12.3925 15.5255 11.3215 15.6785L9.14142 15.9899C8.82983 16.0344 8.51546 15.9297 8.29289 15.7071C8.07033 15.4845 7.96554 15.1701 8.01005 14.8586L8.32149 12.6785C8.47449 11.6075 8.97072 10.615 9.7357 9.85006L15.6729 3.91287ZM18.6729 5.32708C18.235 4.88918 17.525 4.88918 17.0871 5.32708L11.1499 11.2643C10.6909 11.7233 10.3932 12.3187 10.3014 12.9613L10.1785 13.8215L11.0386 13.6986C11.6812 13.6068 12.2767 13.3091 12.7357 12.8501L18.6729 6.91287C19.1108 6.47497 19.1108 5.76499 18.6729 5.32708ZM11 3.99929C11.0004 4.55157 10.5531 4.99963 10.0008 5.00007C9.00227 5.00084 8.29769 5.00827 7.74651 5.06064C7.20685 5.11191 6.88488 5.20117 6.63803 5.32695C6.07354 5.61457 5.6146 6.07351 5.32698 6.63799C5.19279 6.90135 5.10062 7.24904 5.05118 7.8542C5.00078 8.47105 5 9.26336 5 10.4V13.6C5 14.7366 5.00078 15.5289 5.05118 16.1457C5.10062 16.7509 5.19279 17.0986 5.32698 17.3619C5.6146 17.9264 6.07354 18.3854 6.63803 18.673C6.90138 18.8072 7.24907 18.8993 7.85424 18.9488C8.47108 18.9992 9.26339 19 10.4 19H13.6C14.7366 19 15.5289 18.9992 16.1458 18.9488C16.7509 18.8993 17.0986 18.8072 17.362 18.673C17.9265 18.3854 18.3854 17.9264 18.673 17.3619C18.7988 17.1151 18.8881 16.7931 18.9393 16.2535C18.9917 15.7023 18.9991 14.9977 18.9999 13.9992C19.0003 13.4469 19.4484 12.9995 20.0007 13C20.553 13.0004 21.0003 13.4485 20.9999 14.0007C20.9991 14.9789 20.9932 15.7808 20.9304 16.4426C20.8664 17.116 20.7385 17.7136 20.455 18.2699C19.9757 19.2107 19.2108 19.9756 18.27 20.455C17.6777 20.7568 17.0375 20.8826 16.3086 20.9421C15.6008 21 14.7266 21 13.6428 21H10.3572C9.27339 21 8.39925 21 7.69138 20.9421C6.96253 20.8826 6.32234 20.7568 5.73005 20.455C4.78924 19.9756 4.02433 19.2107 3.54497 18.2699C3.24318 17.6776 3.11737 17.0374 3.05782 16.3086C2.99998 15.6007 2.99999 14.7266 3 13.6428V10.3572C2.99999 9.27337 2.99998 8.39922 3.05782 7.69134C3.11737 6.96249 3.24318 6.3223 3.54497 5.73001C4.02433 4.7892 4.78924 4.0243 5.73005 3.54493C6.28633 3.26149 6.88399 3.13358 7.55735 3.06961C8.21919 3.00673 9.02103 3.00083 9.99922 3.00007C10.5515 2.99964 10.9996 3.447 11 3.99929Z"/></symbol></defs></svg>
 <header class="topbar">
   <div class="brand">
@@ -529,42 +569,37 @@ svg{flex-shrink:0}
 </header>
 
 <main id="pairView" class="connection-page">
-  <section id="pairIntro" class="connection-landing" aria-labelledby="pairIntroTitle">
+  <section id="pairIntro" class="connection-landing pair-heading" aria-label="ChatGPT Remote">
     <header class="connection-header"><div class="connection-brand"><img src="/icon.svg?v=rm4" width="32" height="32" alt="">ChatGPT Remote</div></header>
-    <div class="connection-home-body">
-      <button class="computer-cover" id="pairStartBtn" type="button" aria-controls="pairEntry" aria-expanded="false" aria-labelledby="pairIntroTitle pairStartLabel">
-        <span class="cover-heading"><span id="pairIntroTitle">我的主电脑</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
-        <img class="computer-illustration" src="/computer-cover.svg" width="280" height="190" alt="">
-        <span class="cover-enter" id="pairStartLabel">连接电脑</span>
-      </button>
-    </div>
-    <footer class="connection-footer"><button class="connection-help" id="pairHelpBtn" type="button" aria-controls="helpPanel">使用帮助 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></footer>
+    <button id="pairStartBtn" type="button" aria-controls="pairEntry" aria-expanded="true" hidden>输入配对码</button>
   </section>
-  <section id="pairEntry" class="mobile-panel pair-entry" role="dialog" aria-modal="true" aria-labelledby="pairTitle" hidden>
-    <header class="panel-head"><h2 id="pairTitle">配对电脑</h2><button class="panel-icon" id="pairBackBtn" type="button" aria-label="关闭配对"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
+  <section id="pairEntry" class="pair-entry" aria-labelledby="pairTitle">
+    <header><h2 id="pairTitle">连接电脑</h2><button id="pairBackBtn" type="button" hidden>返回</button></header>
     <div class="panel-body pair-content">
-      <p class="connection-subtitle">输入电脑 Rm 面板上的六位配对码</p>
+      <p class="connection-subtitle" id="pairSubtitle">输入电脑 Remote 插件中的六位配对码</p>
       <div class="card pair-card">
         <form id="pairForm" novalidate>
           <label class="sr-only" for="pin">配对码</label>
           <input id="pin" name="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-describedby="pairError">
-          <details class="pair-name"><summary>设备名称（选填）</summary><label class="sr-only" for="deviceName">设备名称</label><input id="deviceName" name="deviceName" type="text" maxlength="60" value="手机" autocomplete="off" spellcheck="false"></details>
+          <input id="deviceName" name="deviceName" type="hidden" value="手机">
           <div class="error-text" id="pairError" role="alert"></div>
           <button class="btn primary block" type="submit" id="pairBtn">连接电脑</button>
         </form>
       </div>
     </div>
   </section>
+  <footer class="connection-footer"><button class="connection-help" id="pairHelpBtn" type="button" aria-controls="helpPanel">连接帮助</button></footer>
 </main>
 
 <main id="homeView" class="connection-page" hidden>
-  <header class="connection-header"><div class="connection-brand"><img src="/icon.svg?v=rm4" width="32" height="32" alt="">ChatGPT Remote</div><button class="panel-icon" id="homeSettingsBtn" type="button" aria-label="设置" aria-controls="settingsPanel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3h5l.6 2.3 2 1.2 2.3-.6 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.3-.6-2 1.2-.6 2.2h-5l-.6-2.2-2-1.2-2.3.6-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.3.6 2-1.2L9.5 3Z"/><circle cx="12" cy="13" r="3.2"/></svg></button></header>
+  <header class="connection-header"><button class="panel-icon" id="homeSettingsBtn" type="button" aria-label="设置" aria-controls="settingsPanel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3h5l.6 2.3 2 1.2 2.3-.6 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.3-.6-2 1.2-.6 2.2h-5l-.6-2.2-2-1.2-2.3.6-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.3.6 2-1.2L9.5 3Z"/><circle cx="12" cy="13" r="3.2"/></svg></button></header>
   <section class="connection-home-body" aria-labelledby="homeTitle">
     <h2 class="sr-only" id="homeTitle">我的电脑</h2>
-    <button class="computer-cover" id="homeOpenBtn" type="button" aria-labelledby="homeComputerName homeOpenLabel" aria-describedby="homeStatus homeWindowName">
-      <span class="cover-heading"><span id="homeComputerName">我的主电脑</span><span class="connection-status" id="homeStatus" role="status">正在连接</span></span>
-      <img class="computer-illustration" src="/computer-cover.svg" width="280" height="190" alt="">
-      <span class="cover-enter" id="homeOpenLabel">点击进入</span>
+    <button id="homeOpenBtn" type="button" aria-labelledby="homeComputerName homeOpenLabel" aria-describedby="homeStatus homeWindowName">
+      <div class="startup-logo" aria-hidden="true"><svg viewBox="0 0 21 21"><use href="#openai-startup-mark"/></svg></div>
+      <div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      <span class="sr-only" id="homeComputerName">我的电脑</span><span class="sr-only" id="homeStatus" role="status">正在连接</span>
+      <span class="sr-only" id="homeOpenLabel">打开对话</span>
       <span class="sr-only" id="homeWindowName">正在读取连接状态…</span>
     </button>
   </section>
@@ -736,7 +771,7 @@ svg{flex-shrink:0}
 <section class="mobile-panel help-panel" id="helpPanel" role="dialog" aria-modal="true" aria-labelledby="helpTitle" hidden>
   <header class="panel-head"><h2 id="helpTitle">使用帮助</h2><button class="panel-icon" id="helpCloseBtn" type="button" aria-label="关闭帮助"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10m0-10L7 17"/></svg></button></header>
   <div class="panel-body help-body">
-    <section><h3>连接电脑</h3><p>在电脑打开 Rm 和 ChatGPT，输入 Rm 面板上的六位配对码。</p></section>
+    <section><h3>连接电脑</h3><p>在电脑打开 Remote 插件，手机扫码即可连接；也可以输入面板上的六位配对码。</p></section>
     <section><h3>继续对话</h3><p>点顶部标题切换项目与对话；在输入框写消息，通过模型按钮和 ＋ 调整选项或添加附件。</p></section>
     <section><h3>连接中断</h3><p>保持电脑运行，并检查手机网络。可在对话页重试连接，或在设置中选择控制窗口。</p></section>
   </div>
@@ -778,6 +813,7 @@ svg{flex-shrink:0}
   function $(id){ return document.getElementById(id); }
 
   var els = {
+    startupView:$('startupView'),
     noticeText:$('noticeText'),noticeRetryBtn:$('noticeRetryBtn'),noticeDismissBtn:$('noticeDismissBtn'),noticeOpenBtn:$('noticeOpenBtn'),
     chatViewBtn: $('chatViewBtn'), screenViewBtn: $('screenViewBtn'),screenOpenBtn:$('screenOpenBtn'),
     screenPanel: $('screenCard'), screenCloseBtn:$('chatViewBtn'),screenTitle:$('screenTitle'),
@@ -1001,7 +1037,7 @@ svg{flex-shrink:0}
     try {localStorage.setItem(SURFACE_KEY,JSON.stringify({autoResume:state.autoResume,lastSurface:'remote',view:state.view}));}catch(e) { /* private browsing */ }
   }
   function renderConnectionHome(){
-    els.homeOpenLabel.textContent='点击进入';
+    els.homeOpenLabel.textContent='打开对话';
     els.homeComputerName.textContent=state.computerName||'我的主电脑';
     els.settingsComputerName.textContent=state.computerName;
     var target=state.windows.find(function(item){return item.selected;});
@@ -1009,6 +1045,7 @@ svg{flex-shrink:0}
     var needsWindow=state.status==='ambiguous' || state.status==='not_selected';
     els.homeStatus.textContent=ready?'已连接':state.networkTrouble?'正在重连':needsWindow?'选择窗口':state.status==='waiting'?'等待窗口':'正在连接';
     els.homeStatus.setAttribute('data-ready',String(ready));
+    els.homeView.setAttribute('data-ready',String(ready));
     els.homeWindowName.textContent=target?target.title:state.networkTrouble?'正在重新连接电脑…':needsWindow?'在设置中选择电脑窗口':state.status==='waiting'?'在电脑打开 ChatGPT 后即可继续':'正在读取连接状态…';
     els.homeResumeBtn.setAttribute('aria-checked',String(state.autoResume));
     els.computerHomeBtn.hidden=state.homeActive;
@@ -1043,19 +1080,13 @@ svg{flex-shrink:0}
     showConnectionHome();
   }
   function showPairEntry(open,push){
-    var wasOpen=els.pairStartBtn.getAttribute('aria-expanded')==='true';
-    els.pairIntro.inert=open;els.pairEntry.hidden=!open;
-    els.pairStartBtn.setAttribute('aria-expanded',String(open));
-    els.sheetBackdrop.hidden=!open && !state.panel;
-    if(push && window.history)window.history.pushState({harmonyRemotePairEntry:true},'');
-    if(!els.pairView.hidden && !state.panel && (open || wasOpen)){
-      (open?els.pin:els.pairStartBtn).focus({preventScroll:true});
-    }
+    els.pairIntro.inert=false;els.pairEntry.hidden=false;
+    els.pairStartBtn.setAttribute('aria-expanded','true');
+    els.sheetBackdrop.hidden=!state.panel;
+    if(open && !els.pairView.hidden && !state.panel)els.pin.focus({preventScroll:true});
   }
   function closePairEntry(){
-    if(state.pending.pair)return;
-    if(window.history && window.history.state && window.history.state.harmonyRemotePairEntry)window.history.back();
-    else showPairEntry(false,false);
+    showPairEntry(false,false);
   }
   function setDisabled(el, disabled){ if (el) el.disabled = !!disabled; }
   function setTone(el, tone){
@@ -1131,8 +1162,8 @@ svg{flex-shrink:0}
     setNotice('error','','error');renderConversationState();
   }
   function showPairError(message){
-    els.pairError.textContent=message||'';els.pairError.hidden=true;
-    setNotice('pair',message,'error');
+    els.pairError.textContent=message||'';els.pairError.hidden=!message;
+    setNotice('pair','','error');
   }
   function clearPairError(){showPairError('');}
   function navigationNotice(message){
@@ -2240,7 +2271,7 @@ svg{flex-shrink:0}
       summary.appendChild(label);
     });
   }
-  function applyConversationEvent(event){
+  function applyConversationEvent(event,deferRender){
     if (event.kind === 'idle') { state.lastChatAt = performance.now(); return; }
     if (event.kind === 'status') throw new ApiError(event.error || '对话正在切换。', 409, event.code);
     if (event.kind !== 'conversation' || !Array.isArray(event.messages) || !Array.isArray(event.order)) throw new ApiError('对话数据格式异常。', 0);
@@ -2329,15 +2360,19 @@ svg{flex-shrink:0}
     state.chatConnected = true;
     state.lastChatAt = performance.now();
     if (state.errorSource === 'conversation' || state.errorSource === 'network') clearError();
-    applyWindowState(event);
+    applyWindowState(event,deferRender);
     if(sameConversation && state.panel==='options' && state.optionsIntent==='prompt' && !state.optionsBusy &&
        !state.optionsLoading && !state.optionsInvalid && state.options && state.options.prompt &&
        event.prompt && old.prompt && old.prompt.key===state.options.key && event.prompt.key!==old.prompt.key){
       acceptOptions(Object.assign({},event.prompt,{epoch:event.epoch}));
       state.optionsError='';renderOptions();
     }
-    if (bottom) requestAnimationFrame(function(){ list.scrollTop = list.scrollHeight; updateChatLatest(); });
-    else updateChatLatest();
+    if (bottom) {
+      if(!state.chatScrollScheduled){
+        state.chatScrollScheduled=true;
+        requestAnimationFrame(function(){state.chatScrollScheduled=false;list.scrollTop = list.scrollHeight;updateChatLatest();});
+      }
+    } else updateChatLatest();
   }
   function applyConversationSnapshot(snapshot){
     if (!snapshot || !Array.isArray(snapshot.messages) || typeof snapshot.key !== 'string') {
@@ -2356,13 +2391,19 @@ svg{flex-shrink:0}
         if (part.done) throw new ApiError('对话连接已结束，正在重新连接。', 0);
         buffer += decoder.decode(part.value, { stream: true });
         if (buffer.length > 1024 * 1024) throw new ApiError('对话数据超过限制。', 0);
-        var end;
-        while ((end = buffer.indexOf('\n')) >= 0) {
-          var line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-          if (!line) continue;
-          applyConversationEvent(JSON.parse(line));
-          keepAlive();
-          if(onEvent)onEvent();
+        var end,updated=false;
+        try{
+          while ((end = buffer.indexOf('\n')) >= 0) {
+            var line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+            if (!line) continue;
+            var update=JSON.parse(line);
+            applyConversationEvent(update,true);
+            updated=updated || update.kind==='conversation';
+            keepAlive();
+            if(onEvent)onEvent();
+          }
+        }finally{
+          if(updated){render();renderStats();}
         }
       }
     } finally { try { await reader.cancel(); } catch (e) { /* closed */ } }
@@ -2483,6 +2524,17 @@ svg{flex-shrink:0}
     renderControls();
     renderConversation();
     renderConnectionHome();
+    if(state.starting && (state.chatConnected || state.homeActive || state.networkTrouble || state.error || state.panel))finishStartup();
+  }
+  function showStartup(){
+    state.starting=true;
+    els.startupView.hidden=false;
+    document.body.classList.add('starting');
+  }
+  function finishStartup(){
+    state.starting=false;
+    els.startupView.hidden=true;
+    document.body.classList.remove('starting');
   }
   function renderBadge(){
     if (!state.live || !state.token) { setBadge('未配对', ''); return; }
@@ -2851,6 +2903,7 @@ svg{flex-shrink:0}
   }
 
   function showPairView(message){
+    finishStartup();
     clearAttachmentPreview();state.phoneFiles.forEach(releasePhonePreview);state.fileSequence++;state.phoneFiles=[];state.filesBusy=false;renderPhoneFiles();
     state.optionsRoot=null;state.optionsRootAt=0;state.localQueued=[];state.queuedExpanded=false;state.settingChoice='';
     clearDraftConflict();state.recoveredUndo=null;
@@ -2985,7 +3038,7 @@ svg{flex-shrink:0}
     return out;
   }
 
-  function applyWindowState(info){
+  function applyWindowState(info,deferRender){
     if (!info || typeof info !== 'object') return;
     if (!acceptAgentInstance(info.instance)) return;
     if (Number.isFinite(Number(info.epoch)) && Number(info.epoch) < state.epoch) return;
@@ -3031,8 +3084,7 @@ svg{flex-shrink:0}
     if ((allowed && !isStatusAllowed(prevStatus)) || state.epoch !== prevEpoch || (!state.frameSeen && allowed)) {
       wakeSleep();
     }
-    render();
-    renderStats();
+    if(!deferRender){render();renderStats();}
     if(state.panel==='navigation' && state.navigationNeedsRefresh && !state.navigation)refreshNavigation();
     if(modelReconnectPending && state.panel==='options' && state.optionsIntent==='model' && !state.optionsBusy && !state.optionsLoading){
       modelReconnectPending=false;openModelPicker();
@@ -5253,11 +5305,11 @@ svg{flex-shrink:0}
     bindScreenGestures();
   }
 
-  async function pair(){
+  async function pair(ticket){
     if (state.pending.pair) return;
     var pin = els.pin.value.replace(/\D+/g, '');
     var name = (els.deviceName.value || '').trim() || '手机';
-    if (pin.length !== 6) {
+    if (!ticket && pin.length !== 6) {
       showPairError('请输入 6 位数字配对码。');
       try { els.pin.focus(); } catch (e) { /* ignore */ }
       return;
@@ -5267,7 +5319,7 @@ svg{flex-shrink:0}
     setDisabled(els.pairBtn, true);
     els.pairBtn.textContent = '正在连接…';
     try {
-      var data = await requestJson('/api/pair', { method: 'POST', auth: false, body: { pin: pin, name: name } });
+      var data = await requestJson('/api/pair', { method: 'POST', auth: false, body: ticket?{ticket:ticket,name:name}:{pin:pin,name:name} });
       if (!data || typeof data.token !== 'string' || !data.token) {
         throw new ApiError('配对响应缺少令牌，请重试。', 0);
       }
@@ -5285,7 +5337,10 @@ svg{flex-shrink:0}
   }
 
   function boot(){
-    try{var entry=new URL(location.href);if(entry.searchParams.has('pair')){entry.searchParams.delete('pair');history.replaceState(history.state,'',entry.pathname+entry.search+entry.hash);}}catch(e){}
+    var scannedTicket='';
+    try{var entry=new URL(location.href);scannedTicket=entry.searchParams.get('pair')||'';if(scannedTicket){entry.searchParams.delete('pair');history.replaceState(history.state,'',entry.pathname+entry.search+entry.hash);}}catch(e){}
+    var userAgent=typeof navigator==='undefined'?'':navigator.userAgent||'';
+    els.deviceName.value=/iPhone/.test(userAgent)?'iPhone':/iPad/.test(userAgent)?'iPad':/HarmonyOS|Huawei|HUAWEI/.test(userAgent)?'华为手机':/Android/.test(userAgent)?'Android 手机':'手机';
     restorePhonePreferences();
     state.offline=typeof navigator!=='undefined' && navigator.onLine===false;
     try {
@@ -5298,10 +5353,13 @@ svg{flex-shrink:0}
     updateBuildInfo();
     state.token = readToken();
     if (state.token) {
+      showStartup();
       enterRemote();
     } else {
       showPairView('');
       renderStats();
+      if(scannedTicket){showStartup();pair(scannedTicket).finally(function(){if(!state.live)finishStartup();});}
+      else finishStartup();
     }
     loadHealth();
   }

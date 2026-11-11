@@ -107,6 +107,20 @@ def website_icon(kind: str, theme: str = 'auto') -> bytes:
     return output.getvalue()
 
 
+@lru_cache(maxsize=2)
+def _mobile_document(path: str, modified_ns: int, size: int) -> tuple[bytes, str, bytes]:
+    """File metadata identifies a reusable mobile document and its wire form."""
+    page = Path(path).read_bytes()
+    etag = '"' + hashlib.sha256(page).hexdigest()[:24] + '"'
+    return page, etag, gzip.compress(page, 6)
+
+
+def mobile_document() -> tuple[bytes, str, bytes]:
+    path = HERE / 'web' / 'index.html'
+    stat = path.stat()
+    return _mobile_document(str(path), stat.st_mtime_ns, stat.st_size)
+
+
 def resolve_profile(name: str, fps: float | None, max_width: int | None,
                     quality: int | None) -> tuple[float, int, int]:
     base = PROFILES.get(name, PROFILES["lan"])
@@ -1050,7 +1064,7 @@ class AgentState:
             pass
 
     # -- pairing -----------------------------------------------------------
-    def pair(self, ip: str, pin: str, name: str) -> str:
+    def pair(self, ip: str, pin: str, name: str, *, ticket: str = '') -> str:
         now = time.monotonic()
         with self.lock:
             attempts = [t for t in self.failed.get(ip, []) if now - t < 300]
@@ -1060,13 +1074,17 @@ class AgentState:
                 raise RemoteError("配对码已过期，请使用电脑端的新配对码", 403)
             if not self.pin:
                 raise RemoteError("配对码已使用，请使用电脑端的新配对码", 403)
-            valid_format = (isinstance(pin, str) and len(pin) == 6
-                            and pin.isascii() and pin.isdigit())
-            if not valid_format or not hmac.compare_digest(pin, self.pin):
+            valid_ticket = (isinstance(ticket, str) and bool(ticket)
+                            and hmac.compare_digest(ticket, self.pin_ticket))
+            valid_pin = (isinstance(pin, str) and len(pin) == 6
+                         and pin.isascii() and pin.isdigit()
+                         and hmac.compare_digest(pin, self.pin))
+            if not (valid_ticket or valid_pin):
                 attempts.append(now)
                 self.failed[ip] = attempts
                 raise RemoteError("配对码不正确", 403)
-            self.pin = ""  # one new device per startup; restart to enroll another
+            self.pin = ''
+            self.pin_ticket = ''
         return self.tokens.issue(name or "手机")
 
     def pair_ticket_valid(self, ticket: str) -> bool:
@@ -1367,7 +1385,8 @@ def make_handler(state: AgentState):
         # -- responses -----------------------------------------------------
         def send_bytes(self, data: bytes, code: int = 200,
                        content_type: str = "application/json; charset=utf-8",
-                       extra_headers: dict[str, str] | None = None) -> None:
+                       extra_headers: dict[str, str] | None = None, *,
+                       compressed_body: bytes | None = None) -> None:
             headers = dict(extra_headers or {})
             body = data
             compressed = False
@@ -1375,7 +1394,7 @@ def make_handler(state: AgentState):
                     and "gzip" in self.headers.get("Accept-Encoding", "").lower()
                     and content_type.split(";")[0].strip() in COMPRESSIBLE_TYPES
                     and "Content-Encoding" not in headers):
-                body = gzip.compress(data, 6)
+                body = compressed_body if compressed_body is not None else gzip.compress(data, 6)
                 compressed = True
             self.send_response(code)
             self.send_header("Content-Type", content_type)
@@ -1525,15 +1544,14 @@ def make_handler(state: AgentState):
                     if ticket and not state.pair_ticket_valid(ticket):
                         self.send_expired_pair()
                         return
-                    page = (HERE / "web" / "index.html").read_bytes()
-                    etag = '"' + hashlib.sha256(page).hexdigest()[:24] + '"'
+                    page, etag, compressed = mobile_document()
                     headers = {"Cache-Control": "no-cache", "ETag": etag}
                     if self.headers.get("If-None-Match") == etag:
                         self.send_bytes(b"", code=304, content_type="text/html; charset=utf-8",
                                         extra_headers=headers)
                     else:
                         self.send_bytes(page, content_type="text/html; charset=utf-8",
-                                        extra_headers=headers)
+                                        extra_headers=headers, compressed_body=compressed)
                 elif path == "/api/health":
                     self.send_json({"ok": True, "name": "ChatGPT Remote",
                                     "version": VERSION, "mock": state.mock,
@@ -1835,12 +1853,13 @@ def make_handler(state: AgentState):
             try:
                 if path == "/api/pair":
                     data = self.read_json()
-                    if not isinstance(data.get("pin"), str):
-                        raise RemoteError("缺少配对码")
+                    if not isinstance(data.get('pin', ''), str) or not isinstance(data.get('ticket', ''), str):
+                        raise RemoteError('配对信息无效')
                     name = data.get("name", "手机")
                     if not isinstance(name, str):
                         raise RemoteError("设备名称无效")
-                    token = state.pair(self.client_address[0], data["pin"], name)
+                    token = state.pair(self.client_address[0], data.get('pin', ''), name,
+                                       ticket=data.get('ticket', ''))
                     self.send_json({"ok": True, "token": token})
                     return
                 if not self.authorized():

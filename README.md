@@ -2,11 +2,39 @@
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="WindowsAgent/assets/rm-mark-dark.svg"><img src="WindowsAgent/assets/rm-mark-light.svg" width="64" alt="ChatGPT Remote"></picture>
 
-通过手机浏览器连接电脑上的 ChatGPT，继续查看对话、发送消息和操作窗口。Windows 端常驻 **C 字环** 托盘图标。
+通过手机浏览器连接电脑上的 ChatGPT，继续查看对话、发送消息和操作窗口。电脑端提供 **ChatGPT Remote 本地插件**，本机服务负责手机连接。
+
+## 本地插件版
+
+[浮层预览](Remote-UI.html)和插件共用同一套界面。260×156 的并排面板左侧放二维码和配对码，右侧放设备卡片。滚轮和拖动都可横向浏览，列表边缘按剩余内容渐隐。点设备名称原位改名，点两次垃圾桶确认移除。
+
+在 Windows 版 ChatGPT 左下角点击「用量」上方的 **C** 图标。再次点击、点击浮层外或按 Esc 可收起。标题右侧可暂停或恢复手机连接，齿轮可检查更新或卸载插件。外观随 ChatGPT，动画随系统偏好。
+
+手机扫码或打开配对链接可直接配对。点六位配对码或链接可分别复制，圆环显示剩余时间，点击可换码。手机自动跟随最近激活的 ChatGPT 窗口。
+
+手机启动使用白底、居中的 OpenAI 图标和三个波动圆点，对话就绪后进入当前会话。网页按网络批次合并界面更新，并复用 HTML 和压缩结果。
+
+本地插件源码在 `plugin/`。插件启动 Windows 浮层和本机连接服务，浮层随 ChatGPT 窗口移动。配对链接和二维码通过本机管理通道交给浮层。配对、设置、附件与发送回执存放在项目的 `_data/`。
+
+在 Windows x64 上准备 Python 3.11 或更新版本、Node.js 20 或更新版本，以及 Microsoft Edge WebView2 Runtime。构建并安装本地插件：
+
+```powershell
+npm ci
+python -m pip install -r WindowsAgent/requirements-build.txt -r plugin/requirements.txt
+python -B tools/build_plugin.py
+codex plugin marketplace add .
+codex plugin add chatgpt-remote@chatgpt-remote-local
+```
+
+本机插件使用 Windows x64、现有 Python 和打包在插件里的运行库。生成清单读取版本源 `WindowsAgent/app_version.py`。安装位置为当前用户的 Codex 插件缓存，运行时读取项目的数据目录。
+
+浮层源文件在 `ui/`。用 `npm run build:preview` 重新生成离线预览，`npm run test:panel` 检查界面和交互。Python 与手机网页的回归在 `WindowsAgent/tests/`。
+
+## 公开独立版
 
 公开下载版本以 [GitHub Releases](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest) 为准。
 
-当前版本 **1.2.8**。设置、项目面板覆盖输入区，短状态与回答、草稿入口在输入框上方横向排列，复杂提醒在顶栏下方。网页按会话保存文字与待发送附件；发送绑定原生输入框并回读确认。过程中的工具操作默认折叠为实际操作摘要，正常说明按顺序显示。[下载安装包](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest)
+公开发布版本 **1.2.8**。设置、项目面板覆盖输入区，短状态与回答、草稿入口在输入框上方横向排列，复杂提醒在顶栏下方。网页按会话保存文字与待发送附件，发送绑定原生输入框并回读确认。过程中的工具操作默认折叠为实际操作摘要，正常说明按顺序显示。[下载安装包](https://github.com/LUMIAO9527/ChatGPT-Remote/releases/latest)
 
 电脑托盘面板采用墨白视觉与 C 字环标志：顶部两行状态带（连接地址、当前窗口），中部二维码与 60 秒配对码，底部设备区按数量分档——0 台一整块圆角虚框、1 台通栏主卡、2 台上下通栏、3–4 台四宫格、5 台以上保持尺寸整页滚动。服务状态胶囊显示运行中、已停止、启动中、启动失败、重连中或已暂停，二维码区随状态变为启动或重连主操作。短提示统一沉底，更新页时自动浮在底部功能区上方；面板保持 312×458、16px 外圆角。
 
@@ -37,7 +65,7 @@
 ## 程序与源码
 
 - `ChatGPTRemote.exe` 是 Windows x64 独立程序。
-- `ChatGPT-Remote-v1.2.8-source.zip` 提供同版本源码、构建入口和开发说明。
+- 当前源码与插件保存在本项目，入口为 `WindowsAgent/`、`plugin/` 和构建脚本；公开版 1.2.8 源码包已归档到本轮 `_wip/AUTO_20261110PluginRefactor/before/`。
 - `ChatGPT-Remote-Preview.html` 提供离线预览，可切换主题、尺寸和审批场景。
 - `SHA256SUMS.txt` 提供发布文件的 SHA-256。
 
@@ -47,7 +75,7 @@
 2. 电脑安装并登录 Tailscale，打开 ChatGPT 并登录。当前独立版的远程入口依赖电脑上的 Tailscale。
 3. 在电脑另行启用 Funnel：`tailscale funnel --bg --https=8443 http://127.0.0.1:8765`。首次可能需要在 Tailscale 页面确认启用条件；Rm 目前不会自动完成这一步。
 4. 打开 Remote 首页，启动服务。首次启用会配置当前用户的后台任务。
-5. 手机扫描 Rm 提供的完整连接二维码，再输入配对码并选择窗口。Funnel 模式下手机只需浏览器，不必安装 Tailscale，也不必登录电脑的 Tailscale 账号。
+5. 手机扫描 Rm 的配对二维码。本机插件版扫码即连接，手动打开连接地址时输入六位配对码；公开版按页面提示输入配对码并选择窗口。Funnel 模式下手机只需浏览器。
 
 需要 64 位 Windows 10/11 和 Microsoft Edge WebView2。下载 EXE 不会自动建立公网入口；源码中的 `WindowsAgent/setup_funnel_windows.bat` 可完成上述 Funnel 配置。请使用自己的电脑与账号，不使用作者的连接网址。
 

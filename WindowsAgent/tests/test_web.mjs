@@ -17,10 +17,12 @@ const source = script.replace(end, `
     showConnectionHome, openRemoteView, returnToComputer, showPairEntry, restorePhonePreferences,
     startControl, stopLive, showOffline, resumeConnection, openDesktopPrompt,
     openScreenView, bindScreenGestures, stageModelChoice, applyModelDraft, confirmModelChoices, modelChoiceConfirmed, openPendingRequests, positionFloatingSurfaces, renderOptions, openMessageResource, resetRemote,
+    consumeConversationStream, showStartup, finishStartup,
     openQueue, refreshQueue, renderQueue, invokeQueue, invokeComposerAction, renderPhoneFiles, removePhoneFile, savePhoneDraft, switchPhoneDraft, toast };
-})();`);
+})();`).replace('  function render(){', '  function render(){ globalThis.recordUiRender();');
 
 function makePage(fetchImpl = async () => { throw new Error('Unexpected request'); }) {
+  let uiRenders=0;
   const elements = new Map();
   const draws = [];
   const revoked = [];
@@ -87,6 +89,7 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     }
   }
   const context = vm.createContext({
+    recordUiRender:()=>uiRenders++,
     document, location: { protocol: 'http:' }, window: {history,innerHeight:780}, Image: PageImage,
     performance: { now: () => now }, Date: { now: () => 1_700_000_000_000 + wallOffset },
     requestAnimationFrame: callback => callback(), setInterval, clearInterval,
@@ -102,8 +105,52 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     setWallOffset: value => { wallOffset = value; }, failDecode: () => { decodeFails = true; },
     setImageSize: (width, height) => { imageWidth = width; imageHeight = height; },
     setBitmapDecoder: decoder => {context.createImageBitmap=decoder;},
-    setControlEnvironment: controls => {Object.assign(context,controls);} };
+    setControlEnvironment: controls => {Object.assign(context,controls);},
+    get uiRenders(){return uiRenders;} };
 }
+
+test('one conversation batch updates all messages and renders the interface once',async()=>{
+  const page=makePage(),controller=new AbortController();
+  page.hooks.state.view='chat';
+  page.hooks.showStartup();
+  const before=page.uiRenders;
+  const events=['a','ab','abc'].map((text,index)=>({
+    kind:'conversation',key:'batch-chat',epoch:7,instance:'batch-instance',
+    messages:[{id:'batch-answer',role:'assistant',text,complete:index===2}],
+    order:['batch-answer'],generating:index!==2,available:true,status:'ready',
+    composer:{available:true},replace:index===0
+  }));
+  const data=new TextEncoder().encode(events.map(event=>JSON.stringify(event)).join('\n')+'\n');
+  let delivered=false,heartbeats=0;
+  const response={body:{getReader:()=>({
+    async read(){
+      if(!delivered){delivered=true;return {value:data,done:false};}
+      controller.abort();return {done:true};
+    },
+    async cancel(){}
+  })}};
+  await page.hooks.consumeConversationStream(response,controller.signal,()=>heartbeats++);
+  assert.equal(page.hooks.state.chat.messages[0].text,'abc');
+  assert.equal(page.uiRenders-before,1);
+  assert.equal(heartbeats,3);
+  assert.equal(page.elements.get('startupView').hidden,true);
+});
+
+test('conversation heartbeats keep the connection without repainting the interface',async()=>{
+  const page=makePage(),controller=new AbortController();
+  page.hooks.state.view='chat';
+  const before=page.uiRenders;
+  let delivered=false;
+  const response={body:{getReader:()=>({
+    async read(){
+      if(!delivered){delivered=true;return {value:new TextEncoder().encode('{"kind":"idle"}\n'),done:false};}
+      controller.abort();return {done:true};
+    },
+    async cancel(){}
+  })}};
+  await page.hooks.consumeConversationStream(response,controller.signal,()=>{});
+  assert.equal(page.uiRenders,before);
+});
 
 function frame(id) {
   return { frameId: id, epoch: 7, capturedMs: 1_699_999_960_000, method: 'mock' };
@@ -172,12 +219,12 @@ test('settings reopen with collapsed choices while keeping the selected send pre
   assert.equal(page.hooks.state.submitMethod,'CTRL+ENTER');
 });
 
-test('pair code entry has a browser-back route to the connection landing page',()=>{
+test('pair code entry stays on the single connection page across browser back',()=>{
   const page=makePage();page.hooks.state.live=false;
   page.elements.get('pairView').hidden=false;page.hooks.showPairEntry(true,true);
   assert.equal(page.elements.get('pairEntry').hidden,false);
   page.hooks.panelPopState({state:null});
-  assert.equal(page.elements.get('pairEntry').hidden,true);
+  assert.equal(page.elements.get('pairEntry').hidden,false);
   assert.equal(page.elements.get('pairIntro').hidden,false);
 });
 

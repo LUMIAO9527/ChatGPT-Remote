@@ -126,7 +126,8 @@ def window_main(args):
                                     background_color='#1d1d1d' if theme=='dark' else '#ffffff')
         manager.window=window
         identity=(args.tray_window,args.tray_id) if args.tray_window else None
-        panel=NativePanel(window,manager,signals,args.anchor,log,tray_identity=identity);manager.panel=panel
+        panel=NativePanel(window,manager,signals,args.anchor,log,tray_identity=identity,
+                          enable_rail=FROZEN and not args.setup);manager.panel=panel
         panel.show_requested=args.show
         closed=threading.Event();window.events.closed+=closed.set
         def events():
