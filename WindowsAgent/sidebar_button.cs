@@ -30,6 +30,7 @@ namespace ChatGPTRemote.Native
     public sealed class RailButton : IDisposable
     {
         private const string PackageFamily = "OpenAI.Codex_2p2nqsd0c76g0";
+        private const int ButtonSize = 36;
         private readonly IntPtr panel;
         private readonly bool attached;
         private readonly RailForm form = new RailForm();
@@ -270,7 +271,7 @@ namespace ChatGPTRemote.Native
             double scale = (dpi == 0 ? 96 : dpi) / 96.0;
             if (client.Width < 480 * scale || client.Height < 490 * scale)
                 return Rectangle.Empty;
-            int button = (int)Math.Round(36 * scale);
+            int button = (int)Math.Round(ButtonSize * scale);
             var usage = new Rectangle(client.Left + (int)Math.Round(7 * scale),
                 client.Bottom - (int)Math.Round(88 * scale), button, button);
             return CalculatePosition(usage, client, dpi);
@@ -279,7 +280,7 @@ namespace ChatGPTRemote.Native
         public static Rectangle CalculatePosition(Rectangle usage, Rectangle client, uint dpi)
         {
             double scale = (dpi == 0 ? 96 : dpi) / 96.0;
-            int size = Math.Min(Math.Min(usage.Width, usage.Height), (int)Math.Round(28 * scale));
+            int size = Math.Min(Math.Min(usage.Width, usage.Height), (int)Math.Round(ButtonSize * scale));
             int gap = Math.Max(4, (int)Math.Round(size / 6.0));
             if (size < 16 || !client.Contains(usage) || usage.Left - client.Left > 80 * scale ||
                 client.Bottom - usage.Bottom > 144 * scale)
@@ -422,7 +423,7 @@ namespace ChatGPTRemote.Native
             {
                 var graphics = e.Graphics;
                 graphics.Clear(Color.Magenta);
-                graphics.ScaleTransform(Width / 36f, Height / 36f);
+                graphics.ScaleTransform((float)Width / ButtonSize, (float)Height / ButtonSize);
                 using (var tile = new GraphicsPath())
                 {
                     tile.AddArc(1, 1, 16, 16, 180, 90);
@@ -446,10 +447,10 @@ namespace ChatGPTRemote.Native
                 using (var ink = new Pen(foreground, 2.3f))
                 {
                     ink.StartCap = ink.EndCap = LineCap.Round;
-                    graphics.DrawArc(ink, 10, 10, 16, 16, 47, 266);
+                    graphics.DrawArc(ink, 7, 7, 22, 22, 47, 266);
                 }
                 using (var accent = new SolidBrush(Color.FromArgb(111, 217, 161)))
-                    graphics.FillEllipse(accent, 23, 16.35f, 3.3f, 3.3f);
+                    graphics.FillEllipse(accent, 26.5f, 16.35f, 3.3f, 3.3f);
             }
         }
 
