@@ -246,7 +246,7 @@ test('reported small touch targets have explicit 44px boxes, including short vie
   assert.match(rule('.panel-icon'),/height:44px/);
   assert.match(rule('.panel-icon'),/width:44px/);
   assert.match(rule('.chat-copy'),/height:44px/);
-  assert.match(rule('.chat-copy'),/width:44px/);
+  assert(Number(rule('.chat-copy').match(/width:(\d+)px/)[1]) >= 44);
   assert.match(rule('.queue-actions .btn'),/min-height:44px/);
   assert.match(rule('.queue-actions .btn'),/min-width:44px/);
   assert.match(rule('.composer-model'),/min-height:44px/);
@@ -303,7 +303,7 @@ test('manual connection retry uses existing reads once and never sends a message
   hooks.setError('暂时无法连接。','network');
   const pending=hooks.retryConnection();
   hooks.retryConnection();
-  assert.deepEqual(paths,['/api/conversation/stream','/api/windows']);
+  assert.deepEqual(paths,['/api/conversation/stream?format=delta','/api/windows']);
   assert.equal(elements.get('chatRetryBtn').disabled,true);
   assert.equal(elements.get('chatRetryBtn').textContent,'正在重试…');
   rejectWindows(new Error('Synthetic unavailable transport'));await pending;
@@ -331,7 +331,7 @@ test('paired devices default to the previous primary view while opt-out starts o
       assert.equal(elements.get('homeView').hidden,autoResume);
       assert.equal(elements.get('remoteView').hidden,!autoResume);
       assert.equal(history.state.harmonyRemoteSurface,autoResume?'remote':'home');
-      assert.equal(paths.includes('/api/conversation/stream'),autoResume);
+      assert.equal(paths.includes('/api/conversation/stream?format=delta'),autoResume);
       assert.equal(paths.some(path=>path.startsWith('/api/frame')||path.startsWith('/api/stream')),false);
     }finally{hooks.stopLive();await Promise.resolve();}
   }

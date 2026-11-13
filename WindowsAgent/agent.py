@@ -45,6 +45,8 @@ from app_version import APP_VERSION
 VERSION = APP_VERSION
 DEFAULT_MAX_WIDTH = 1280
 DEFAULT_JPEG_QUALITY = 65
+CONVERSATION_ACTIVE_INTERVAL = 0.4
+CONVERSATION_IDLE_INTERVAL = 0.8
 COMPRESSIBLE_TYPES = {"text/html", "text/css", "text/plain", "text/javascript",
                       "application/json", "application/javascript", "application/x-ndjson",
                       "image/svg+xml"}
@@ -1025,6 +1027,8 @@ class AgentState:
         self.action_lock = threading.RLock()
         self.maintenance_token = ''
         self.maintenance_expires = 0.0
+        self.conversation_lock = threading.Lock()
+        self.conversation_sample: tuple[float, dict] | None = None
         self.deliveries = DeliveryStore(self._perform_action, self.backend.read_conversation, data_dir/'delivery_receipts.json', self.backend.read_draft)
         self.guard = guard or SwitchGuard([])
         self.hub = hub or FrameHub(backend)
@@ -1209,12 +1213,20 @@ class AgentState:
             self.hub.action_sequence += 1
             action_sequence = self.hub.action_sequence
         self.hub.wake_capture.set()
+        conversation = None
+        if isinstance(outcome, dict) and 'conversation' in outcome:
+            started_read = time.monotonic()
+            conversation = self.conversation_snapshot(outcome['conversation'])
+            with self.conversation_lock:
+                if self.conversation_sample is None or self.conversation_sample[1]['epoch'] != conversation['epoch']:
+                    self.conversation_sample = (started_read, conversation)
         return {"ok": True, "epoch": self.backend.tracker.epoch,
                 "actionSequence": action_sequence,
                 **({"options": outcome['options']} if isinstance(outcome, dict) and 'options' in outcome else {}),
                 **({'catalog':outcome['catalog']} if isinstance(outcome,dict) and isinstance(outcome.get('catalog'),dict) else {}),
                 **({'modelApply': outcome['modelApply']} if isinstance(outcome, dict) and 'modelApply' in outcome else {}),
                 **({"navigation": outcome['navigation']} if isinstance(outcome, dict) and 'navigation' in outcome else {}),
+                **({"conversation": conversation} if conversation is not None else {}),
                 **({field:outcome[field] for field in ('queue','queueDraft') if field in outcome} if isinstance(outcome,dict) else {}),
                 **({'navigationUnchanged':True} if isinstance(outcome,dict) and outcome.get('navigationUnchanged') else {}),
                 **({"submission": outcome['submission']} if isinstance(outcome, dict) and isinstance(outcome.get('submission'), dict) else {}),
@@ -1330,10 +1342,29 @@ class AgentState:
 
     def conversation(self) -> dict[str, Any]:
         self.require_public_window()
-        snapshot = self.backend.read_conversation()
+        return self.conversation_snapshot(self.backend.read_conversation())
+
+    def conversation_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         self.deliveries.observe(snapshot)
         revision = hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:24]
         return {"ok": True, **snapshot, "revision": revision, 'instance': self.deliveries.instance}
+
+    def stream_conversation(self) -> tuple[float, dict[str, Any]]:
+        self.require_public_window()
+        with self.conversation_lock:
+            if self.hub.stop_event.is_set():
+                raise RemoteError('对话连接已结束', 503)
+            if self.conversation_sample:
+                started, snapshot = self.conversation_sample
+                interval = CONVERSATION_ACTIVE_INTERVAL if snapshot['generating'] else CONVERSATION_IDLE_INTERVAL
+                if (time.monotonic() < started + interval and
+                        snapshot['epoch'] == self.backend.tracker.epoch):
+                    return self.conversation_sample
+            started = time.monotonic()
+            snapshot = self.conversation()
+            self.require_public_window()
+            self.conversation_sample = (started, snapshot)
+            return self.conversation_sample
 
     def close(self) -> None:
         self.deliveries.close()
@@ -1571,6 +1602,17 @@ def make_handler(state: AgentState):
                 elif path == "/api/conversation":
                     if self.authorized():
                         self.send_json(state.conversation())
+                elif path == "/api/conversation/history":
+                    if self.authorized():
+                        state.require_public_window()
+                        query = parse_qs(urlsplit(self.path).query)
+                        key, before = query.get('key', [''])[0], query.get('before', [''])[0]
+                        history = getattr(state.backend, 'older_conversation', None)
+                        if not history or len(key) != 24 or any(c not in '0123456789abcdef' for c in key):
+                            raise RemoteError('当前对话没有可读取的历史。', 404)
+                        if not before.isascii() or not before.isdigit() or len(before) > 16:
+                            raise RemoteError('无效的历史位置。', 400)
+                        self.send_json({'ok': True, **history(key, int(before))})
                 elif path == "/api/delivery":
                     if self.authorized():
                         ident = parse_qs(urlsplit(self.path).query).get('id', [''])[0]
@@ -1685,7 +1727,9 @@ def make_handler(state: AgentState):
                         state.controls -= 1
 
         def _conversation_stream(self) -> None:
-            first = state.conversation()
+            token = self.token()
+            incremental = parse_qs(urlsplit(self.path).query).get('format') == ['delta']
+            sampled_at, current = state.stream_conversation()
             self.send_response(200)
             self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
             self.send_header("Cache-Control", "no-store, private, no-transform")
@@ -1697,12 +1741,14 @@ def make_handler(state: AgentState):
             self.close_connection = True
             self.connection.settimeout(5)
             previous = None
-            current = first
             last_sent = 0.0
             try:
-                while not state.hub.stop_event.is_set() and state.tokens.valid(self.token()):
+                while not state.hub.stop_event.is_set() and state.tokens.valid(token):
                     state.require_public_window()
-                    event = conversation_event(previous, current)
+                    if current['epoch'] != state.backend.tracker.epoch:
+                        sampled_at, current = state.stream_conversation()
+                        continue
+                    event = conversation_event(previous, current, incremental=incremental)
                     if event is not None:
                         previous = current
                     elif time.monotonic() - last_sent > 1.5:
@@ -1712,9 +1758,12 @@ def make_handler(state: AgentState):
                         self.wfile.write(f"{len(packet):X}\r\n".encode("ascii") + packet + b"\r\n")
                         self.wfile.flush()
                         last_sent = time.monotonic()
-                    if state.hub.stop_event.wait(0.65):
+                    interval = CONVERSATION_ACTIVE_INTERVAL if current['generating'] else CONVERSATION_IDLE_INTERVAL
+                    if state.hub.stop_event.wait(max(0.0, sampled_at + interval - time.monotonic())):
                         break
-                    current = state.conversation()
+                    if not state.tokens.valid(token):
+                        break
+                    sampled_at, current = state.stream_conversation()
             except (RemoteError, TargetError) as exc:
                 status = {"kind": "status", "error": str(exc)}
                 if isinstance(exc, TargetError) and exc.code:

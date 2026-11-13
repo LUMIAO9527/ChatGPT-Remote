@@ -18,7 +18,13 @@ def b64(data):
     return base64.b64encode(data).decode()
 
 
-def build(source: Path, output: Path):
+def embed_assets(content, mark, cover):
+    content = re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]*>', '', content, flags=re.I)
+    content = re.sub(r'/icon\.(?:svg|png)(?:\?[^"\s]*)?', mark, content)
+    return re.sub(r'/computer-cover\.svg(?:\?[^"\s]*)?', cover, content)
+
+
+def build(source: Path, output: Path, mobile_only: bool = False):
     agent = source / 'WindowsAgent'
     sys.path.insert(0, str(agent))
     from agent import MockBackend
@@ -30,24 +36,32 @@ def build(source: Path, output: Path):
     qrcode.make('https://demo.invalid/rm/',border=4,box_size=6).save(buffer,format='PNG')
     backend=MockBackend();backend.select(1)
     frame=backend.capture()
+    mark='data:image/svg+xml;base64,'+b64(vector('auto').encode('utf-8'))
+    cover='data:image/svg+xml;base64,'+b64((agent/'assets/computer-cover.svg').read_bytes())
+    mobile=embed_assets((agent/'web/index.html').read_text(encoding='utf-8'),mark,cover)
+    fixtures=(ROOT/'tools/review-fixtures.js').read_text(encoding='utf-8')
+    qr='data:image/png;base64,'+b64(buffer.getvalue())
+    if mobile_only:
+        config=json.dumps({'qr':qr,'frame':b64(frame),'version':APP_VERSION},ensure_ascii=False)
+        setup = """const reviewScene=new URLSearchParams(location.search).get('scene');
+window.RM_REVIEW_CONFIG={...PREVIEW_VALUES,scenario:reviewScene||'chat',
+theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'};
+""".replace('PREVIEW_VALUES',config)
+        head = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; connect-src \'none\'">'
+        preview=mobile.replace('<head>','<head>'+head+'<script>'+setup+fixtures+'</script>',1)
+        preview=preview.replace('<title>ChatGPT Remote</title>','<title>ChatGPT Remote · 手机预览</title>',1)
+        output.parent.mkdir(parents=True,exist_ok=True)
+        output.write_text(preview,encoding='utf-8',newline='\n')
+        return output
+
     desktop=(agent/'desktop.html').read_text(encoding='utf-8')
     for marker,name in [('TOKENS','ui-tokens.css'),('MATERIAL','ui-material.css'),('MOTION','desktop-motion.js'),('PREFERENCES','desktop-preferences.js'),('LIFECYCLE','desktop-lifecycle.js')]:
         desktop=desktop.replace('/*REMOTE_'+marker+'*/',(agent/'assets'/name).read_text(encoding='utf-8'))
     desktop=desktop.replace('<!--RM_MARK-->',(agent/'assets/rm-mark.svg').read_text(encoding='utf-8'))
     desktop=desktop.replace('REMOTE_SUPPORT_QR','data:image/png;base64,'+b64(buffer.getvalue()))
     desktop=desktop.replace('/*REMOTE_HOST*/','window.REMOTE_TRAY_HOST=false;')
-    mobile=(agent/'web/index.html').read_text(encoding='utf-8')
-    mark='data:image/svg+xml;base64,'+b64(vector('auto').encode('utf-8'))
-    cover='data:image/svg+xml;base64,'+b64((agent/'assets/computer-cover.svg').read_bytes())
-    for tag in ['mobile','desktop']:
-        content=locals()[tag]
-        content=re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]*>','',content,flags=re.I)
-        content=re.sub(r'/icon\.(?:svg|png)(?:\?[^"\s]*)?',mark,content)
-        content=re.sub(r'/computer-cover\.svg(?:\?[^"\s]*)?',cover,content)
-        if tag=='mobile':mobile=content
-        else:desktop=content
-    payload={'mobile':mobile,'desktop':desktop,'fixtures':(ROOT/'tools/review-fixtures.js').read_text(encoding='utf-8'),
-             'qr':'data:image/png;base64,'+b64(buffer.getvalue()),'frame':b64(frame),'version':APP_VERSION}
+    payload={'mobile':mobile,'desktop':embed_assets(desktop,mark,cover),'fixtures':fixtures,
+             'qr':qr,'frame':b64(frame),'version':APP_VERSION}
     shell=(ROOT/'tools/review-shell.html').read_text(encoding='utf-8')
     shell=shell.replace('/*REVIEW_PAYLOAD*/', 'const payload='+json.dumps(payload,ensure_ascii=False).replace('</','<\\/')+';')
     output.parent.mkdir(parents=True,exist_ok=True)
@@ -58,6 +72,8 @@ def build(source: Path, output: Path):
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--source',type=Path,default=ROOT)
-    parser.add_argument('--output',type=Path,default=ROOT/'ChatGPT-Remote-Preview.html')
+    parser.add_argument('--output',type=Path)
+    parser.add_argument('--mobile-only',action='store_true')
     args=parser.parse_args()
-    print(build(args.source.resolve(),args.output.resolve()))
+    default_output = ROOT / ('_wip/ChatGPT-Remote-Mobile.html' if args.mobile_only else 'ChatGPT-Remote-Preview.html')
+    print(build(args.source.resolve(), (args.output or default_output).resolve(), args.mobile_only))

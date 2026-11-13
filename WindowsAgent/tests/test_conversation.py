@@ -106,33 +106,42 @@ class ConversationTests(unittest.TestCase):
 
     def test_indexed_thread_navigation_uses_one_native_route(self):
         reader=ConversationReader();thread='11111111-1111-4111-8111-111111111111';reader.history=Mock()
-        reader.history.resolve.side_effect=[{'id':'other'},{'id':thread}]
-        reader.catalogs['catalog']=(0,1,'native',[{'id':'item','kind':'thread','threadId':thread}])
-        reader._call=lambda **_: {'ok':True,'selectedTitle':'title'}
+        reader._history_account=lambda:('user','account')
+        reader.history.resolve.side_effect=[{'id':thread},{'id':'other'}]
+        reader.catalogs['catalog']=(0,1,'native',[{'id':'item','kind':'thread','threadId':thread,'title':'title'}])
+        observations=iter([{'ok':True,'title':'other','identity':'old'}, {'ok':True,'title':'title','identity':'new'}])
+        reader._call=lambda **_: next(observations)
         with patch('conversation.os.startfile') as opened,patch('conversation.time.sleep'):
             self.assertEqual(reader.navigate(1,'catalog','item',False),'thread')
             opened.assert_called_once_with('codex://threads/'+thread)
 
     def test_first_indexed_thread_switch_returns_the_backend_refresh_contract(self):
         reader=ConversationReader();thread='11111111-1111-4111-8111-111111111111';reader.history=Mock()
-        reader.history.resolve.side_effect=[{'id':'other'},{'id':thread},{'id':thread}]
-        reader.catalogs['catalog']=(0,1,'native',[{'id':'item','kind':'thread','threadId':thread}])
-        reader._call=lambda **_: {'ok':True,'selectedTitle':'title'}
+        reader._history_account=lambda:('user','account')
+        reader.history.resolve.side_effect=[{'id':thread},{'id':'other'},{'id':thread},{'id':thread}]
+        reader.catalogs['catalog']=(0,1,'native',[{'id':'item','kind':'thread','threadId':thread,'title':'title'}])
+        observations=iter([{'ok':True,'title':'other','identity':'old'}, {'ok':True,'title':'title','identity':'new'},
+                           {'ok':True,'title':'title','identity':'new'}])
+        reader._call=lambda **_: next(observations)
+        reader.read=Mock(return_value={'key':'new','threadId':thread,'messages':[]})
         backend=WindowsBackend.__new__(WindowsBackend)
         backend.lock=threading.RLock();backend.mode='window'
-        backend.tracker=SimpleNamespace(epoch=7,current_id=1)
+        backend.tracker=SimpleNamespace(epoch=7,current_id=1,status='ready')
         backend.frozen_info_locked=lambda:{'active':False}
         backend._rect=lambda:(0,0,900,600)
         backend._reader=lambda:reader
+        backend.read_conversation=Mock()
         command={'kind':'navigate','navigationKey':'catalog','targetId':'item','expanded':False}
         with patch('conversation.os.startfile') as opened,patch('conversation.time.sleep'):
             first=backend.action({**command,'epoch':7})
-            self.assertEqual(first,{})
+            self.assertEqual(first,{'conversation':{'key':'new','epoch':8,'threadId':thread,'messages':[],
+                'status':'ready','mode':'window','frozen':{'active':False}}})
             self.assertEqual(backend.tracker.epoch,8)
             second=backend.action({**command,'epoch':8})
             self.assertEqual(second,{'navigationUnchanged':True})
             self.assertEqual(backend.tracker.epoch,8)
             opened.assert_called_once_with('codex://threads/'+thread)
+            backend.read_conversation.assert_not_called()
     def test_structured_paragraphs_do_not_join_when_their_screen_rectangles_overlap(self):
         result = parse_snapshot({'nodes': [
             {'type': 'Text', 'name': 'ChatGPT 说：', 'marker': True},
@@ -336,6 +345,48 @@ class ConversationTests(unittest.TestCase):
         rect['x']=90
         with self.assertRaises(TargetError):backend.action(command)
         self.assertEqual(len(clicks),2)
+
+    def test_window_pointer_uses_the_hit_child_coordinates_and_rejects_other_windows(self):
+        backend = WindowsBackend.__new__(WindowsBackend)
+        backend.mode = 'window'
+        backend._process_path = lambda pid: r'C:\App\ChatGPT.exe' if pid == 21 else r'C:\App\Other.exe'
+        hit_pid = 21
+        root = 10
+        posts = []
+
+        def process_id(handle, result):
+            result._obj.value = 21 if handle == 10 else hit_pid
+            return 1
+
+        def client_point(handle, result):
+            self.assertEqual(handle, 11)
+            result._obj.x -= 300
+            result._obj.y -= 160
+            return True
+
+        def client_rect(handle, result):
+            self.assertEqual(handle, 11)
+            result._obj.right, result._obj.bottom = 500, 300
+            return True
+
+        backend.u32 = SimpleNamespace(
+            GetWindowThreadProcessId=process_id, WindowFromPoint=lambda _: 11,
+            GetAncestor=lambda *_: root, ScreenToClient=client_point, GetClientRect=client_rect,
+            PostMessageW=lambda *message: posts.append(message) or True,
+        )
+        bounds = (100, 60, 600, 400)
+        command = {'x': .5, 'y': .5, 'operation': 'left', 'pointer_target': (10, bounds)}
+        backend._post_window_pointer(10, bounds, command)
+        packed = 100 | (100 << 16)
+        self.assertEqual(posts, [(11, 0x200, 0, packed), (11, 0x201, 1, packed), (11, 0x202, 0, packed)])
+        hit_pid = 22
+        with self.assertRaises(TargetError):
+            backend._post_window_pointer(10, bounds, command)
+        hit_pid = 21
+        root = 12
+        with self.assertRaises(TargetError):
+            backend._post_window_pointer(10, bounds, command)
+        self.assertEqual(len(posts), 3)
 
     def test_draft_revision_is_bound_to_full_text_and_conversation(self):
         source={'ok':True,'identity':'window-a','text':'第一行\nemoji 😄'}
@@ -633,6 +684,72 @@ ConvertTo-Json -InputObject $r -Compress
         self.assertIsNone(conversation_event(two, two))
         self.assertTrue(conversation_event(two, {**two, 'key': 'b', 'revision': '3'})['replace'])
         self.assertTrue(conversation_event(two, {**two, 'epoch': 3, 'revision': '3'})['replace'])
+
+    def test_incremental_reply_and_progress_send_only_the_changed_content(self):
+        text = '历史正文很长' * 500
+        first_block = {'kind': 'paragraph', 'text': text}
+        progress = {'kind': 'paragraph', 'channel': 'reasoning', 'text': '正在核对'}
+        first = {'key': 'a', 'epoch': 7, 'instance': 'live', 'revision': 'r1',
+                 'generating': True, 'prompt': {'key': 'old'}, 'messages': [
+                     {'id': 'answer', 'role': 'assistant', 'text': text,
+                      'blocks': [first_block], 'complete': False},
+                     {'id': 'work', 'role': 'assistant', 'phase': 'activity', 'text': progress['text'],
+                      'blocks': [progress], 'complete': False}]}
+        second = {**first, 'revision': 'r2', 'messages': [
+            {**first['messages'][0], 'text': text + '新增😀',
+             'blocks': [{**first_block, 'text': text + '新增😀'}]},
+            {**first['messages'][1], 'text': '核对完成', 'blocks': [
+                {'kind': 'operation', 'channel': 'activity', 'text': '核对完成'}], 'complete': True}]}
+        second.pop('prompt')
+        delta = conversation_event(first, second, incremental=True)
+        self.assertEqual(delta['baseRevision'], 'r1')
+        self.assertEqual(delta['unset'], ['prompt'])
+        self.assertNotIn('order', delta)
+        self.assertNotIn('meta', delta)
+        self.assertEqual(delta['patches'][0], {'id': 'answer', 'textAppend': '新增😀',
+            'blockAppend': '新增😀', 'blocks': {'keep': 1, 'items': []}})
+        self.assertEqual(delta['patches'][1], {'id': 'work', 'text': '核对完成', 'fields': {'complete': True},
+            'blocks': {'keep': 0, 'items': second['messages'][1]['blocks']}})
+        full = conversation_event(first, second)
+        self.assertLess(len(json.dumps(delta)), len(json.dumps(full)) / 20)
+        self.assertEqual(first['messages'][0]['blocks'], [first_block])
+        self.assertTrue(conversation_event(second, {**second, 'instance': 'restarted'}, incremental=True)['replace'])
+
+    def test_native_active_commentary_requires_completion_before_copy(self):
+        def marker(name):
+            return {'type': 'Text', 'marker': True, 'name': name}
+        def paragraph(name):
+            return {'type': 'Text', 'name': name}
+        nodes = [marker('你说：'), paragraph('旧问题'), marker('ChatGPT 说：'), paragraph('旧回复'),
+                 marker('你说：'), paragraph('当前问题'), marker('ChatGPT 说：'), paragraph('进度一'),
+                 marker('ChatGPT 说：'), paragraph('进度二')]
+        current = parse_snapshot({'nodes': nodes, 'generating': True})['messages']
+        self.assertNotIn('replyComplete', current[1])
+        self.assertFalse(current[3]['replyComplete'])
+        self.assertFalse(current[4]['replyComplete'])
+        finished = parse_snapshot({'nodes': nodes, 'generating': False})['messages']
+        self.assertFalse(finished[3]['replyComplete'])
+        self.assertNotIn('replyComplete', finished[4])
+
+    def test_repeat_native_reads_reuse_one_tree_for_text_queue_and_prompt(self):
+        reader = ConversationReader()
+        calls = []
+        raw = {'ok': True, 'identity': 'native', 'title': 'Window',
+               'nodes': [{'type': 'Text', 'name': '你说：', 'marker': True}, {'type': 'Text', 'name': 'question'}]}
+        def read(**request):
+            calls.append(request['operation'])
+            if request['operation'] == 'observe':
+                return {'ok': True, 'identity': 'native'}
+            return raw
+        reader._call = read
+        reader._history_account = lambda: ('user','account')
+        reader.history.snapshot = lambda observed, **_: None
+        with patch('conversation.time.monotonic', side_effect=[1.0, 1.5, 1.5]):
+            first = reader.read(42)
+            second = reader.read(42)
+        self.assertEqual(calls, ['observe', 'read', 'read'])
+        self.assertEqual(first['key'], second['key'])
+        self.assertEqual(second['messages'][0]['text'], 'question')
 
     def test_button_timeout_is_reported_as_uncertain_and_never_retried(self):
         reader = ConversationReader()

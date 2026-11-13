@@ -84,6 +84,17 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(self.req('GET',url,authorized=True,headers={'If-None-Match':headers['ETag']})[0],304)
         self.assertEqual(self.req('GET','/api/resource?id=unknown',authorized=True)[0],404)
 
+    def test_history_pages_require_pairing_and_validate_the_cursor(self):
+        key='a'*24
+        url='/api/conversation/history?key='+key
+        self.assertEqual(self.req('GET',url+'&before=42')[0],401)
+        self.pair()
+        self.backend.older_conversation=lambda key,before:{'key':key,'historyBefore':before-10,'messages':[]}
+        self.assertEqual(self.req('GET',url+'&before=bad',authorized=True)[0],400)
+        status,_,body=self.req('GET',url+'&before=42',authorized=True)
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(body),{'ok':True,'key':key,'historyBefore':32,'messages':[]})
+
     def test_queue_controls_require_pairing_and_reject_stale_or_frozen_actions(self):
         self.assertEqual(self.req('GET','/api/queue')[0],401)
         self.pair();epoch=self.select()['epoch']
@@ -483,6 +494,34 @@ class ProtocolTests(unittest.TestCase):
             self.assertFalse(event['replace'])
             self.assertEqual([m['id'] for m in event['messages']], ['m1'])
         finally: conn.close()
+
+    def test_incremental_stream_sends_append_and_restarts_with_a_full_snapshot(self):
+        self.pair()
+        self.select()
+        self.backend.generating = True
+        text = '已收到的内容' * 1000
+        with self.backend.lock:
+            self.backend.messages[-1].update(text=text, blocks=[{'kind': 'paragraph', 'text': text}])
+        headers = {'Authorization': 'Bearer ' + self.token}
+        for expect_patch in (True, False):
+            conn = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+            try:
+                conn.request('GET', '/api/conversation/stream?format=delta', headers=headers)
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                first = json.loads(response.readline())
+                self.assertTrue(first['replace'])
+                if not expect_patch:
+                    self.assertEqual(first['messages'][-1]['text'], text + '追加')
+                    continue
+                with self.backend.lock:
+                    self.backend.messages[-1].update(text=text + '追加', blocks=[{'kind': 'paragraph', 'text': text + '追加'}])
+                delta = json.loads(response.readline())
+                self.assertEqual(delta['baseRevision'], first['revision'])
+                self.assertEqual(delta['patches'][0]['textAppend'], '追加')
+                self.assertNotIn('order', delta)
+            finally:
+                conn.close()
 
     def test_pair_code_is_single_use_even_after_unpairing(self):
         original_pin = self.state.pin

@@ -10,6 +10,7 @@ $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 $script:structureWalker = [System.Windows.Automation.TreeWalker]::RawViewWalker
 $script:controlTree=$null
+$script:roleMarkers=@('你说：','你说:','ChatGPT 说：','ChatGPT 说:','You said:','ChatGPT said:','用户：','用户:','助手：','助手:')
 $script:pendingLabels=@{
     'Needs input'='input'; 'Waiting for input'='input'; '需要用户输入'='input'; '等待输入'='input'
     'Needs approval'='approval'; 'Awaiting approval'='approval'; '待审批'='approval'; '等待批准'='approval'
@@ -25,7 +26,7 @@ function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $opt
         $AE::ClassNameProperty, $AE::AutomationIdProperty, $AE::IsPasswordProperty,
         $AE::IsEnabledProperty, $AE::IsKeyboardFocusableProperty, $AE::IsOffscreenProperty,
         $AE::BoundingRectangleProperty, $AE::RuntimeIdProperty)) { $cache.Add($property) }
-    if(!$contentOnly){$cache.Add($AE::HelpTextProperty)}
+    $cache.Add($AE::HelpTextProperty)
     $active = $cache.Activate()
     $condition=[System.Windows.Automation.Condition]::TrueCondition
     if($controlsOnly -or $contentOnly -or $optionsOnly) {
@@ -38,6 +39,11 @@ function Get-WindowTree($handle, $controlsOnly=$false, $contentOnly=$false, $opt
             $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$type))
         }
         $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'sr-only'))
+        # In Work mode a role marker can be a Text element with several classes.
+        # Include it by accessible name in the same tree used before input.
+        foreach($label in $script:roleMarkers){
+            $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::NameProperty,$label))
+        }
         $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::ClassNameProperty,'min-w-0 flex-1 self-center text-start select-text'))
         foreach($label in $script:pendingLabels.Keys){
             $filters.Add([System.Windows.Automation.PropertyCondition]::new($AE::NameProperty,$label))
@@ -146,6 +152,9 @@ function Get-TextContext($node) {
         strong=($classes -match '(^| )font-(semibold|bold)( |$)');emphasis=($classes -match '(^| )italic( |$)');
         inlineCode=($classes -match '_Code_|inline-code');code=($classes -match 'CodeBlock|code-block|_Pre_');
         user=($classes -match '(^| )bg-user-message( |$)');scopeId='';queueId='';resourceId='';documentId='';href=''}
+    $context.progress=(!$context.user -and $context.transcript -and
+        $classes -match '(^| )text-size-chat( |$)' -and $classes -match '(^| )overflow-visible( |$)' -and
+        $classes -match '(^| )py-0( |$)')
     foreach($part in $parts) {
         if(!$context.documentId -and $part.type -eq $CT::Document){$context.documentId=$part.id}
         if(!$context.href -and $part.type -eq $CT::Hyperlink) {
@@ -238,7 +247,7 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
     if(!$controlsOnly -and !$optionsOnly -and $includeContent) {
         for($j=0;$j -lt $nodes.Count;$j++) {
             $item=$nodes[$j].Cached
-            if($item.ClassName -match 'sr-only' -and $item.Name -match '^(你说[：:]|ChatGPT 说[：:]|You said:|ChatGPT said:|用户[：:]|助手[：:])$' -and
+            if($item.ClassName -match '(^|\s)sr-only(\s|$)' -and $item.Name -in $script:roleMarkers -and
                 (Test-PrimaryDocument $nodes[$j] $documentId)){
                 $markerIndexes.Add($j)
                 if(!$hasTranscript -and (Get-TextContext $nodes[$j]).transcript){$hasTranscript=$true}
@@ -262,7 +271,7 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
             if(!$c.IsOffscreen -and !$c.BoundingRectangle.IsEmpty){$promptNodes.Add($node)}
         }
         if ($type -eq 'Document' -and !$title) { $title = $name }
-        $isMarker = $c.ClassName -match 'sr-only' -and $name -match '^(你说[：:]|ChatGPT 说[：:]|You said:|ChatGPT said:|用户[：:]|助手[：:])$' -and
+        $isMarker = $c.ClassName -match '(^|\s)sr-only(\s|$)' -and $name -in $script:roleMarkers -and
             (Test-PrimaryDocument $node $documentId)
         if($type -in @('Button','Hyperlink') -and $c.ClassName -match 'app-action-sidebar-thread-selected' -and
             $c.ClassName -match '(^| )bg-primary-ghost-hover( |$)' -and (Test-PrimaryDocument $node $documentId)) {
@@ -290,7 +299,10 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
             if ($firstMarker -and $name -match '^(复制消息|编辑消息|复制|朗读|评价回复|更多操作|Copy message|Edit message|Copy|Read aloud|More actions)$') { $footer = $true }
             if($i -lt $limit -and !$optionsOnly -and $includeContent -and !$contentEnded -and $role -eq 'assistant' -and $c.IsEnabled -and
                 ($name -match '^(复制消息|Copy message)$' -or $c.AutomationId -eq 'copy-turn-action-button')) {
-                $records.Add(@{type='Status';complete=$true})
+                $copyContext=Get-TextContext $node
+                if($copyContext.documentId -ceq $documentId -and ($copyContext.transcript -or !$hasTranscript)){
+                    $records.Add(@{type='Status';complete=$true;sourceId=$(if($copyContext.scopeId){$documentId+'|'+$copyContext.scopeId}else{''})})
+                }
             }
         }
         if($i -lt $limit -and !$optionsOnly -and $includeContent -and !$contentEnded -and $firstMarker -and !$footer -and
@@ -365,15 +377,19 @@ function Read-Window($handle, $optionsOnly=$false, $includeContent=$true, $contr
                 }
                 # Work-mode commentary and tool activity have native containers.
                 # Use structure and observed typography, never words in the body.
-                if($context.channel -ne 'answer'){$record.channel=$context.channel;if(!$isMarker){$record.role='assistant'}}
+                if ($type -eq 'Text' -and !$context.blockId -and !$context.user -and
+                    $name -match '^(?:(?:今天|昨天|前天|星期[一二三四五六日天]|周[一二三四五六日天]|上午|下午|凌晨|晚上|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day)?)\s*)?\d{1,2}:\d{2}(:\d{2})?(?:\s*[AP]M)?$') { $record.timestamp = $true }
+                if(!$isMarker -and $context.progress -and !$context.blockId -and !$record.queued -and !$record.timestamp -and $context.channel -eq 'answer'){
+                    $record.channel='reasoning';$record.role='assistant'
+                } elseif($context.channel -ne 'answer') {
+                    $record.channel=$context.channel;if(!$isMarker){$record.role='assistant'}
+                }
                 if($context.user -and !$record.queued){$record.role='user'}
                 if($record.role -and $context.scopeId){$record.sourceId=$documentId+'|'+$context.scopeId}
                 if($context.blockId){$record.blockId=$context.blockId;$record.kind=$context.kind}
                 $record.code=$context.code
                 if($context.strong){$record.strong=$true};if($context.emphasis){$record.emphasis=$true};if($context.inlineCode){$record.inlineCode=$true}
                 if($context.href){$record.href=$context.href}
-                if ($type -eq 'Text' -and !$context.blockId -and !$context.user -and
-                    $name -match '^(?:(?:今天|昨天|前天|星期[一二三四五六日天]|周[一二三四五六日天]|上午|下午|凌晨|晚上|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day)?)\s*)?\d{1,2}:\d{2}(:\d{2})?(?:\s*[AP]M)?$') { $record.timestamp = $true }
                 if(!$isMarker -and $context.resourceId -and $name.Trim()) {
                     if(!(@($records | Where-Object {$_.type -eq 'Attachment' -and $_.id -ceq $context.resourceId}).Count)){
                         $records.Add(@{type='Attachment';kind='file';id=$context.resourceId;name=$name})
@@ -1372,19 +1388,25 @@ function Read-Navigation($handle) {
         }
         $entries.Add($entry)
     }
-    return @{identity=([string]$handle)+'|'+($tree.root.GetRuntimeId() -join '.'); entries=$entries.ToArray()}
+    return @{identity=([string]$handle)+'|'+($tree.root.GetRuntimeId() -join '.'); entries=$entries.ToArray();
+        title=$(if($tree.document){$tree.document.Cached.Name}else{''})}
 }
 
 function Export-Navigation($nav) {
     $items=@($nav.entries | ForEach-Object {$item=@{};foreach($name in $_.Keys){if($name -ne 'element'){$item[$name]=$_.Item($name)}};$item})
-    return @{ok=$true;identity=$nav.identity;items=$items}
+    return @{ok=$true;identity=$nav.identity;items=$items;title=$nav.title}
 }
 
 while ($null -ne ($line = [Console]::ReadLine())) {
     $request = $null
     try {
         $request = $line | ConvertFrom-Json
-        if($request.operation -in @('queue','queue_invoke')){
+        if($request.operation -eq 'conversation-title'){
+            $root=$AE::FromHandle([IntPtr][long]$request.hwnd)
+            $document=$root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                [System.Windows.Automation.PropertyCondition]::new($AE::ControlTypeProperty,$CT::Document))
+            $reply=@{ok=[bool]$document;request_id=$request.request_id;title=$(if($document){$document.Current.Name}else{''})}
+        } elseif($request.operation -in @('queue','queue_invoke')){
             if($request.operation -eq 'queue'){$script:controlTree=$null;$reply=Export-Queue (Read-Queue $request.hwnd)}
             else{$reply=Invoke-Queue $request}
             $reply.request_id=$request.request_id
@@ -1487,17 +1509,20 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         # Paste may create a new Send control; discover it before read-back.
         if($request.operation -in @('fill','input_ready') -or $request.fresh){$script:controlTree=$null}
         $snapshot = Read-Window $request.hwnd ($request.operation -eq 'identity') ($request.operation -eq 'read') $compact
-        if ($request.operation -eq 'observe') {
+        if ($request.operation -in @('observe','read')) {
             $rootOptions=Get-ComposerRoot $snapshot $true
             $prompt=$null
             try {$prompt=Read-DesktopPrompt $snapshot} catch [System.Windows.Automation.ElementNotAvailableException] {}
-            $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity;selectedTitle=$snapshot.selectedTitle;
+            $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity;selectedTitle=$snapshot.selectedTitle;title=$snapshot.title;
                 generating=$snapshot.generating;queue=(Export-Queue (Read-Queue $request.hwnd $snapshot));composer=@{available=($null -ne $snapshot.composer -and $null -ne $snapshot.draft);
                 hasDraft=($null -ne $snapshot.draft -and $snapshot.draft.Length -gt 0);options=$(if($rootOptions){Export-ComposerOptions $rootOptions}else{$null})}}
             if($prompt){$reply.prompt=Export-ComposerOptions $prompt}
             $reply.pendingRequests=@((Read-PendingNavigation $snapshot.tree).Values | Sort-Object -Property id)
+            if($request.operation -eq 'read'){
+                $reply.nodes=$snapshot.records;$reply.truncated=$snapshot.truncated
+            }
         } elseif ($request.operation -eq 'identity') {
-            $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity}
+            $reply=@{ok=$true;request_id=$request.request_id;identity=$snapshot.identity;title=$snapshot.title}
         } elseif ($request.operation -eq 'remove_attachment') {
             $reply=Remove-ComposerAttachment $request.hwnd $snapshot $request
             $reply.request_id=$request.request_id
@@ -1599,13 +1624,6 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             $reply = @{ok=$true; request_id=$request.request_id; invoked=$true; confirmed=[bool]$confirmed;
                 submission=$(if(!$confirmed){'submitted'}elseif($queueButton -or ($wasGenerating -and $check.generating)){'queued'}else{'sent'})}
             }
-        } elseif ($request.operation -eq 'read') {
-            $rootOptions=Get-ComposerRoot $snapshot $true
-            $reply = @{ok=$true; request_id=$request.request_id; nodes=$snapshot.records;
-                title=$snapshot.title; identity=$snapshot.identity; generating=$snapshot.generating;
-                composer=@{available=($null -ne $snapshot.composer -and $null -ne $snapshot.draft);
-                    hasDraft=($null -ne $snapshot.draft -and $snapshot.draft.Length -gt 0);options=$(if($rootOptions){Export-ComposerOptions $rootOptions}else{$null})};
-                truncated=$snapshot.truncated}
         } else { throw 'operation unavailable' }
         }
     } catch {

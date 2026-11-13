@@ -24,6 +24,10 @@ class UploadError(Exception):
     pass
 
 
+class UploadMissing(UploadError):
+    code = 'upload_missing'
+
+
 class ClipboardUnavailable(UploadError):
     """The input callback has not run; a text input route can still be chosen."""
 
@@ -151,7 +155,10 @@ class UploadStore:
         result=[]
         for ident in ids:
             item=self.items.get(ident) if isinstance(ident,str) else None
-            if not item or item['owner']!=self.owner(token) or (state and item['state']!=state):raise UploadError('附件已失效，请重新选择')
+            if not item or item['owner']!=self.owner(token):
+                raise UploadMissing('附件已失效，请重新选择')
+            if state and item['state']!=state:
+                raise UploadError('附件状态已变化，请刷新后再试')
             result.append(item)
         return result
 

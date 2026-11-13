@@ -852,7 +852,9 @@ class WindowsBackend:
                     "status": self.tracker.status, "mode": self.mode}
 
     def message_resource(self, ident: str, variant: str = 'original'):
-        with self.lock:reader=self._reader()
+        with self.lock:
+            hwnd,reader=self._resolve_target(),self._reader()
+        reader.check_resource_scope(hwnd)
         return reader.history.resources.read(ident,variant)
 
     def navigation(self) -> dict[str, Any]:
@@ -866,6 +868,17 @@ class WindowsBackend:
             if self.mode != "window" or self.tracker.epoch != epoch or self.tracker.current_id != target:
                 raise TargetError("目标窗口已经变化，请刷新项目与对话列表")
             return {**result, "epoch": epoch}
+
+    def older_conversation(self, key: str, before: int) -> dict:
+        with self.lock:
+            if self.mode != 'window':
+                raise TargetError('请返回对话查看历史消息。', 'history_unavailable')
+            hwnd, epoch, reader = self._resolve_target(), self.tracker.epoch, self._reader()
+        result = reader.older_conversation(hwnd, key, before)
+        with self.lock:
+            if self.mode != 'window' or self.tracker.current_id != hwnd or self.tracker.epoch != epoch:
+                raise TargetError('对话已切换。', 'conversation_changed')
+        return {**result, 'epoch': epoch}
 
     def queue(self) -> dict[str, Any]:
         with self.lock:
@@ -1272,7 +1285,11 @@ class WindowsBackend:
                     raise TargetError(f"模型已切换到 {data['titles'][desired_model]}。{error}", 'model_partially_applied') from None
                 raise
 
-            result = self._composer_catalog(hwnd, picker['scope'])
+            # The selection was confirmed above. Reuse the opened power menu
+            # and the same account catalog instead of repeating discovery.
+            model_list = find(power, lambda item: item['kind'] == 'model-list')
+            models = invoke(power, model_list) if model_list else power
+            result = self._model_catalog_result(reader, hwnd, power, power, models, data)
             if result['options'].get('prompt'):
                 return prompt_result(result['options'])
             confirmed = result['catalog']['power'].get('modelState', {})
@@ -1287,7 +1304,8 @@ class WindowsBackend:
         u32 = self.u32
         pid = wintypes.DWORD()
         u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if ntpath.basename(self._process_path(pid.value)).casefold() not in _APP_EXES:
+        process_path = self._process_path(pid.value).casefold()
+        if ntpath.basename(process_path) not in _APP_EXES:
             raise TargetError('请先选择 ChatGPT 或 Codex 桌面窗口。', 'pointer_window_required')
         x, y, width, height = rect
         point = wintypes.POINT(x + min(width-1, int(command['x']*width)),
@@ -1295,16 +1313,21 @@ class WindowsBackend:
         hit = u32.WindowFromPoint(point)
         if not hit or int(u32.GetAncestor(hit, GA_ROOT) or 0) != hwnd:
             raise TargetError('点击位置被其他窗口挡住，请把 ChatGPT 放到前面。', 'pointer_window_covered')
+        if hit != hwnd:
+            hit_pid = wintypes.DWORD()
+            u32.GetWindowThreadProcessId(hit, ctypes.byref(hit_pid))
+            if hit_pid.value != pid.value and self._process_path(hit_pid.value).casefold() != process_path:
+                raise TargetError('请点击 ChatGPT 窗口内容区域。', 'pointer_outside_client')
         client = wintypes.RECT()
-        if (not u32.ScreenToClient(hwnd, ctypes.byref(point)) or not u32.GetClientRect(hwnd, ctypes.byref(client))
+        if (not u32.ScreenToClient(hit, ctypes.byref(point)) or not u32.GetClientRect(hit, ctypes.byref(client))
                 or not (0 <= point.x < min(client.right, 32768) and 0 <= point.y < min(client.bottom, 32768))):
             raise TargetError('请点击窗口内容区域。', 'pointer_outside_client')
         packed = point.x | (point.y << 16)
         down, up, button = WINDOW_BUTTONS[command['operation']]
-        # Target a specific window procedure. This never injects a desktop
-        # mouse event or moves the physical cursor to a remote coordinate.
+        # Use the control under the point inside this window, including native
+        # child surfaces that do not receive events posted to the root.
         for message, flags in ((WM_MOUSEMOVE, 0), (down, button), (up, 0)):
-            if not u32.PostMessageW(hwnd, message, flags, packed):
+            if not u32.PostMessageW(hit, message, flags, packed):
                 raise TargetError('Windows 未能接收此次点击，请查看电脑窗口。', 'pointer_unconfirmed')
 
     def action(self, command: dict[str, Any]) -> dict | None:
@@ -1404,13 +1427,27 @@ class WindowsBackend:
                 if self.mode != "window":
                     raise TargetError("请返回窗口模式后切换对话")
                 try:
-                    result=self._reader().navigate(self.tracker.current_id, command["navigationKey"],
+                    reader = self._reader()
+                    result=reader.navigate(self.tracker.current_id, command["navigationKey"],
                                             command["targetId"], command.get("expanded", True), refresh=True)
-                except Exception:
-                    self.tracker.epoch += 1
+                except TargetError as exc:
+                    if exc.code in ('navigation_pending','navigation_unconfirmed'):
+                        self.tracker.epoch += 1
                     raise
-                if result['kind'] in ('thread','new') and not result.get('unchanged'):self.tracker.epoch += 1
+                conversation = None
+                if result['kind'] in ('thread','new') and not result.get('unchanged'):
+                    self.tracker.epoch += 1
+                    if 'conversation' in result:
+                        conversation = {**result['conversation'], 'epoch': self.tracker.epoch,
+                                        'frozen': self.frozen_info_locked(), 'status': self.tracker.status,
+                                        'mode': self.mode}
+                    else:
+                        try:
+                            conversation = self.read_conversation()
+                        except TargetError:
+                            pass
                 return {**({'navigation':{**result['navigation'],'epoch':self.tracker.epoch}} if 'navigation' in result else {}),
+                        **({'conversation':conversation} if conversation is not None else {}),
                         **({'navigationUnchanged':True} if result.get('unchanged') else {})}
             if kind == "draft":
                 if self.mode != "window":

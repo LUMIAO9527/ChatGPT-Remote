@@ -27,7 +27,7 @@
   window.WebSocket = undefined; // Deliberately exercise the real HTTP fallback UI.
   const model = {
     epoch:1, title:'周末短途计划', key:'review-chat-1', activeThread:'main', menu:'', model:config.modelCount===1?'默认模型':'示例模型 A', effort:3, quick:false,
-    generating:config.scenario === 'queue', paused:config.scenario === 'paused',approval:config.scenario === 'approval',
+    generating:['queue','progress'].includes(config.scenario), paused:config.scenario === 'paused',approval:config.scenario === 'approval',
     questionStep:config.scenario==='questionnaire'?1:0, chosen:new Set(),
     offline:config.scenario === 'offline', draft:config.scenario === 'draft' ? '先把交通方式和预算列出来。' : '',
     messages:[
@@ -57,6 +57,11 @@
       blocks:[{kind:'paragraph',text:'查了西湖周边步行路线。',channel:'commentary'},
         {kind:'operation',icon:'terminal',text:'运行了命令',channel:'activity'}],
       complete:true,work:{status:'worked',durationMs:18000}});
+  }
+  if (config.scenario === 'progress') {
+    const text='正在核对路线和换乘时间。';
+    model.messages.push({id:'live-work',role:'assistant',phase:'reasoning',text,complete:false,
+      blocks:[{kind:'paragraph',text,channel:'reasoning'}]});
   }
   if (config.scenario === 'long') {
     for (let i=0;i<10;i++) model.messages.push({id:'long-'+i,role:i%2?'assistant':'user',complete:true,
@@ -237,7 +242,10 @@
         return json({ok:true,file});
       }
       case '/api/uploads/attach':case '/api/uploads/status':return json({ok:true,state:'attached',files:[]});
-      case '/api/uploads/discard':case '/api/stream/ack':return json({ok:true});
+      case '/api/uploads/discard':case '/api/uploads/remove':
+        for(const id of data.ids||[])model.uploads.delete(id);
+        return json({ok:true});
+      case '/api/stream/ack':return json({ok:true});
       case '/api/freeze':return json({...windows(),frozen:{active:!!data.frozen,reason:'manual',remaining:0}});
       default:return json({ok:false,error:'此离线演示未模拟该操作：'+url.pathname},400);
     }

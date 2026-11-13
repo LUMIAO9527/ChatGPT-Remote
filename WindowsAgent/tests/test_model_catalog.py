@@ -130,6 +130,23 @@ class ModelCatalogTests(unittest.TestCase):
         with self.assertRaises(CatalogUnavailable): self.catalog.read()
         self.fetch.assert_not_called()
 
+    def test_current_renderer_uses_only_its_account_atoms(self):
+        state = self.files['.codex-global-state.json']
+        owner = digest(['fixture-user', 'fixture-account'])
+        state['electron-renderer-content-owner'] = owner
+        state['electron-owner-atoms:' + owner] = state.pop('electron-persisted-atom-state')
+        response = state['electron-owner-atoms:' + owner]['chatgpt-work-models-v1/fixture-user/fixture-account']['response']
+        for model in response['models']:
+            model['thinking_efforts'] = [{'thinking_effort': name} for name in ('min','standard','extended','xhigh','max','ultra')]
+        state['electron-owner-atoms:other'] = {'composer-model-picker-selection-mode-v1': 'auto'}
+        self.assertEqual(self.catalog.account().mode, 'model')
+        self.assertEqual(set(self.catalog.read()['models']), {'fixture-sol', 'fixture-luna'})
+        self.assertEqual(self.catalog.read()['models']['fixture-sol'], EFFORTS)
+        self.fetch.assert_not_called()
+        state['electron-renderer-content-owner'] = 'other'
+        with self.assertRaises(CatalogUnavailable):
+            self.catalog.account()
+
     def test_token_account_mismatch_is_rejected_before_network(self):
         self.files['auth.json']['tokens']['account_id'] = 'other-account'
         with self.assertRaises(CatalogUnavailable): self.catalog.read()

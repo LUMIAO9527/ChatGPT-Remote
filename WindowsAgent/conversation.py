@@ -87,6 +87,13 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
     duration = ''
     pending_duration = ''
     source_id = ''
+    nodes = raw.get('nodes', [])
+    generating = bool(raw.get('generating'))
+    last_user_marker = max((index for index, node in enumerate(nodes)
+                            if (node.get('marker') and ROLE_MARKERS.get(str(node.get('name') or '').strip()) == 'user')
+                            or (node.get('role') == 'user' and not node.get('queued'))), default=-1)
+    active_turn = False
+    native_replies = set()
 
     def finish(ended: bool = False) -> None:
         if role:
@@ -107,9 +114,11 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
                         public['runs'] = runs
                     visible.append(public)
                     used += len(block["text"])
+                copy_state = {'replyComplete': False} if role == 'assistant' and generating and active_turn and not completed else {}
                 message = {"id": f"m{len(messages)}", "role": role, "text": text[:40000], "blocks": visible,
                                  **({'sourceId':source_id} if source_id else {}),
-                                 "complete": role == "user" or ended or completed or not bool(raw.get("generating")),
+                                 "complete": role == "user" or ended or completed or not generating,
+                                 **copy_state,
                                  **({"attachments": list(attachments)} if attachments else {}),
                                  **({'duration':duration} if duration else {}),
                                  **({"timestamp": timestamp} if timestamp else {}),
@@ -124,8 +133,10 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
                         if key in message: previous[key] = message[key]
                 else:
                     messages.append(message)
+                    if role == 'assistant' and completed:
+                        native_replies.add(message['id'])
 
-    for node in raw.get("nodes", []):
+    for index, node in enumerate(nodes):
         name = str(node.get("name") or "")
         marker = ROLE_MARKERS.get(name.strip()) if node.get("marker") else None
         # Native user bubbles and activity containers carry their own role.
@@ -134,6 +145,7 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
         if not marker and not node.get('queued') and native_role in ('user', 'assistant') and native_role != role:
             finish(ended=True)
             role, blocks, previous_rect, timestamp = native_role, [], None, ''
+            active_turn = index >= last_user_marker
             source_id, attachments, completed = str(node.get('sourceId') or '')[:160], [], False
             duration = pending_duration if role == 'assistant' else ''
             if role == 'assistant': pending_duration = ''
@@ -141,6 +153,7 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
         if marker:
             finish(ended=True)
             role, blocks, previous_rect, timestamp = marker, [], None, ""
+            active_turn = index >= last_user_marker
             source_id = str(node.get('sourceId') or '')[:160]
             attachments, completed = [], False
             duration = pending_duration if marker == 'assistant' else ''
@@ -150,7 +163,8 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
             if role == 'assistant':duration = name[:100]
             else:pending_duration = name[:100]
         elif role and node.get("type") == "Status" and node.get("complete"):
-            completed = True
+            if not node.get('sourceId') or not source_id or node['sourceId'] == source_id:
+                completed = True
         elif role and node.get("type") == "Attachment":
             kind = "image" if node.get("kind") == "image" else "file"
             item = {"id": str(node.get("id") or f"a{len(attachments)}")[:160], "kind": kind,
@@ -217,6 +231,17 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
     if pending_duration:
         messages.append({'id':f'm{len(messages)}','role':'assistant','text':'','blocks':[],
                          'phase':'activity','duration':pending_duration,'complete':True})
+    # UIA may expose several plain assistant rows for one Work turn. The
+    # last one is the reply unless an earlier row has its own copy control.
+    last_answer = None
+    for message in messages:
+        if message['role'] == 'user':
+            last_answer = None
+        elif message.get('phase', 'answer') == 'answer' and any(
+                block.get('channel', 'answer') == 'answer' and block['text'].strip() for block in message['blocks']):
+            if last_answer and last_answer['id'] not in native_replies:
+                last_answer['replyComplete'] = False
+            last_answer = message
     truncated = bool(raw.get("truncated")) or len(messages) > 80
     messages = messages[-80:]
     budget = 160000
@@ -241,16 +266,71 @@ def parse_snapshot(raw: dict[str, Any]) -> dict[str, Any]:
             "notice": "" if available else "当前页面尚未提供可读取的对话，请切换画面操作。"}
 
 
-def conversation_event(previous: dict[str, Any] | None, current: dict[str, Any]) -> dict[str, Any] | None:
-    """Send changed messages, retaining the order and removing unloaded rows."""
-    if previous and previous.get("revision") == current.get("revision"):
+def _message_patch(before: dict, after: dict) -> dict:
+    patch = {'id': after['id']}
+    unset = before.keys() - after.keys()
+    if unset:
+        patch['unset'] = sorted(unset)
+    fields = {key: value for key, value in after.items()
+              if key not in ('id', 'text', 'blocks') and (key not in before or before[key] != value)}
+    if fields:
+        patch['fields'] = fields
+    if 'text' in after and before.get('text') != after['text']:
+        if isinstance(before.get('text'), str) and after['text'].startswith(before['text']):
+            patch['textAppend'] = after['text'][len(before['text']):]
+        else:
+            patch['text'] = after['text']
+    if 'blocks' in after and before.get('blocks') != after['blocks']:
+        old, new = before.get('blocks', []), after['blocks']
+        prefix = 0
+        while prefix < min(len(old), len(new)) and old[prefix] == new[prefix]:
+            prefix += 1
+        # Continue an unformatted paragraph or code block in place. Formatting
+        # and edits are represented as replacements from the first change.
+        if prefix < min(len(old), len(new)):
+            old_block, new_block = old[prefix], new[prefix]
+            if (old_block.keys() <= {'kind', 'text', 'channel', 'icon'} and
+                    {**old_block, 'text': new_block['text']} == new_block and
+                    new_block['text'].startswith(old_block['text'])):
+                patch['blockAppend'] = new_block['text'][len(old_block['text']):]
+                prefix += 1
+        patch['blocks'] = {'keep': prefix, 'items': new[prefix:]}
+    return patch
+
+
+def conversation_event(previous: dict[str, Any] | None, current: dict[str, Any],
+                       *, incremental: bool = False) -> dict[str, Any] | None:
+    """Build a snapshot or a delta against the last snapshot sent on this stream."""
+    replace = not previous or any(previous.get(key) != current.get(key) for key in ('key', 'epoch', 'instance'))
+    if not replace and previous['revision'] == current['revision']:
         return None
-    replace = not previous or any(previous.get(key) != current.get(key) for key in ("key", "epoch"))
-    before = {} if replace else {m["id"]: m for m in previous.get("messages", [])}
-    changed = [m for m in current.get("messages", []) if before.get(m["id"]) != m]
-    return {"kind": "conversation", **{k: v for k, v in current.items() if k != "messages"},
-            "replace": replace, "messages": changed,
-            "order": [m["id"] for m in current.get("messages", [])]}
+    before = {} if replace else {m['id']: m for m in previous['messages']}
+    messages, patches = [], []
+    for message in current['messages']:
+        prior = before.get(message['id'])
+        if prior == message:
+            continue
+        if incremental and prior and prior['role'] == message['role'] and prior.get('sourceId') == message.get('sourceId'):
+            patch = _message_patch(prior, message)
+            patch_size = len(json.dumps(patch, ensure_ascii=False, separators=(',', ':')))
+            message_size = len(json.dumps(message, ensure_ascii=False, separators=(',', ':')))
+            if patch_size < message_size:
+                patches.append(patch)
+                continue
+        messages.append(message)
+    order = [message['id'] for message in current['messages']]
+    if not incremental or replace:
+        return {'kind': 'conversation', **{key: value for key, value in current.items() if key != 'messages'},
+                'replace': replace, 'messages': messages, 'order': order}
+    meta = {key: value for key, value in current.items()
+            if key not in ('key', 'epoch', 'instance', 'revision', 'messages')
+            and (key not in previous or previous[key] != value)}
+    unset = sorted(previous.keys() - current.keys())
+    return {'kind': 'conversation', 'key': current['key'], 'epoch': current['epoch'],
+            'instance': current.get('instance', ''), 'revision': current['revision'], 'baseRevision': previous['revision'],
+            **({'meta': meta} if meta else {}), **({'unset': unset} if unset else {}),
+            **({'messages': messages} if messages else {}), **({'patches': patches} if patches else {}),
+            **({'order': order} if order != list(before) else {})}
 
 
 class ConversationReader:
@@ -269,6 +349,7 @@ class ConversationReader:
         self.prepared_generating = False
         self.prepared_text_present = False
         self.history = LocalHistory()
+        self.visible_history: tuple[int, str, str, tuple[str, str] | None, str] | None = None
         self.model_catalog = ModelCatalog()
         self.model_pickers: dict[str, dict] = {}
         self.last_model_power: tuple[int, str, str, dict] | None = None
@@ -568,9 +649,21 @@ class ConversationReader:
         raw = self._merge_navigation(raw)
         return self._remember_navigation(hwnd, raw), raw
 
+    def _history_account(self):
+        try:
+            account = self.model_catalog.account()
+            return (account.user_id, account.account_id) if account.user_id else None
+        except CatalogUnavailable:
+            return None
+
+    def _visible_history_scope(self, hwnd, observed, account):
+        return hwnd, observed.get('identity'), observed.get('title'), account
+
     def _merge_navigation(self, raw: dict) -> dict:
         selected=[row.get('title','') for row in raw.get('items',[]) if row.get('kind')=='thread' and row.get('selected')]
-        local=self.history.catalog(selected[0]) if len(selected)==1 and self.history.resolve(selected[0]) else None
+        title = selected[0] if len(selected) == 1 else raw.get('title', '')
+        account = self._history_account()
+        local = self.history.catalog(title, account) if account and title and self.history.resolve(title, account=account) else None
         if local:
             local_titles={row['title'] for row in local if row['kind']=='thread'}
             # Visible native entries remain usable, including ChatGPT cloud chats.
@@ -632,19 +725,36 @@ class ConversationReader:
                 raise TargetError("列表已更新，请重新选择对话", 'navigation_changed')
             item = observed[0]
             if item.get('threadId'):
-                current=self._call(operation='observe',hwnd=hwnd)
-                resolved=self.history.resolve(str(current.get('selectedTitle') or '')) if current.get('ok') else None
+                account = self._history_account()
+                target_thread = self.history.resolve('', item['threadId'], account) if account else None
+                if not target_thread:
+                    raise TargetError('列表已更新，请重新选择对话', 'navigation_changed')
+                current=self._call(operation='conversation-title',hwnd=hwnd)
+                resolved=self.history.resolve(str(current.get('title') or ''), account=account) if current.get('ok') else None
                 if resolved and resolved['id']==item['threadId']:return {'kind':'thread','unchanged':True}
                 # The installed desktop advertises codex://threads/<UUID>.
                 # Open the indexed conversation through its native route.
-                os.startfile('codex://threads/'+item['threadId'])
+                try:
+                    os.startfile('codex://threads/'+item['threadId'])
+                except OSError:
+                    raise TargetError('电脑未能打开这条对话。', 'navigation_changed') from None
                 self.cached=None
-                for _ in range(20):
-                    time.sleep(.07)
-                    after=self._call(operation='observe',hwnd=hwnd)
-                    resolved=self.history.resolve(str(after.get('selectedTitle') or '')) if after.get('ok') else None
-                    if resolved and resolved['id']==item['threadId']:
-                        return {'kind':'thread'} if refresh else 'thread'
+                deadline = time.monotonic() + 1.8
+                while time.monotonic() < deadline:
+                    after=self._call(operation='conversation-title',hwnd=hwnd)
+                    if after.get('ok') and after.get('title') == target_thread.get('display_title', item['title']):
+                        if self._history_account() != account:
+                            raise TargetError('电脑账号已切换。', 'navigation_pending')
+                        if not refresh:
+                            return 'thread'
+                        try:
+                            snapshot = self.read(hwnd)
+                        except TargetError:
+                            raise TargetError('对话正在打开，请稍候', 'navigation_pending') from None
+                        if snapshot.get('threadId') == item['threadId']:
+                            return {'kind':'thread', 'conversation':snapshot}
+                        self.cached=None
+                    time.sleep(.05)
                 raise TargetError('对话正在打开，请稍候','navigation_pending')
             before = self._call(operation="identity", hwnd=hwnd) if item["kind"] in ('thread','new') else None
             reply = self._call(operation="navigate", hwnd=hwnd, identity=reference[2],
@@ -770,13 +880,40 @@ class ConversationReader:
         with self.lock:
             if self.cached and self.cached[0] == hwnd and time.monotonic() - self.cached[1] < 0.4:
                 return dict(self.cached[2])
-            observed=self._call(operation='observe',hwnd=hwnd)
-            result=self.history.snapshot(observed) if observed.get('ok') else None
-            raw=observed
-            if result is None:raw = self._call(operation="read", hwnd=hwnd)
+            started = time.monotonic()
+            cached = self.cached[2] if self.cached and self.cached[0] == hwnd else None
+            observed = self._call(operation='observe' if not cached or cached.get('source') == 'local-history' else 'read', hwnd=hwnd)
+            account = self._history_account()
+            binding = self._visible_history_scope(hwnd, observed, account)
+            visible = self.visible_history
+            if visible and visible[:4] != binding:
+                self.visible_history = None
+                visible = None
+            result = None
+            if observed.get('ok') and account:
+                result = (self.history.snapshot({**observed, 'threadId': visible[4]}) if visible
+                          else self.history.snapshot(observed, account=account))
+            raw = observed
+            if result is None and 'nodes' not in raw:
+                raw = self._call(operation='read', hwnd=hwnd)
+                # The full tree is newer and carries its own window identity
+                # and composer controls, so use it as one coherent snapshot.
+                observed = raw
+                if raw.get('ok') and account:
+                    result = self.history.snapshot(raw, account=account)
             if not raw.get("ok"):
                 raise TargetError("当前窗口暂时无法读取对话，请切换画面操作")
-            if result is None:result = parse_snapshot(raw)
+            if result is None:
+                result = parse_snapshot(raw)
+                if account and raw.get('title') and raw.get('identity'):
+                    thread_id = self.history.match_visible(raw['title'], result['messages'])
+                    if thread_id and self._history_account() == account:
+                        stored = self.history.snapshot({**raw, 'threadId':thread_id})
+                        if stored:
+                            self.visible_history = (hwnd, raw['identity'], raw['title'], account, thread_id)
+                            result = stored
+            if result.get('source') != 'local-history':
+                self.history.resources.scope = ''
             if isinstance(observed.get('queue'),dict):
                 result['queue']=self._remember_queue(hwnd,observed['queue'])
             if isinstance(observed.get('prompt'), dict):
@@ -791,18 +928,51 @@ class ConversationReader:
             root_options = result.get('composer', {}).get('options')
             if isinstance(root_options, dict):
                 result['composer'] = {**result['composer'], 'options': self._remember_options(hwnd, root_options)}
-            self.cached = (hwnd, time.monotonic(), result, raw["identity"])
+            self.cached = (hwnd, started, result, raw["identity"])
             return dict(result)
+
+    def older_conversation(self, hwnd: int, key: str, before: int) -> dict:
+        with self.lock:
+            observed = self._identity(hwnd, key, fresh=True)
+            if hashlib.sha256(str(observed.get('identity') or '').encode()).hexdigest()[:24] != key:
+                raise TargetError('对话已切换。', 'conversation_changed')
+            cached = self.cached[2] if self.cached and self.cached[0] == hwnd else None
+            if not cached or cached.get('key') != key or not cached.get('threadId'):
+                cached = self.read(hwnd)
+            account = self._history_account()
+            if not account or cached.get('key') != key or not cached.get('threadId'):
+                raise TargetError('当前对话没有可读取的历史。', 'history_unavailable')
+            visible = self.visible_history
+            bound = visible == (*self._visible_history_scope(hwnd, observed, account), cached['threadId'])
+            result = self.history.snapshot({'identity': observed['identity'], 'threadId': cached['threadId']},
+                                           account=None if bound else account, before=before)
+            if self._history_account() != account:
+                raise TargetError('电脑账号已切换。', 'conversation_changed')
+            return {'key': key, 'messages': result['messages'] if result else [],
+                    'historyBefore': result.get('historyBefore') if result else None}
+
+    def check_resource_scope(self, hwnd: int) -> None:
+        with self.lock:
+            visible = self.visible_history
+            if not visible or self.history.resources.scope != visible[4]:
+                return
+            observed = self._identity(hwnd, fresh=True)
+            if visible[:4] != self._visible_history_scope(hwnd, observed, self._history_account()):
+                self.history.resources.scope = ''
+                raise TargetError('当前对话已变化，请从新对话打开附件。', 'conversation_changed')
 
     def read_minimized(self, hwnd: int) -> dict | None:
         with self.lock:
             if not self.cached or self.cached[0]!=hwnd:return None
             previous=self.cached[2]
-            return self.history.snapshot({'ok':True,'selectedTitle':previous.get('title',''),
-                'identity':self.cached[3],'composer':previous.get('composer',{}),'generating':False})
+            account = self._history_account()
+            if not account:
+                return None
+            return self.history.snapshot({'ok':True,'selectedTitle':previous.get('title',''),'threadId':previous.get('threadId',''),
+                'identity':self.cached[3],'composer':previous.get('composer',{}),'generating':False}, account=account)
 
-    def _identity(self, hwnd: int, key: str | None = None) -> dict:
-        raw = self._call(operation="identity", hwnd=hwnd)
+    def _identity(self, hwnd: int, key: str | None = None, *, fresh: bool = False) -> dict:
+        raw = self._call(operation="identity", hwnd=hwnd, **({'fresh': True} if fresh else {}))
         def matches():
             return raw.get('ok') and (key is None or hashlib.sha256(str(raw.get('identity') or '').encode()).hexdigest()[:24] == key)
         if not matches():

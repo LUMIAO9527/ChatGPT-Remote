@@ -147,6 +147,56 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(result['messages'][-1]['id'],'u259')
         self.assertEqual(result['messages'][-1]['sourceId'],'u259')
 
+    def test_pages_earlier_turns_using_account_and_strict_cursor(self):
+        with fixture_db(self.home/'state_5.sqlite') as db:
+            db.execute('ALTER TABLE threads ADD COLUMN creator_user_id TEXT')
+            db.execute('ALTER TABLE threads ADD COLUMN creator_account_id TEXT')
+            db.execute('UPDATE threads SET creator_user_id=?, creator_account_id=?', ('user', 'account'))
+        with fixture_db(self.home/'thread_history_1.sqlite') as db:
+            db.execute('DELETE FROM thread_turns')
+            for index in range(18):
+                ordinal = index * 100
+                db.execute('INSERT INTO thread_turns VALUES(?,?,?,?,?)',
+                           (THREAD, f't{index}', ordinal, 'completed', None))
+                db.execute('INSERT INTO thread_items VALUES(?,?,?,?,?,?,?)',
+                           (THREAD, f't{index}', f'u{index}', ordinal+1, None, 'userMessage',
+                            json.dumps({'content':[{'type':'text','text':f'历史 {index}'}]})))
+        observed = {**self.observe, 'selectedTitle':'', 'title':'当前对话'}
+        account = ('user', 'account')
+        result = self.reader.snapshot(observed, account=account)
+        ids = []
+        while result:
+            ids[:0] = [row['id'] for row in result['messages']]
+            if 'historyBefore' not in result: break
+            result = self.reader.snapshot({'identity':observed['identity'],'threadId':THREAD},
+                                          account=account, before=result['historyBefore'])
+        self.assertEqual(ids, [f'u{i}' for i in range(18)])
+        self.assertIsNone(self.reader.snapshot(observed, account=('user','other')))
+
+    def test_visible_history_requires_two_distinct_messages_in_the_same_order(self):
+        first = '这是电脑当前对话中已经显示的第一条长消息，用来匹配原始记录。'
+        second = '这是电脑当前对话中随后显示的第二条长消息，保持原始消息顺序。'
+        self.add('one', 'userMessage', content=[{'type':'text','text':first}])
+        self.add('two', 'userMessage', content=[{'type':'text','text':second}])
+        visible = [{'role':'user','text':text} for text in (first, second)]
+        self.assertEqual(self.reader.match_visible('当前对话', visible), THREAD)
+        self.assertIsNone(self.reader.match_visible('当前对话', visible[:1]))
+        self.assertIsNone(self.reader.match_visible('当前对话', visible[::-1]))
+        self.assertIsNone(self.reader.match_visible('不同对话', visible))
+        with fixture_db(self.home/'state_5.sqlite') as db:
+            db.execute('INSERT INTO threads VALUES(?,?,?,?,?,?,?,?,?,?)',
+                       (OTHER,'当前对话','other',0,r'D:\App',None,'/root',30,30,0))
+        self.assertIsNone(self.reader.match_visible('当前对话', visible))
+
+    def test_trimming_one_long_turn_keeps_a_cursor_for_omitted_messages(self):
+        for i in range(91):self.add('u'+str(i),'userMessage',content=[{'type':'text','text':str(i)}])
+        with fixture_db(self.home/'thread_history_1.sqlite') as db:
+            db.execute('UPDATE thread_turns SET rollout_ordinal=-1')
+        recent=self.reader.snapshot(self.observe)
+        older=self.reader.snapshot(self.observe,before=recent['historyBefore'])
+        self.assertEqual([m['id'] for m in older['messages']+recent['messages']],[f'u{i}' for i in range(91)])
+        self.assertNotIn('historyBefore',older)
+
     def test_markdown_keeps_unfinished_code_and_does_not_make_script_links(self):
         blocks=markdown_blocks('[unsafe](javascript:alert(1))\n\n```\ntext')
         self.assertNotIn('runs',blocks[0]);self.assertEqual(blocks[-1],{'kind':'code','text':'text'})

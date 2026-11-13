@@ -19,6 +19,7 @@ from message_content import markdown_blocks, inline_runs, display_user_text
 from message_resources import MessageResources
 
 UUID = re.compile(r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$', re.I)
+HISTORY_TURNS = 8
 ACTIVITY_LABELS = {
     'commandExecution': ('terminal', '运行命令', '运行了命令'),
     'fileChange': ('edit', '编辑文件', '编辑了文件'),
@@ -72,7 +73,7 @@ class LocalHistory:
         return not (isinstance(source, dict) and any(
             key in source for key in ('subagent', 'guardian', 'review')))
 
-    def resolve(self, title: str, thread_id: str = '') -> dict | None:
+    def resolve(self, title: str, thread_id: str = '', account: tuple[str, str] | None = None) -> dict | None:
         path=self.database('state')
         if not path or (not title and not UUID.fullmatch(thread_id)):return None
         with closing(self.connect(path)) as db:
@@ -81,19 +82,63 @@ class LocalHistory:
             display="coalesce(nullif(name,''), title)" if 'name' in columns else 'title'
             fields='id, '+display+' as display_title'
             fields+=(',agent_path' if 'agent_path' in columns else '')+(',source' if 'source' in columns else '')
-            if UUID.fullmatch(thread_id):rows=db.execute('SELECT '+fields+' FROM threads WHERE id=?',(thread_id,)).fetchall()
-            else:rows=db.execute('SELECT '+fields+' FROM threads WHERE archived=0 AND '+display+'=? LIMIT 2',(title,)).fetchall()
+            if account and not {'creator_user_id', 'creator_account_id'} <= columns:
+                return None
+            where = 'id=?' if UUID.fullmatch(thread_id) else 'archived=0 AND '+display+'=?'
+            args = (thread_id,) if UUID.fullmatch(thread_id) else (title,)
+            if account:
+                where += ' AND creator_user_id=? AND creator_account_id=?'
+                args += account
+            rows=db.execute('SELECT '+fields+' FROM threads WHERE '+where+' LIMIT 2',args).fetchall()
             rows=[dict(row) for row in rows if self.user_thread(dict(row))]
             return {'id':rows[0]['id'],'display_title':rows[0]['display_title']} if len(rows)==1 else None
 
-    def snapshot(self, observed: dict) -> dict | None:
+    def match_visible(self, title: str, messages: list[dict]) -> str | None:
+        """Recognize an already open, uniquely titled local conversation."""
+        def comparable(text: str) -> str:
+            return ''.join(text.split())
+
+        displayed = {comparable(row['text']): index for index, row in enumerate(messages)
+                     if row['role'] == 'user' and len(comparable(row['text'])) >= 24}
+        if len(displayed) < 2:
+            return None
         try:
-            thread=self.resolve(str(observed.get('selectedTitle') or ''))
+            thread = self.resolve(title)
+            path = self.database('thread_history')
+            if not thread or not path:
+                return None
+            with closing(self.connect(path)) as db:
+                rows = db.execute('''SELECT item_json FROM thread_items WHERE thread_id=? AND item_type='userMessage'
+                                     ORDER BY rollout_ordinal DESC LIMIT 80''', (thread['id'],)).fetchall()
+            matches = []
+            for row in reversed(rows):
+                text, _ = user_content(json.loads(row['item_json']).get('content'))
+                index = displayed.get(comparable(text))
+                if index is not None:
+                    matches.append(index)
+            if len(matches) >= 2 and matches == sorted(set(matches)):
+                return thread['id']
+        except (OSError, sqlite3.Error, ValueError, TypeError, AttributeError):
+            pass
+        return None
+
+    def snapshot(self, observed: dict, *, account=None, before: int | None = None) -> dict | None:
+        try:
+            thread=self.resolve(str(observed.get('selectedTitle') or observed.get('title') or ''),
+                                str(observed.get('threadId') or ''), account)
             path=self.database('thread_history')
             if not thread or not path:return None
+            upper = before if before is not None else 2**63-1
             with closing(self.connect(path)) as db:
-                turns={r['turn_id']:dict(r) for r in db.execute(
-                    'SELECT turn_id,status,duration_ms FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 80',(thread['id'],))}
+                turn_rows = list(db.execute(
+                    '''SELECT turn_id,status,duration_ms,rollout_ordinal FROM thread_turns
+                       WHERE thread_id=? AND rollout_ordinal<? ORDER BY rollout_ordinal DESC LIMIT ?''',
+                    (thread['id'], upper, HISTORY_TURNS+1)))
+                older = len(turn_rows) > HISTORY_TURNS
+                turns = {row['turn_id']:dict(row) for row in turn_rows[:HISTORY_TURNS]}
+                if not turns:
+                    return None
+                names = ','.join('?' for _ in turns)
                 # Keep the message window independent of tool volume. Select
                 # public summaries and activity states without reading raw tool data.
                 tool_types = ','.join('?' for _ in ACTIVITY_LABELS)
@@ -103,36 +148,48 @@ class LocalHistory:
                             WHEN 'reasoning' THEN json_object('summary',json_extract(item_json,'$.summary'))
                             WHEN 'webSearch' THEN json_object('query',json_extract(item_json,'$.query'))
                             ELSE item_json END AS body
-                    FROM thread_items WHERE thread_id=? AND item_type IN ('userMessage','agentMessage','reasoning','webSearch')
+                    FROM thread_items WHERE thread_id=? AND rollout_ordinal<? AND turn_id IN ({names})
+                        AND item_type IN ('userMessage','agentMessage','reasoning','webSearch')
                         AND (item_type!='reasoning' OR json_array_length(item_json,'$.summary')>0)
                         AND (item_type!='agentMessage' OR json_extract(item_json,'$.phase') IS NOT 'analysis')
-                    ORDER BY rollout_ordinal DESC LIMIT 240
+                    ORDER BY (item_type IN ('userMessage','agentMessage')) DESC, rollout_ordinal DESC LIMIT 240
                 ), tools AS (
                     SELECT item_id,turn_id,created_at_ms,item_type,rollout_ordinal,
                         json_object('status',json_extract(item_json,'$.status')) AS body
-                    FROM thread_items WHERE thread_id=? AND item_type IN ({tool_types})
+                    FROM thread_items WHERE thread_id=? AND rollout_ordinal<? AND turn_id IN ({names}) AND item_type IN ({tool_types})
                         AND rollout_ordinal >= coalesce((SELECT min(rollout_ordinal) FROM visible),0)
                     ORDER BY rollout_ordinal DESC LIMIT 120
                 )
                 SELECT * FROM visible UNION ALL SELECT * FROM tools ORDER BY rollout_ordinal
-                """,(thread['id'],thread['id'],*ACTIVITY_LABELS)))
+                """,(thread['id'],upper,*turns,thread['id'],upper,*turns,*ACTIVITY_LABELS)))
+                first_dialogue = min((row['rollout_ordinal'] for row in rows if row['item_type'] in ('userMessage','agentMessage')),
+                                     default=None)
+                more_dialogue = first_dialogue is not None and len(rows) >= 240 and db.execute(f'''
+                    SELECT 1 FROM thread_items WHERE thread_id=? AND turn_id IN ({names}) AND rollout_ordinal<?
+                    AND (item_type='userMessage' OR (item_type='agentMessage' AND json_extract(item_json,'$.phase') IS NOT 'analysis'))
+                    LIMIT 1''', (thread['id'], *turns, first_dialogue)).fetchone()
             if not rows:return None
-            messages=[];activities={};boundary='start'
+            messages=[];activities={};boundary='start'; message_ordinals={}
             self.resources.scope=thread['id']
             def render(text,channel=''):return markdown_blocks(text,channel,self.resources,thread['id'])
-            def activity_for(turn_id,turn,complete):
+            def activity_for(turn_id,turn,complete,ordinal):
                 segment=(turn_id,boundary)
                 if segment not in activities:
                     status='working' if turn.get('status')=='inProgress' else ('stopped' if turn.get('status')=='interrupted' else 'worked' if complete else 'unknown')
                     work={'status':status}
                     if complete and isinstance(turn.get('duration_ms'),(int,float)):
                         work['durationMs']=max(0,round(turn['duration_ms']))
-                    activity={'id':'activity-'+turn_id+'-'+boundary,'sourceId':'activity-'+turn_id+'-'+boundary,'turnId':turn_id,
+                    identifier='activity-'+turn_id+'-'+boundary
+                    if before is not None and boundary=='start':
+                        identifier+='-'+str(ordinal)
+                    activity={'id':identifier,'sourceId':identifier,'turnId':turn_id,
                               'role':'assistant','phase':'activity','text':'','blocks':[],'complete':complete,'work':work}
                     activities[segment]=activity;messages.append(activity)
+                    message_ordinals[activity['id']]=ordinal
                 return activities[segment]
             for row in rows:
                 item=json.loads(row['body']);kind=row['item_type'];turn=turns.get(row['turn_id'],{})
+                ordinal=row['rollout_ordinal']
                 complete=turn.get('status') in ('completed','failed','interrupted')
                 if kind=='userMessage':
                     boundary=row['item_id']
@@ -141,15 +198,17 @@ class LocalHistory:
                              'blocks':[{'kind':'paragraph','text':text[:40000]}] if text else [],'complete':True}
                     if attachments:message['attachments']=attachments
                     if row['created_at_ms']:message['timestamp']=datetime.fromtimestamp(row['created_at_ms']/1000).strftime('%H:%M')
-                    if text or attachments:messages.append(message)
+                    if text or attachments:
+                        messages.append(message);message_ordinals[message['id']]=ordinal
                 elif kind=='agentMessage' and item.get('phase')!='commentary':
                     text=str(item.get('text') or '')[:40000]
                     if text:
                         if any(key[0]==row['turn_id'] for key in activities) or turn.get('status')=='inProgress' or isinstance(turn.get('duration_ms'),(int,float)):
-                            activity=activity_for(row['turn_id'],turn,complete)
+                            activity=activity_for(row['turn_id'],turn,complete,ordinal)
                             if not complete:activity['work']['hasAnswer']=True
                         messages.append({'id':row['item_id'],'sourceId':row['item_id'],'turnId':row['turn_id'],'role':'assistant','text':text,
                                          'blocks':render(text),'complete':complete})
+                        message_ordinals[row['item_id']]=ordinal
                 else:
                     if kind=='agentMessage':
                         blocks=render(str(item.get('text') or '')[:8000],'commentary')
@@ -166,7 +225,7 @@ class LocalHistory:
                         status=item.get('status')
                         text=running+'中' if status=='inProgress' and not complete else running+'失败' if status=='failed' else done
                         blocks=[{'kind':'operation','icon':icon,'text':text,'channel':'activity'}]
-                    if blocks:activity_for(row['turn_id'],turn,complete)['blocks'].extend(blocks)
+                    if blocks:activity_for(row['turn_id'],turn,complete,ordinal)['blocks'].extend(blocks)
             process_truncated=False
             latest_by_turn={segment[0]:activity for segment,activity in activities.items()}
             for segment,activity in activities.items():
@@ -188,6 +247,12 @@ class LocalHistory:
             for message in reversed(messages[-80:]):
                 if len(message['text'])>budget:break
                 kept.append(message);budget-=len(message['text'])
+            omitted = len(messages)>len(kept)
+            cursor = turn_rows[HISTORY_TURNS-1]['rollout_ordinal'] if older else None
+            if omitted and kept:
+                cursor = message_ordinals[kept[-1]['id']]
+            elif more_dialogue:
+                cursor = first_dialogue
             generating=next(iter(turns.values()),{}).get('status')=='inProgress'
             return {'available':True,'title':thread['display_title'],'threadId':thread['id'],
                     'key':hashlib.sha256(str(observed['identity']).encode()).hexdigest()[:24],
@@ -196,7 +261,8 @@ class LocalHistory:
                     'queued':self.queued(thread['id']) or [
                         {'id':item['id'],'text':item['text']} for item in observed.get('queue',{}).get('items',[])],
                     'loadedOnly':False,'truncated':process_truncated or
-                        sum(row['item_type'] not in ACTIVITY_LABELS for row in rows)>=240 or len(messages)>len(kept),
+                        older or sum(row['item_type'] not in ACTIVITY_LABELS for row in rows)>=240 or omitted,
+                    **({'historyBefore': cursor} if cursor is not None else {}),
                     'source':'local-history','notice':''}
         except (OSError,sqlite3.Error,ValueError,TypeError,KeyError,OverflowError):return None
 
@@ -218,7 +284,7 @@ class LocalHistory:
             return result
         except (OSError,sqlite3.Error,ValueError,TypeError):return []
 
-    def catalog(self, selected_title: str) -> list[dict] | None:
+    def catalog(self, selected_title: str, account: tuple[str, str] | None = None) -> list[dict] | None:
         path=self.database('state')
         if not path:return None
         try:
@@ -227,9 +293,12 @@ class LocalHistory:
                 roots=[dict(r) for r in db.execute('SELECT project_id,path FROM project_roots')]
                 columns={r['name'] for r in db.execute('PRAGMA table_info(threads)')}
                 source=',source' if 'source' in columns else ''
+                if account and not {'creator_user_id', 'creator_account_id'} <= columns:
+                    return None
+                scope = ' AND creator_user_id=? AND creator_account_id=?' if account else ''
                 rows=[dict(r) for r in db.execute("""SELECT id,coalesce(nullif(name,''),title) AS title,cwd,project_id,agent_path"""+source+"""
-                    FROM threads WHERE archived=0 AND (agent_path IS NULL OR agent_path='/root')
-                    ORDER BY coalesce(recency_at_ms,updated_at_ms,updated_at*1000) DESC LIMIT 800""")]
+                    FROM threads WHERE archived=0 AND (agent_path IS NULL OR agent_path='/root')"""+scope+"""
+                    ORDER BY coalesce(recency_at_ms,updated_at_ms,updated_at*1000) DESC LIMIT 800""", account or ())]
                 rows=[row for row in rows if self.user_thread(row)]
             explicit={};legacy={}
             try:
@@ -250,5 +319,8 @@ class LocalHistory:
                 group='local-project-'+project if project in names else ''
                 items.append({'id':'local-thread-'+row['id'],'threadId':row['id'],'kind':'thread','title':row['title'],
                               'project':group,'projectTitle':names.get(project,''),'selected':row['title']==selected_title})
+            if account:
+                owned_projects = {row['project'] for row in items if row['kind'] == 'thread'}
+                items = [row for row in items if row['kind'] != 'project' or row['id'] in owned_projects]
             return items
         except (OSError,sqlite3.Error,ValueError,TypeError):return None

@@ -56,6 +56,8 @@ class Account:
     version: str
     account_id: str = field(repr=False)
     token: str = field(repr=False)
+    user_id: str = field(default='', repr=False)
+    local_models: dict | None = field(default=None, repr=False)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -74,7 +76,6 @@ class ModelCatalog:
     def account(self) -> Account:
         try:
             state = read_json(self.home / '.codex-global-state.json', 8_000_000)
-            atoms = state.get('electron-persisted-atom-state', {})
             auth = read_json(self.home / 'auth.json', 64_000)
             tokens = auth.get('tokens', {})
             if auth.get('auth_mode') != 'chatgpt':
@@ -88,15 +89,34 @@ class ModelCatalog:
                     tokens.get('account_id') != account_id or claims.get('exp', 0) <= time.time()):
                 raise ValueError()
             owner = digest([user, account_id])
-            if state.get('electron-account-renderer-state-v1', {}).get('owner') != owner:
-                raise ValueError()
+            local_models = None
+            if 'electron-renderer-content-owner' in state:
+                if state['electron-renderer-content-owner'] != owner:
+                    raise ValueError()
+                atoms = state['electron-owner-atoms:' + owner]
+            else:
+                if state.get('electron-account-renderer-state-v1', {}).get('owner') != owner:
+                    raise ValueError()
+                atoms = state['electron-persisted-atom-state']
             response = atoms['chatgpt-work-models-v1/' + user + '/' + account_id]['response']
-            eligible = set(response['eligible_codex_model_slugs'])
+            eligible = {slug.removesuffix('-wm') for slug in response['eligible_codex_model_slugs'] if isinstance(slug, str)}
             titles = {m['slug'].removesuffix('-wm'): m['title'] for m in response['models']
                       if isinstance(m.get('slug'), str) and isinstance(m.get('title'), str)
                       and m['slug'].removesuffix('-wm') in eligible}
             if not titles or len(titles) > 200:
                 raise ValueError()
+            if 'electron-renderer-content-owner' in state:
+                aliases = {'min': 'low', 'standard': 'medium', 'extended': 'high'}
+                local_models = {}
+                for model in response['models']:
+                    slug = str(model.get('slug', '')).removesuffix('-wm')
+                    if slug not in titles:
+                        continue
+                    levels = [entry.get('thinking_effort') for entry in model.get('thinking_efforts', [])
+                              if isinstance(entry, dict) and isinstance(entry.get('thinking_effort'), str)]
+                    mapped = [aliases.get(level, level) for level in levels]
+                    if mapped and len(set(mapped)) == len(mapped) and all(level in LABELS['en'] for level in mapped):
+                        local_models[slug] = mapped
             mode = atoms.get('composer-model-picker-selection-mode-v1', '')
             # Read only the producer version. Capabilities come from an
             # authenticated account-scoped response, never a shared cache.
@@ -104,8 +124,8 @@ class ModelCatalog:
             version = cache['client_version']
             if not isinstance(version, str) or not re.fullmatch(r'\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9.-]+)?', version):
                 raise ValueError()
-            signature = digest([owner, mode, titles, version, hashlib.sha256(token.encode()).hexdigest()])
-            return Account(signature, owner, mode, titles, version, account_id, token)
+            signature = digest([owner, mode, titles, local_models, version, hashlib.sha256(token.encode()).hexdigest()])
+            return Account(signature, owner, mode, titles, version, account_id, token, user, local_models)
         except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
             raise CatalogUnavailable('账号正在切换或配置未同步，请重新读取') from None
 
@@ -138,6 +158,16 @@ class ModelCatalog:
             same = cached is not None and cached['account'] == account.signature
             if same and not force and now - cached['settingsAt'] < 20:
                 return cached
+            if account.local_models is not None:
+                # Current Work clients persist their offered levels per model.
+                # Enrich still compares that list to the active native slider.
+                models = account.local_models
+                enabled = list(dict.fromkeys(level for levels in models.values() for level in levels))
+                self.cached = {'account': account.signature, 'owner': account.owner, 'mode': account.mode,
+                               'titles': account.titles, 'enabled': enabled, 'models': models,
+                               'revision': digest([account.signature, enabled, models])[:24],
+                               'settingsAt': now, 'modelsAt': now}
+                return self.cached
             reuse_models = same and now - cached['modelsAt'] < 120
             if reuse_models:
                 settings = self.fetch(account, 'settings')

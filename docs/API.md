@@ -103,7 +103,7 @@ body：手动配对使用 `{"pin": "123456", "name": "手机"}`；扫码使用 `
 - `{"kind":"text","text":"你好","submit":true,"submitMethod":"button","epoch":N}` Unicode 文本，≤6000 字符；`submit` 可省略，默认 false。`submitMethod` 可省略，默认 `button`，也允许 `CTRL+ENTER`、`ENTER`。自动按钮提交要求窗口模式，定位空输入框后填入文字；显式快捷键模式向当前输入焦点注入文字和提交键。
 - `{"kind":"message","text":"你好","submit":true,"submitMethod":"button","conversationKey":"...","epoch":N}` 定位当前对话输入框，发送前核对对话标识、输入焦点和编辑器内容。电脑输入框为空时填入手机文字，已有完全一致的文字时可直接提交。不同草稿保留并返回 `draft_exists`。按钮方式在提交前重新检查完整文字，等待唯一可用的发送或排队按钮并调用一次。回复中优先原生按钮，其他时候快捷键方式使用所选 Enter 或 Ctrl+Enter。
 - `{"kind":"key","key":"CTRL+ENTER","epoch":N}` 允许：ENTER/CTRL+ENTER/ESC/TAB/BACKSPACE/CTRL+A/CTRL+C/CTRL+V
-- `{"kind":"navigate","targetId":"<列表条目id>","navigationKey":"<列表标识>","expanded":true,"epoch":N}` 选择对话、新建对话，或让电脑加载项目。`expanded` 为可选布尔值，默认 true，供项目与分区使用。服务端重新读取当前目录，仅调用曾观察且身份一致的目标；切换或新建对话更新 epoch，项目展开不更新。手机已经加载的项目自行折叠，不发送导航操作。原生确认已经选中的对话返回 `navigationUnchanged:true`，不重新调用或清空现有正文。
+- `{"kind":"navigate","targetId":"<列表条目id>","navigationKey":"<列表标识>","expanded":true,"epoch":N}` 选择对话、新建对话，或让电脑加载项目。`expanded` 为可选布尔值，默认 true，供项目与分区使用。服务核对目标身份。已索引的本机对话按 ID 打开，确认切换后可在响应的 `conversation` 中返回首批消息。切换和新建会更新 `epoch`，已选中的对话返回 `navigationUnchanged:true`。
 成功：`{"ok": true, "epoch": N, "actionSequence": 1, "processingMs": 2.5}`。`actionSequence` 仅用于与后续画面关联；输入结果未确认时客户端不得自动重发。
 失败：400（参数）或 409（窗口变化/冻结/目标不可用）+ `error`。
 
@@ -111,7 +111,7 @@ body：手动配对使用 `{"pin": "123456", "name": "手机"}`；扫码使用 `
 
 输入框选项支持 `{"kind":"composer","operation":"invoke","optionsKey":"...","targetId":"...","epoch":N}`；`dismiss` 关闭已观察的菜单，可省略 `targetId`；`tap` 附加 `x/y`（0–1，有限数值），仅作用于 `surface` 条目的已核对控件范围。服务端校验 120 秒内观察的目录、窗口、对话身份、弹出层、条目身份及启用状态；实际调用前消费该目录引用，结果未知时不重试。冻结、过期、窗口变化或控件移出目标窗口均拒绝。WebSocket 与 HTTP 使用同一操作入口。
 
-支持 `capabilities.composerCatalog=true` 的后端还接受 `{"kind":"composer","operation":"catalog","conversationKey":"...","epoch":N}`。它在电脑本地串行观察根入口、能力条和模型列表，返回 `options` 及 `catalog:{root,power,models}`，手机只发一次 HTTP 请求。各快照仍带原有 key、scope、epoch 并在实际应用时再次核验。账号档位设置与模型能力通过只读服务接口获取，目录读取不发送选档按键。未知能力的旧后端保留逐步读取路径。
+支持 `capabilities.composerCatalog=true` 的后端还接受 `{"kind":"composer","operation":"catalog","conversationKey":"...","epoch":N}`。它在电脑本地串行观察根入口、能力条和模型列表，返回 `options` 及 `catalog:{root,power,models}`。各快照带 key、scope、epoch，并在实际应用时再次核验。模型与档位优先使用当前账号在桌面保存的模型目录，再与原生档位核对。
 
 当前后端另在 `catalog.selection` 返回 `{key,current,profiles}`：`key` 是最长 600 秒、一次性的选择引用；`current` 含模型标识、强度、模式、语言及显示名称，`profiles` 按模型标识列出 `{key,label}` 档位。账号身份只在服务内存核对，不返回手机。手机用新模型的 profile 预览强度，可一次提交：
 
@@ -256,9 +256,9 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 每条消息可另含 `blocks:[{"kind":"paragraph","text":"正文"}]`，`kind` 允许 `paragraph`、`list`、`heading`、`code`、`search`、`table`。表格带 `headers:[cell]` 和 `rows:[[cell]]`，cell 含 text、runs。同一原生段落容器的片段合并，分别保留不同容器的段落与代码块；列表保留完整项目，包括只存在于项目名称中的文字。块可含 `runs:[{text,strong?,emphasis?,inlineCode?,href?,resource?,line?,image?}]`；网页链接只接受无用户名密码的 HTTP(S) 地址。本地文件和图片使用 resource 不透明引用。文字始终通过安全 DOM 渲染；原始 HTML 不执行。`text` 保留纯文本复制来源，没有可用 `blocks` 时按纯文本段落显示。
 
-块可附带 `channel:"reasoning"|"activity"`，缺省为正文；消息可附带 `phase:"activity"|"reasoning"`。活动消息按原始轮次合为一个可折叠区域，内部公开思考摘要降低字号和亮度；`search` 块单独展示网页搜索标识。消息 `timestamp` 单独在底部显示。分类优先使用原生消息类型、phase 和公开思考 summary；兼容读取使用主文档原始可访问性容器。连续活动消息合并为同一折叠区。
+块可附带 `channel:"reasoning"|"activity"|"commentary"`，缺省为正文。活动消息可附带 `phase`。手机将相邻的进度、公开思考摘要和工具记录合为一个默认收起的「工作过程」。分类优先使用原生消息类型、phase 和公开思考 summary，兼容读取使用主文档的可访问性容器。
 
-消息含 `complete`，回复生成中隐藏复制图标，结束后显示；思考和活动消息不单独显示复制。`attachments:[{id,kind:"image"|"file",name?}]` 可保留无文字的附件消息；可读取的本地附件另带 `resource:{id,name,kind}`。图片缩略图进入可视范围才读取，点击后读取预览，不另加轮询。没有可读取资源时保留附件名称。仅在完整识别原始生成格式时，显示文字才移除附件路径包装并保留真实请求。
+自己的消息可从气泡直接复制，助手回复结束后显示复制入口。`attachments:[{id,kind:"image"|"file",name?}]` 可保留无文字的附件消息。可读取的本地附件另带 `resource:{id,name,kind}`，图片缩略图进入可视范围时读取，点击后读取预览。没有可读取资源时保留附件名称。
 
 结构化历史中的消息保留 `turnId`。同轮活动携带 `work:{status:"working"|"worked"|"stopped"|"unknown",durationMs?:number}`；耗时来自原始轮次，不放入正文。手机按原生界面显示“处理中”“用时”或停止状态，活动与耗时共用一个入口；无详情时只显示状态，不创建空的折叠控件。
 
@@ -274,11 +274,15 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 模型、档位、快速模式的预览均在手机内存中进行，点「应用」后按模型、档位、快速模式顺序调用并回读。快速模式生效后显示模型名左侧闪电。发送状态在输入框上方以三个点呈现，连接、异常及其他对话待处理使用统一通知。
 
+### GET /api/conversation/history?key=...&before=...
+
+使用与快照相同的认证。快照包含 `historyBefore` 时，使用当前对话的 `key` 和该游标读取更早的消息。响应含 `key`、`epoch`、`messages` 和下一页的 `historyBefore`，游标为 null 时已经读到开头。前端将旧消息插入列表上方，保留阅读位置和实时快照版本。
+
 ### GET /api/conversation/stream
 
-与快照接口相同认证。`application/x-ndjson; charset=utf-8`、HTTP chunked 持续响应，每一行是一个 JSON 事件；读取轮次间隔约 650ms，无变化时约 1.5 秒保活。
+与快照接口相同认证。响应为 `application/x-ndjson; charset=utf-8`，每行一个事件。生成中约每 400 毫秒检查一次，空闲时约每 800 毫秒检查一次，无变化时发送 `kind=idle` 保活。
 
-`kind=conversation` 除快照字段外还含 `replace` 和 `order`；`messages` 只包含变化或新增加的段落。`replace=true` 时清空旧列表，`order` 给出全部保留消息的顺序，删除不在其中的旧消息。对话 key 或 epoch 变化时重新发送完整快照。`kind=idle` 表示保活；`kind=status` 表示窗口变化，客户端清空旧列表并重连。正文只在服务进程及手机页面内存中保留，不写日志或缓存文件。
+首个事件及对话、窗口版本或服务实例变化后的事件带完整快照。普通增量含变化的消息及其顺序。使用 `?format=delta` 可接收带 `baseRevision` 和 `revision` 的增量，`messages` 提供完整变更项，`patches` 可追加文字或更新块，`meta` 更新快照字段，`unset` 移除字段。版本不匹配时客户端重连取得完整快照，再按消息身份恢复阅读位置。
 
 ### GET /api/queue 与原生队列操作
 
@@ -288,7 +292,7 @@ HTTP 分块和应用层包边界互相独立，客户端必须处理拆包和粘
 
 编辑经原生菜单的键盘打开行为定位「编辑消息」，等待队列项移除和输入框完整回读后返回 queueDraft（与草稿接口相同字段），原附件由桌面原生编辑状态持有。手机已有输入或附件时先保留当前内容；电脑已有草稿时拒绝进入队列编辑。后续发送带返回的草稿版本，复用原有受保护的草稿替换与原生提交。此接口不写原始对话或队列数据库。编辑菜单未打开时返回 queue_edit_not_started，允许用户重新选择；已经发出编辑而回读未完成时返回 queue_pending，只做读取核验。
 
-同轮的公开 commentary、公开思考摘要、搜索和工具动作按原生记录顺序、最近一条用户消息分组为 phase="activity" 消息。插话后的新进度另起一组，避免后来的说明移动到用户消息之前。工具动作只含通用标签，kind="operation" 和图标名称。原始命令、参数和输出留在电脑。最终回答开始时 work.hasAnswer=true。前端保留 commentary 正文，正文之间的思考和工具操作默认折叠为实际操作摘要。内部子任务按原始 source 过滤，当前窗口提供的原生对话入口继续保留。同一对话的完整快照按消息编号对齐，保留阅读位置。
+同轮的公开进度、思考摘要、搜索和工具动作按原生顺序分组。用户插话后另起一组。工具动作返回通用标签及图标，原始命令、参数和输出留在电脑。展开「工作过程」可查看详细条目。最终回答开始时 `work.hasAnswer=true`。
 
 ### GET /api/resource?id=...&variant=thumb|original
 

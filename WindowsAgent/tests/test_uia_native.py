@@ -21,19 +21,20 @@ class NativeConversationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.backend = None
         cls.process = None
-        cls.work = ROOT / '_wip' / 'native-uia-regression'
+        cls.work = ROOT / '_wip' / ('AUTO_' + time.strftime('%Y%m%d') + 'NativeUIA') / str(os.getpid())
         cls.work.mkdir(parents=True, exist_ok=True)
         cls.addClassCleanup(cls.cleanup)
         cls.title = f'Remote Reader Fixture {os.getpid()}'
         html = r'''<!doctype html><meta charset="utf-8"><title>TITLE</title>
 <style>body{font:16px system-ui;margin:20px}.sr-only{position:absolute;left:-9999px}
-.thread-scroll-container{max-height:200px;overflow:auto}.bg-user-message{white-space:pre-wrap}#prompt-textarea{padding:12px;border:1px solid #bbb;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap}
+.thread-scroll-container{max-height:200px;overflow:auto}.bg-user-message{white-space:pre-wrap}#prompt-textarea{box-sizing:border-box;width:100%;padding:12px;border:1px solid #bbb;min-height:60px;max-height:180px;overflow-y:auto;white-space:pre-wrap}
 button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content:'使用 ChatGPT Work';pointer-events:none;color:#888}.file-card{height:58px;padding:5px;border:1px solid #aaa;margin:5px}.fixture-composer{padding:8px;border:1px solid #eee}</style>
 <aside><ul><li><button class="app-action-sidebar-thread-selected bg-primary-ghost-hover">Fixture conversation</button></li>
 <li><button class="app-action-sidebar-thread-selected">模型选择历史</button></li>
 <li id="pending-thread" hidden><button class="app-action-sidebar-thread-selected" aria-label="Fixture pending"><span>Fixture pending</span><span class="bg-chart-blue/15"><span>需要用户输入</span></span></button></li></ul></aside>
-<main class="thread-scroll-container"><div class="relative shrink-0"><h5 class="sr-only">ChatGPT 说：</h5>HISTORY</div>
+<main class="thread-scroll-container"><div class="relative shrink-0"><div id="first-marker" class="sr-only select-none">ChatGPT 说：</div><div role="group">HISTORY</div></div>
 <div class="relative shrink-0"><h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture">继续</p></div><span>星期三20:15</span></div>
+<div class="relative shrink-0"><div class="min-w-0 text-size-chat relative overflow-visible py-0">核对当前数据</div></div>
 <div class="relative shrink-0"><div class="min-w-0 text-size-chat relative overflow-visible py-0">已处理 1分钟 20秒</div></div>
 <div class="relative shrink-0"><div class="outline-none"><div class="group/activity-header"><span>正在读取网页</span></div></div></div>
 <div class="relative shrink-0"><h5 class="sr-only">ChatGPT 说：</h5>
@@ -46,10 +47,9 @@ button{padding:10px}aside{height:45px;overflow:auto}.placeholder::before{content
 <div class="relative" role="group"><div class="ComposerLayoutBody-fixture LegacyExpandableBody-fixture" role="group">
 <div id="prompt-textarea" class="ProseMirror" role="textbox" aria-label="使用 ChatGPT Work" aria-multiline="true" contenteditable="true"><p class="placeholder"><br class="ProseMirror-trailingBreak"></p></div>
 </div></div>
-<button id="send" aria-label="排队" disabled>排队</button><button aria-label="停止">停止</button>
+<button id="send" aria-label="排队">排队</button><button aria-label="停止">停止</button>
 <button id="model" aria-haspopup="listbox" aria-expanded="false">GPT Fixture A</button>
 <button id="open-approval">审批测试入口</button><button id="open-choices">工具选择测试入口</button><button id="open-question">工具问卷测试入口</button>
-<button id="open-pointer">GPT 测试画面</button>
 </div>
 <div id="models" role="listbox" aria-label="模型" hidden><div role="option" tabindex="0" aria-selected="true">GPT Fixture A</div><div role="option" tabindex="0" aria-selected="false">GPT Fixture B</div></div>
 <section id="approval" class="approval-card" hidden style="position:fixed;bottom:15px;background:white;padding:12px;border:1px solid">
@@ -90,60 +90,76 @@ checks.forEach(button=>button.onclick=()=>{
 });
 submit.onclick=()=>{question.hidden=true;pending.querySelector('[class="bg-chart-blue/15"]').remove();};
 const pointer=document.querySelector('#pointer-zone');
-document.querySelector('#open-pointer').onclick=()=>{pointer.hidden=false;};
+document.addEventListener('keydown',event=>{
+  if(event.key==='F6'){
+    const files=document.querySelector('#files');
+    files.replaceChildren();
+    for(const name of ['sample-a.jpg','sample-b.jpg']){
+      const button=document.createElement('button');
+      button.setAttribute('aria-label','Remove attachment '+name);
+      button.textContent=name;
+      button.onclick=()=>button.remove();
+      files.appendChild(button);
+    }
+    return;
+  }
+  if(event.key==='F7'){pointer.hidden=false;document.title='TITLE Pointer ready';return;}
+  const sidebar=document.querySelector('aside');
+  if(event.key==='F8'){sidebar.hidden=true;return;}
+  if(event.key==='F9'){
+    const title=event.shiftKey?'Fixture conversation':'模型选择历史';
+    sidebar.querySelectorAll('.app-action-sidebar-thread-selected').forEach(row=>row.classList.toggle('bg-primary-ghost-hover',row.textContent===title));
+    sidebar.hidden=false;
+  }
+});
 pointer.onclick=()=>{document.title='TITLE Left';};
 pointer.oncontextmenu=event=>{event.preventDefault();document.title='TITLE Right';};
 model.addEventListener('click',()=>{models.hidden=!models.hidden;model.setAttribute('aria-expanded',String(!models.hidden));});
 models.querySelectorAll('[role=option]').forEach(option=>option.addEventListener('click',()=>{model.textContent=option.textContent;models.querySelectorAll('[role=option]').forEach(row=>row.setAttribute('aria-selected',String(row===option)));models.hidden=true;model.setAttribute('aria-expanded','false');}));
-let count=0;edit.addEventListener('input',()=>{if(edit.textContent.trim())edit.querySelectorAll('.placeholder').forEach(p=>p.classList.remove('placeholder'));send.disabled=!edit.textContent.trim()&&!document.querySelector('#files').children.length;document.querySelector('h5.sr-only').outerHTML='<h5 class="sr-only">ChatGPT 说：</h5>';});
+let count=0;edit.addEventListener('input',()=>{if(edit.textContent.trim())edit.querySelectorAll('.placeholder').forEach(p=>p.classList.remove('placeholder'));const marker=document.querySelector('#first-marker');marker.replaceWith(marker.cloneNode(true));});
 edit.addEventListener('paste',event=>{if(event.clipboardData.files.length){event.preventDefault();for(const file of event.clipboardData.files){
   const card=document.createElement('div');card.className='file-card';
   if(file.type.startsWith('image/')){const img=new Image(50,50);img.className='object-cover';img.alt='附件预览';img.src=URL.createObjectURL(file);card.appendChild(img);}
   else{const label=document.createElement('span');label.textContent=file.name;card.appendChild(label);}
   document.querySelector('#files').appendChild(card);
 }send.disabled=false;}});
-send.addEventListener('click',()=>{count++;const row=document.createElement('div');row.className='relative shrink-0';row.innerHTML='<h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture"></p></div>';row.querySelector('p').textContent=edit.innerText;document.querySelector('main').appendChild(row);edit.innerHTML='<p class="placeholder"><br class="ProseMirror-trailingBreak"></p>';document.querySelector('#files').textContent='';send.disabled=true;document.title='TITLE';});
+send.addEventListener('click',()=>{count++;const row=document.createElement('div');row.className='relative shrink-0';row.innerHTML='<h5 class="sr-only">你说：</h5><div class="bg-user-message"><p class="_Paragraph_fixture"></p></div>';row.querySelector('p').textContent=edit.innerText;document.querySelector('main').appendChild(row);edit.innerHTML='<p class="placeholder"><br class="ProseMirror-trailingBreak"></p>';document.querySelector('#files').textContent='';document.title='TITLE';});
 </script>'''.replace('TITLE', cls.title).replace('HISTORY', '<p>旧内容</p>' * 6100)
         page = cls.work / 'fixture.html'
         page.write_text(html, encoding='utf-8')
         edge = Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')) / 'Microsoft/Edge/Application/msedge.exe'
+        browser = Path(os.environ.get('REMOTE_UIA_BROWSER', str(edge)))
         env = {**os.environ, 'TEMP': str(cls.work), 'TMP': str(cls.work)}
-        cls.process = subprocess.Popen([str(edge), '--user-data-dir=' + str(cls.work / ('profile-' + str(os.getpid()))),
-            '--no-first-run', '--no-default-browser-check', '--force-renderer-accessibility=complete',
+        cls.process = subprocess.Popen([str(browser), '--user-data-dir=' + str(cls.work / 'browser-profile'),
+            '--no-first-run', '--no-default-browser-check', '--force-renderer-accessibility=complete', '--disable-background-mode',
             '--enable-features=UiaProvider',
             '--app=' + page.as_uri(), '--window-size=720,800'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         cls.backend = WindowsBackend([cls.title])
-        for _ in range(60):
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
             windows = cls.backend._enumerate()
-            if len(windows) == 1:
-                cls.hwnd = windows[0]['id']
-                cls.backend.select(cls.hwnd)
-                cls.backend._focus(cls.hwnd)
-                break
-            time.sleep(.1)
-        else:
-            raise RuntimeError('Isolated UIA fixture did not open')
-        reader=cls.backend._reader()
-        deadline=time.monotonic()+15
-        observed={}
-        while time.monotonic()<deadline:
-            try:
-                observed=reader._call(operation='observe',hwnd=cls.hwnd,fresh=True)
-            except TargetError:
-                continue
-            if observed.get('selectedTitle')=='Fixture conversation' and observed.get('composer',{}).get('available'):
-                cls.backend._focus(cls.hwnd)
-                break
-            time.sleep(.15)
-        else:
-            facts={k:observed.get(k) for k in ('ok','reason','selectedTitle','composer')}
-            (cls.work/'startup-result.json').write_text(json.dumps(facts,ensure_ascii=False),encoding='utf-8')
-            raise RuntimeError('Isolated UIA fixture did not finish loading: '+json.dumps(facts,ensure_ascii=False))
+            for window in windows:
+                if window['title'] != cls.title:
+                    continue
+                try:
+                    cls.backend.select(window['id'])
+                    cls.hwnd = window['id']
+                    cls.backend._focus(window['id'])
+                    observed = cls.backend._reader()._call(operation='observe', hwnd=window['id'], fresh=True)
+                    if observed.get('selectedTitle') == 'Fixture conversation' and observed.get('composer', {}).get('available'):
+                        return
+                except TargetError as error:
+                    if error.code not in ('local_input_active', ''):
+                        raise
+            time.sleep(.25)
+        raise RuntimeError('Isolated UIA fixture did not expose its conversation and editor')
 
     @classmethod
     def cleanup(cls):
         if cls.backend:
+            if getattr(cls, 'hwnd', 0) and cls.backend.u32.IsWindow(cls.hwnd):
+                cls.backend.u32.PostMessageW(cls.hwnd, 0x0010, 0, 0)
             cls.backend.close()
         if cls.process:
             if cls.process.poll() is None:
@@ -167,8 +183,10 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
         self.assertFalse(any('电脑排队内容' in m['text'] for m in before['messages']))
         self.assertFalse(any('已处理' in m['text'] for m in before['messages']))
         self.assertEqual(before['messages'][1]['role'], 'assistant')
-        self.assertEqual(before['messages'][1]['phase'], 'activity')
-        answer = before['messages'][-1]
+        self.assertEqual(before['messages'][1]['phase'], 'reasoning')
+        self.assertEqual(before['messages'][1]['blocks'][0]['text'], '核对当前数据')
+        self.assertEqual(before['messages'][1]['blocks'][0]['channel'], 'reasoning')
+        answer = next(item for item in reversed(before['messages']) if item['role']=='assistant')
         self.assertIn('列表前半句：后半句不能丢失', answer['text'])
         self.assertTrue(any(b.get('channel') == 'reasoning' for b in answer['blocks']))
         self.assertTrue(any(r.get('href') == 'https://example.com/docs' for b in answer['blocks'] for r in b.get('runs', [])))
@@ -192,6 +210,70 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
         report = {'identityMatches': True, 'structuredContent': True, 'exactlyOneNewMessage': True,
                   'elapsedMs': round((time.monotonic()-started)*1000)}
         (self.work / 'result.json').write_text(json.dumps(report), encoding='utf-8')
+
+    def test_native_fallback_without_sidebar_uses_the_same_conversation_for_read_and_send(self):
+        reader = self.backend._reader()
+
+        def toggle_sidebar():
+            self.backend._focus(self.hwnd)
+            self.backend._key(0x77, True)
+            self.backend._key(0x77, False)
+
+        toggle_sidebar()
+        try:
+            deadline = time.monotonic() + 3
+            while reader._call(operation='observe', hwnd=self.hwnd, fresh=True).get('selectedTitle'):
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(.05)
+            reader.cached = None
+            before = self.backend.read_conversation()
+            identity = reader.cached[3]
+            self.assertIn('|message|', identity)
+            self.assertEqual(reader._call(operation='identity', hwnd=self.hwnd, fresh=True)['identity'], identity)
+            text = '同一对话的手机发送测试'
+            result = self.backend.action({'kind': 'message', 'text': text, 'submit': True, 'epoch': before['epoch'],
+                                          'conversationKey': before['key']})
+            self.assertIn(result['submission']['state'], ('sent', 'queued'))
+            reader.cached = None
+            after = self.backend.read_conversation()
+            self.assertEqual(sum(item['role'] == 'user' and item['text'] == text for item in after['messages']), 1)
+            self.assertFalse(after['composer']['hasDraft'])
+            self.backend._key(0x78, True)
+            self.backend._key(0x78, False)
+            deadline = time.monotonic() + 3
+            while reader._call(operation='observe', hwnd=self.hwnd, fresh=True).get('selectedTitle') != '模型选择历史':
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(.05)
+            with self.assertRaises(TargetError) as stale:
+                self.backend.action({'kind': 'message', 'text': '旧对话', 'submit': True, 'epoch': before['epoch'],
+                                     'conversationKey': before['key']})
+            self.assertEqual(stale.exception.code, 'conversation_changed')
+            self.assertFalse(reader.draft(self.hwnd)['hasDraft'])
+        finally:
+            self.backend._key_chord(0x10,0x78)
+            reader.cached = None
+
+    def test_native_remove_one_preview_keeps_the_other_attachment(self):
+        reader = self.backend._reader()
+        self.backend._focus(self.hwnd)
+        self.backend._key(0x75, True)
+        self.backend._key(0x75, False)
+        reader.cached = None
+        snapshot = self.backend.read_conversation()
+        identity = reader.cached[3]
+        deadline = time.monotonic() + 3
+        while True:
+            before = reader._call(operation='attachments', hwnd=self.hwnd, identity=identity, fresh=True)
+            items = before.get('attachments', {}).get('items', [])
+            if len(items) == 2:
+                break
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.05)
+        target = next(item for item in items if item['name'] == 'sample-a.jpg')
+        self.backend.remove_file(snapshot['key'], snapshot['epoch'], target)
+        after = reader._call(operation='attachments', hwnd=self.hwnd, identity=identity, fresh=True)
+        self.assertEqual([item['name'] for item in after['attachments']['items']], ['sample-b.jpg'])
+        self.backend.remove_file(snapshot['key'], snapshot['epoch'], after['attachments']['items'][0])
 
     def test_native_x_model_listbox_changes_selection_and_preserves_draft(self):
         reader=self.backend._reader()
@@ -297,22 +379,27 @@ send.addEventListener('click',()=>{count++;const row=document.createElement('div
 
     def test_native_zzz_window_pointer_posts_left_and_right_to_the_chosen_window(self):
         from unittest.mock import patch
-        options = self.backend.composer_options()
-        target = next(item for item in options['items'] if item['title'] == 'GPT 测试画面')
-        self.backend.action({'kind': 'composer', 'operation': 'invoke', 'optionsKey': options['key'],
-                             'targetId': target['id'], 'epoch': options['epoch']})
+        self.backend._focus(self.hwnd)
+        self.backend._key(0x76, True)
+        self.backend._key(0x76, False)
+        def window_title():
+            return next(row['title'] for row in self.backend._enumerate() if row['id'] == self.hwnd)
+
+        deadline = time.monotonic() + 3
+        while window_title() != self.title + ' Pointer ready':
+            self.assertLess(time.monotonic(), deadline, 'The browser did not open the pointer fixture')
+            time.sleep(.06)
         x, y, width, height = self.backend._rect()
-        command = {'kind': 'window-pointer', 'epoch': options['epoch'], 'x': .5, 'y': .5,
+        command = {'kind': 'window-pointer', 'epoch': self.backend.tracker.epoch, 'x': .5, 'y': .5,
                    'pointer_target': (self.hwnd, (x, y, width, height))}
-        with patch('windows_control._APP_EXES', {'msedge.exe'}):
+        with patch('windows_control._APP_EXES', {'msedge.exe', 'chrome.exe'}):
             with self.assertRaisesRegex(TargetError, '窗口位置'):
                 self.backend.action({**command, 'operation': 'left', 'pointer_target': (self.hwnd, (x+10, y, width, height))})
             for operation in ('left', 'right'):
                 self.backend.action({**command, 'operation': operation})
                 deadline = time.monotonic()+3
                 while time.monotonic()<deadline:
-                    window = next(row for row in self.backend._enumerate() if row['id'] == self.hwnd)
-                    if window['title'].endswith(operation.capitalize()):
+                    if window_title() == self.title + ' ' + operation.capitalize():
                         break
                     time.sleep(.06)
                 else:

@@ -17,7 +17,7 @@ const source = script.replace(end, `
     showConnectionHome, openRemoteView, returnToComputer, showPairEntry, restorePhonePreferences,
     startControl, stopLive, showOffline, resumeConnection, openDesktopPrompt,
     openScreenView, bindScreenGestures, stageModelChoice, applyModelDraft, confirmModelChoices, modelChoiceConfirmed, openPendingRequests, positionFloatingSurfaces, renderOptions, openMessageResource, resetRemote,
-    consumeConversationStream, showStartup, finishStartup,
+    consumeConversationStream, showStartup, finishStartup, onChatScroll, jumpToLatest, loadOlderMessages, bindChatMessageEvents,
     openQueue, refreshQueue, renderQueue, invokeQueue, invokeComposerAction, renderPhoneFiles, removePhoneFile, savePhoneDraft, switchPhoneDraft, toast };
 })();`).replace('  function render(){', '  function render(){ globalThis.recordUiRender();');
 
@@ -38,6 +38,10 @@ function makePage(fetchImpl = async () => { throw new Error('Unexpected request'
     tagName: tag.toUpperCase(),
     textContent: '', value: '', hidden: false, disabled: false, width: 300, height: 150,
     children: [], dataset: {}, parentNode: null, scrollHeight: 500, scrollTop: 0, clientHeight: 400,
+    get lastElementChild() { return this.children.at(-1) || null; },
+    get nextElementSibling() {
+      return this.parentNode?.children[this.parentNode.children.indexOf(this)+1] || null;
+    },
     classList: { add() {}, remove() {}, toggle() {} },
       style: { props:{}, setProperty(key,value){this.props[key]=value;}, removeProperty(key){delete this.props[key];} },
     setAttribute(name, value) { this[name] = value; },
@@ -473,6 +477,42 @@ function chatEvent(overrides = {}) {
     order:['m0'],messages:[{id:'m0',role:'assistant',text:'<script>literal text</script>'}],...overrides};
 }
 
+test('history pages retain the live revision and extend the same transcript',async()=>{
+  const requests=[];
+  const page=makePage(async path=>{
+    requests.push(path);
+    return response({ok:true,key:'chat-a',epoch:7,historyBefore:12,
+      messages:[{id:'earlier',role:'user',text:'Earlier message'}]});
+  });
+  const {hooks}=page;
+  const list=page.elements.get('chatMessages');
+  hooks.applyConversationEvent(chatEvent({threadId:'thread-a',historyBefore:32}));
+  const last=list.lastElementChild;
+  await hooks.loadOlderMessages();
+  assert.deepEqual(requests,['/api/conversation/history?key=chat-a&before=32']);
+  assert.equal(list.children[0].dataset.messageId,'earlier');
+  assert.equal(list.lastElementChild,last);
+  assert.equal(hooks.state.chat.messages.length,1);
+  hooks.applyConversationEvent(chatEvent({threadId:'thread-a',revision:'2',historyBefore:40,
+    messages:[{id:'m1',role:'assistant',text:'Live reply'}],order:['m1']}));
+  assert.deepEqual(list.children.map(row=>row.dataset.messageId),['earlier','m0','m1']);
+  assert.equal(hooks.state.chat.revision,'2');
+});
+
+test('an older page that returns after a switch stays with its original chat',async()=>{
+  let finish;
+  const page=makePage(()=>new Promise(resolve=>{finish=resolve;}));
+  const {hooks}=page;
+  hooks.applyConversationEvent(chatEvent({threadId:'thread-a',historyBefore:32}));
+  const pending=hooks.loadOlderMessages();
+  hooks.applyConversationEvent(chatEvent({key:'chat-b',threadId:'thread-b',revision:'2',
+    messages:[{id:'m1',role:'user',text:'Different conversation'}],order:['m1']}));
+  finish(response({ok:true,key:'chat-a',epoch:7,
+    messages:[{id:'earlier',role:'user',text:'Earlier message'}]}));
+  await pending;
+  assert.deepEqual(page.elements.get('chatMessages').children.map(row=>row.dataset.messageId),['m1']);
+});
+
 test('rich text retains safe links and emphasis without interpreting message HTML',()=>{
   const page=makePage();
   const body=page.elements.get('chatMessages');
@@ -548,8 +588,9 @@ test('message timestamps have their own metadata element and never enter copied 
   assert.equal(row.text,'正文中约定 12:30 见面');
   assert.equal(row.article.children[0],row.body);
   assert.equal(row.article.children[1],row.timestamp.parentNode);
-  assert.equal(row.article.children[1].children[0]['aria-label'],'复制这条消息');
-  assert.equal(row.article.children[1].children[0].textContent,'');
+  assert.equal(row.foot.hidden,false);
+  assert.equal(row.copy.hidden,false);
+  assert.equal(row.article.getAttribute('data-copy'),'true');
   page.elements.get('message').value='手机尚未发送的草稿';
   page.hooks.applyConversationEvent(chatEvent({key:'other-chat'}));
   assert.equal(page.elements.get('message').value,'');
@@ -711,7 +752,9 @@ test('a file remains removable and can be manually retried when paste never star
   assert.equal(await page.hooks.sendText(true),false);assert.equal(attaches,1);
   assert.equal(page.hooks.state.phoneFiles[0].state,'uploaded');
   assert.equal(page.elements.get('sendEnterBtn').disabled,false);
-  assert.ok(page.elements.get('phoneFiles').textContent.includes('×'));
+  const remove=page.elements.get('phoneFiles').children[0].lastElementChild;
+  assert.equal(remove.textContent,'×');
+  assert.equal(remove.disabled,false);
   assert.equal(page.elements.get('message').value,'Keep this');
   assert.equal(await page.hooks.sendText(true),true);assert.equal(attaches,2);
 });
@@ -934,7 +977,7 @@ test('a target change during the first snapshot keeps phone text and sends nothi
   assert.equal(actionCount,0);
   assert.equal(page.elements.get('message').value,'Preserved message');
   assert.equal(page.hooks.state.pending.sendText,false);
-  assert.match(page.hooks.state.error,/当前对话已变化/);
+  assert.match(page.hooks.state.error,/草稿已保留/);
 });
 
 test('send controls stay disabled while frozen or navigating and recover afterwards', () => {
@@ -1413,6 +1456,28 @@ test('removing an attached picture waits for native success and preserves a fail
   assert.equal(paths.length,2);
 });
 
+test('the thumbnail cross removes an expired staged image while its preview is open',async()=>{
+  const page=makePage(async(path,options)=>{
+    assert.equal(path,'/api/uploads/discard');
+    assert.deepEqual(JSON.parse(options.body).ids,['expired']);
+    return {ok:false,status:409,json:async()=>({error:'附件已失效',code:'upload_missing'})};
+  });
+  const item={id:'expired',name:'expired.png',state:'uploaded',key:'chat-a',epoch:7,previewUrl:'blob:expired'};
+  page.hooks.state.phoneFiles=[item];
+  page.hooks.renderPhoneFiles();
+  page.hooks.openAttachmentPreview(item);
+  assert.equal(page.elements.get('attachmentPanel').getAttribute('aria-modal'),'false');
+  assert.equal(page.elements.get('sheetBackdrop').hidden,true);
+  assert.equal(page.elements.get('remoteView').inert,false);
+  assert.equal(page.elements.get('attachmentActions').hidden,true);
+  const cross=page.elements.get('phoneFiles').children[0].lastElementChild;
+  assert.equal(cross.disabled,false);
+  await cross.listeners.click[0]();
+  assert.equal(page.hooks.state.phoneFiles.length,0);
+  assert.equal(page.hooks.state.panel,'');
+  assert.ok(page.revoked.includes('blob:expired'));
+});
+
 test('multiple attachments bind one native file at a time before one message submission',async()=>{
   const requests=[];const page=makePage(async(path,options)=>{
     const body=JSON.parse(options.body);requests.push({path,body});
@@ -1456,6 +1521,8 @@ test('historical image preview uses binary transport and reuses its decoded reso
   const page=makePage(async path=>{assert.ok(path.startsWith('/api/resource?'));requests++;return {ok:true,status:200,blob:async()=>new Blob(['image'],{type:'image/jpeg'})};});
   const ref={id:'registered-image',kind:'image',name:'电脑截图.png'};
   await page.hooks.openMessageResource(ref,page.elements.get('modelPickerBtn'));
+  assert.equal(page.elements.get('attachmentPanel').getAttribute('aria-modal'),'true');
+  assert.equal(page.elements.get('remoteView').inert,true);
   assert.equal(page.elements.get('attachmentImage').src,'blob:test-1');
   assert.equal(page.elements.get('attachmentImage').hidden,false);
   page.hooks.setPanel('');await Promise.resolve();
@@ -1666,8 +1733,9 @@ test('one finger sends one left click, two fingers send one right click, and mov
   finger('pointerup',3,180,170);finger('pointerup',2,160,160);
   finger('pointerdown',4,160,160);finger('pointermove',4,200,160);finger('pointerup',4,200,160);
   finger('pointerdown',5,160,160);finger('pointercancel',5,160,160);
+  finger('pointerdown',6,85,160);finger('pointerup',6,85,160);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(requests,['left','right'].map(operation=>({kind:'window-pointer',operation,epoch:7,frameId:55,x:.5,y:.5})));
+  assert.deepEqual(requests,[['left',.5],['right',.5],['left',.25]].map(([operation,x])=>({kind:'window-pointer',operation,epoch:7,frameId:55,x,y:.5})));
   assert.equal(elements.get('screenCursor').hidden,false);
   hooks.setPanel('');assert.equal(hooks.state.view,'chat');assert.equal(elements.get('screenCard').hidden,true);
 });
@@ -1717,7 +1785,7 @@ test('a stale conversation read resynchronizes without a connection warning',asy
   page.hooks.state.view='chat';page.hooks.startMedia();
   try{
     await retry;
-    assert.deepEqual(paths,['/api/conversation/stream','/api/conversation/stream']);
+    assert.deepEqual(paths,['/api/conversation/stream?format=delta','/api/conversation/stream?format=delta']);
     assert.equal(page.hooks.state.error,'');
     assert.equal(page.elements.get('chatStatus').textContent,'正在同步对话…');
     assert.equal(page.elements.get('chatRetryBtn').hidden,true);
@@ -1737,11 +1805,13 @@ test('a blocked text stream falls back to snapshots and preserves rows, scroll a
   hooks.applyConversationEvent(chatEvent());
   const row=hooks.state.chatElements.m0;
   elements.get('chatMessages').scrollTop=5;
+  elements.get('chatMessages').hidden=false;
+  hooks.onChatScroll();
   elements.get('message').value='手机草稿';
   hooks.startMedia();
   try{
     await new Promise(resolve=>setImmediate(resolve));
-    assert.deepEqual(paths,['/api/conversation/stream','/api/conversation']);
+    assert.deepEqual(paths,['/api/conversation/stream?format=delta','/api/conversation']);
     assert.equal(hooks.state.chat.revision,'2');
     assert.equal(hooks.state.chatConnected,true);
     assert.equal(hooks.state.chatElements.m0,row);
@@ -1766,22 +1836,19 @@ test('a restarted Agent can report a lower epoch and delayed data from the old p
   assert.equal(elements.get('message').value,'草稿');
 });
 
-test('reasoning collapses separately while body and queue keep their own locations',()=>{
+test('reasoning collapses before the answer and the queue remains separate',()=>{
   const page=makePage();
   page.hooks.applyConversationEvent({kind:'conversation',replace:true,key:'chat-a',epoch:7,available:true,
     messages:[{id:'m1',role:'assistant',text:'Process\n\nAnswer',blocks:[
       {kind:'paragraph',text:'Process',channel:'reasoning'},{kind:'paragraph',text:'Answer'}]}],order:['m1'],
     queued:[{id:'q1',text:'Pending user text'}]});
-  const body=page.hooks.state.chatElements.m1.body;
-  assert.equal(body.children[0].tagName,'DETAILS');assert.equal(body.children[0].open,false);
-  assert.equal(body.children[1].textContent,'Answer');
+  const body=page.hooks.state.chatElements.m1.body,work=page.hooks.state.chatElements['work:m1'].body;
+  assert.equal(work.children[0].tagName,'DETAILS');assert.equal(work.children[0].open,false);
+  assert.equal(body.children[0].textContent,'Answer');
   assert.equal(body.textContent.includes('Pending user text'),false);
   assert.equal(page.elements.get('queuedStrip').hidden,false);
   assert.equal(page.elements.get('queuedList').textContent,'Pending user text');
   assert.equal(page.elements.get('queuedList').hidden,false);
-  body.children[0].open=true;
-  page.hooks.renderMessageBody(body,[{kind:'paragraph',text:'Updated process',channel:'reasoning'},{kind:'paragraph',text:'Answer'}]);
-  assert.equal(body.children[0].open,true);
   page.hooks.state.chat.queued=[];page.hooks.renderQueued();
   assert.equal(page.elements.get('queuedStrip').hidden,true);
 });
@@ -2043,36 +2110,37 @@ test('native work status is above the answer and never a copied message body or 
   const page=makePage();page.hooks.applyConversationEvent(chatEvent({messages:[
     {id:'m0',role:'assistant',text:'Answer',duration:'已处理 1分钟 27秒'},
     {id:'m1',role:'assistant',text:'',phase:'activity',duration:'已处理 2分钟'}],order:['m0','m1']}));
-  const answer=page.hooks.state.chatElements.m0,status=page.hooks.state.chatElements.m1;
-  assert.equal(answer.text,'Answer');assert.equal(answer.body.children[0].textContent,'已处理 1分钟 27秒');
-  assert.equal(answer.body.children[1].textContent,'Answer');assert.equal(status.copy.hidden,true);
+  const answer=page.hooks.state.chatElements.m0,status=page.hooks.state.chatElements['work:m0'];
+  assert.equal(answer.text,'Answer');
+  assert.equal(answer.body.children[0].textContent,'Answer');assert.equal(status.copy.hidden,true);
   assert.equal(status.body.textContent,'已处理 2分钟');assert.equal(status.foot.hidden,true);
+  assert.equal(page.elements.get('chatMessages').children[0],status.article);
   assert.equal(answer.foot.textContent.includes('已处理'),false);
 });
 
-test('process blocks collapse between visible commentary paragraphs and preserve manual expansion',()=>{
+test('all work blocks share one closed summary and preserve manual expansion',()=>{
   const page=makePage();const blocks=[{kind:'paragraph',text:'检查输入',channel:'commentary'},
     {kind:'paragraph',text:'公开思考摘要',channel:'reasoning'},
     {kind:'operation',icon:'terminal',text:'运行了命令',channel:'activity'},
     {kind:'paragraph',text:'继续核对',channel:'commentary'},
     {kind:'search',text:'搜索网页',channel:'activity'}];
-  const event=chatEvent({messages:[{id:'m0',role:'assistant',phase:'activity',text:'过程',blocks,
+  const event=chatEvent({generating:true,messages:[{id:'m0',role:'assistant',phase:'activity',text:'过程',blocks,
     complete:false,work:{status:'working'}}]});
   page.hooks.applyConversationEvent(event);const row=page.hooks.state.chatElements.m0;
-  assert.equal(row.body.children.length,4);
-  assert.equal(row.body.children[0].textContent,'检查输入');
-  assert.equal(row.body.children[2].textContent,'继续核对');
-  const first=row.body.children[1],second=row.body.children[3];
-  assert.equal(first.tagName,'DETAILS');assert.equal(first.open,false);assert.equal(second.open,false);
-  assert.equal(first.children[0].textContent,'工作过程 · 进行中');
-  assert.equal(second.children[0].textContent,'工作过程 · 进行中');
-  assert.deepEqual(first.children[1].children.map(node=>node.textContent),['公开思考摘要','运行了命令']);
-  first.open=true;event.replace=false;event.messages[0].blocks[1].text='后续摘要';
-  page.hooks.applyConversationEvent(event);
-  assert.equal(row.body.children[1].open,true);assert.equal(row.body.children[3].open,false);
-  event.messages[0].complete=true;event.messages[0].work={status:'worked',durationMs:65000};
-  page.hooks.applyConversationEvent(event);
-  assert.equal(row.body.children[1].open,true);assert.equal(row.body.children[3].open,false);
+  assert.equal(row.body.children.length,1);
+  const details=row.body.children[0];
+  assert.equal(details.tagName,'DETAILS');assert.equal(details.open,false);
+  assert.equal(details.children[0].textContent,'处理中 · 搜索网页');
+  assert.equal(details.children[1].children.length,0);
+  details.open=true;details.fire('toggle',{});
+  assert.deepEqual(details.children[1].children.map(node=>node.textContent),['检查输入','公开思考摘要','运行了命令','继续核对','搜索网页']);
+  const updated={...event.messages[0],blocks:[blocks[0],{...blocks[1],text:'后续摘要'},...blocks.slice(2)]};
+  page.hooks.applyConversationEvent({...event,replace:false,revision:'2',messages:[updated]});
+  assert.equal(row.body.children[0],details);assert.equal(details.open,true);
+  assert.match(details.children[1].textContent,/后续摘要/);
+  page.hooks.applyConversationEvent({...event,replace:false,revision:'3',generating:false,
+    messages:[{...updated,complete:true,work:{status:'worked',durationMs:65000}}]});
+  assert.equal(details.open,true);assert.equal(details.children[0].textContent,'用时 1 分钟 5 秒');
 });
 
 test('cached project children retain their observed catalog while other projects are read',()=>{
@@ -2382,24 +2450,93 @@ test('late queue editing result cannot replace the draft in a different conversa
 
 test('a full reconnect snapshot of the same conversation keeps rows and reading position',()=>{
   const page=makePage();page.hooks.state.view='chat';
+  const list=page.elements.get('chatMessages');
+  list.scrollHeight=2000;list.clientHeight=400;list.hidden=false;
   const event=chatEvent({replace:true,order:['a'],messages:[{id:'a',role:'assistant',text:'可见说明',phase:'commentary',complete:true}]});
   page.hooks.applyConversationEvent(event);
-  const row=page.hooks.state.chatElements.a,list=page.elements.get('chatMessages');
-  list.scrollHeight=2000;list.clientHeight=400;list.scrollTop=120;
+  const row=page.hooks.state.chatElements.a;
+  list.scrollTop=120;
+  page.hooks.onChatScroll();
   page.hooks.applyConversationEvent(event);
   assert.equal(page.hooks.state.chatElements.a,row);assert.equal(list.scrollTop,120);
-  assert.equal(row.article['data-phase'],'commentary');assert.equal(row.body.children[0].tagName,'P');
+  assert.equal(row.article['data-phase'],'activity');assert.equal(row.body.children[0].tagName,'DETAILS');
 });
 
-test('the current commentary has visible inline text and stops pulsing when the final answer begins',()=>{
+test('reply suffix, progress changes and metadata share one revision and retain other messages',()=>{
+  const page=makePage(),hooks=page.hooks;
+  hooks.applyConversationEvent(chatEvent({instance:'live',generating:true,order:['user','reply','work'],
+    messages:[{id:'user',role:'user',text:'旧消息'},{id:'reply',role:'assistant',text:'前文',complete:false,blocks:[{kind:'paragraph',text:'前文'}]},
+      {id:'work',role:'assistant',phase:'reasoning',text:'检查',complete:false,blocks:[{kind:'paragraph',text:'检查',channel:'reasoning'}]}]}));
+  const user=hooks.state.chatElements.user,reply=hooks.state.chatElements.reply,first=hooks.state.chat;
+  const delta={kind:'conversation',key:'chat-a',epoch:7,instance:'live',baseRevision:'1',revision:'2',
+    patches:[{id:'reply',textAppend:'，续写😀',blockAppend:'，续写😀',blocks:{keep:1,items:[]}},
+      {id:'work',text:'核对完成',blocks:{keep:0,items:[{kind:'paragraph',text:'核对完成',channel:'reasoning'}]}}]};
+  hooks.applyConversationEvent(delta);
+  assert.equal(hooks.state.chat.messages[1].text,'前文，续写😀');
+  assert.equal(reply.body.children[0].textContent,'前文，续写😀');
+  assert.equal(first.messages[1].blocks[0].text,'前文');
+  assert.equal(hooks.state.chatElements.user,user);
+  assert.equal(reply.copy.hidden,true);
+  assert.throws(()=>hooks.applyConversationEvent(delta),error=>error.code==='conversation_sync');
+  assert.equal(hooks.state.chat.messages[1].text,'前文，续写😀');
+  hooks.applyConversationEvent({...delta,baseRevision:'2',revision:'3',meta:{generating:false},
+    patches:[{id:'reply',fields:{complete:true}}]});
+  assert.equal(reply.copy.hidden,false);
+  assert.equal(hooks.state.chatElements.work.copy.hidden,true);
+});
+
+test('a native progress row with answer styling has no copy while older completed replies do',()=>{
+  const page=makePage();
+  page.hooks.applyConversationEvent(chatEvent({generating:true,order:['old','p1','p2'],messages:[
+    {id:'old',role:'assistant',text:'以前的正式回复',complete:true},
+    {id:'p1',role:'assistant',text:'可见进度一',complete:true,replyComplete:false},
+    {id:'p2',role:'assistant',text:'可见进度二',complete:false,replyComplete:false}]}));
+  assert.equal(page.hooks.state.chatElements.old.copy.hidden,false);
+  assert.equal(page.hooks.state.chatElements.p1.copy.hidden,true);
+  assert.equal(page.hooks.state.chatElements.p2,undefined);
+  assert.equal(page.hooks.state.chatElements.p1.body.children[0].children[0].textContent,'处理中 · 可见进度二');
+});
+
+test('work after a reply joins the same turn and copying only includes the answer',()=>{
+  const page=makePage();
+  const messages=[{id:'progress',role:'assistant',phase:'commentary',text:'检查开始'},{id:'m0',role:'assistant',text:'正文',complete:true,
+    blocks:[{kind:'paragraph',text:'正文'},{kind:'operation',text:'已运行',channel:'activity'}]},
+    {id:'after',role:'assistant',phase:'activity',text:'检查结束'}];
+  page.hooks.applyConversationEvent(chatEvent({messages,order:messages.map(message=>message.id)}));
+  const row=page.hooks.state.chatElements.m0;
+  const details=page.hooks.state.chatElements.progress.body.children[0];
+  details.open=true;details.fire('toggle',{});
+  assert.deepEqual(details.children[1].children.map(node=>node.textContent),['检查开始','已运行','检查结束']);
+  assert.equal(row.copy.hidden,false);
+  assert.equal(row.text,'正文');
+  assert.equal(page.elements.get('chatMessages').children.length,2);
+});
+
+test('the current work has one summary and stops pulsing when the final answer begins',()=>{
   const page=makePage();
   const step={id:'step',role:'assistant',text:'正在检查文件',phase:'commentary',complete:true};
   page.hooks.applyConversationEvent(chatEvent({generating:true,order:['step'],messages:[step]}));
   const row=page.hooks.state.chatElements.step;
-  assert.equal(row.body.children[0].textContent,'正在检查文件');
-  assert.equal(row.article['data-running'],'true');
+  const details=row.body.children[0];
+  assert.equal(details.textContent,'处理中 · 正在检查文件');
+  assert.equal(details['data-running'],'true');
   page.hooks.applyConversationEvent(chatEvent({generating:true,order:['step','answer'],messages:[step,{id:'answer',role:'assistant',text:'检查结果'}]}));
-  assert.equal(row.article['data-running'],'false');
+  assert.equal(details['data-running'],'false');
   assert.equal(page.hooks.state.chatElements.answer.article['data-phase'],'answer');
-  assert.equal(page.hooks.state.chatElements.answer.article['data-running'],'false');
+});
+
+test('one tap copies the exact sent text without any intermediate menu',async()=>{
+  const page=makePage();
+  const sent='保留换行\n和末尾空格 ';
+  let clipboard='';
+  page.setControlEnvironment({navigator:{clipboard:{writeText:async text=>{clipboard=text;}}}});
+  page.hooks.bindChatMessageEvents();
+  page.hooks.applyConversationEvent(chatEvent({messages:[{id:'m0',role:'user',text:sent}]}));
+  const row=page.hooks.state.chatElements.m0;
+  row.copy.closest=selector=>selector==='.chat-copy'?row.copy:row.article;
+  page.elements.get('chatMessages').fire('click',{target:row.copy});
+  await Promise.resolve();
+  assert.equal(clipboard,sent);
+  assert.equal(row.copy.getAttribute('data-copied'),'true');
+  clearTimeout(row.copy.copyTimer);
 });

@@ -415,7 +415,7 @@ function showMobile() {
   showContext("手机启动", '<iframe id="mobile-frame" class="mobile-preview" title="手机启动与对话" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>');
   document.getElementById("replay-mobile").hidden = false;
   const config = JSON.stringify({ scenario: "chat", theme: document.documentElement.dataset.theme, version: assets.version });
-  const delay = 'const originalFetch=window.fetch;window.fetch=async function(path,options){if(path==="/api/conversation/stream")await new Promise(resolve=>setTimeout(resolve,1600));return originalFetch(path,options);};';
+  const delay = 'const originalFetch=window.fetch;window.fetch=async function(path,options){if(new URL(String(path),"https://preview.invalid").pathname==="/api/conversation/stream")await new Promise(resolve=>setTimeout(resolve,1600));return originalFetch(path,options);};';
   const script = "<script>window.RM_REVIEW_CONFIG=" + config + ";" + assets.mobileFixture + delay + "</" + "script>";
   document.getElementById("mobile-frame").srcdoc = assets.mobileHtml.replace("<head>", "<head>" + script);
 }
